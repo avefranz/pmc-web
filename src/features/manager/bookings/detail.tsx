@@ -560,8 +560,8 @@ export default function BookingDetailPage() {
     <div className="max-w-5xl space-y-6">
       {/* Back */}
       <div>
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-1" />Back
+        <Button variant="ghost" size="sm" onClick={() => navigate(booking ? `/manager/assets/${booking.assetId}` : "/manager/assets")}>
+          <ArrowLeft className="h-4 w-4 mr-1" />Back to property
         </Button>
       </div>
 

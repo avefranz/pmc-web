@@ -57,6 +57,9 @@ export const useDeleteAsset = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => assetsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      qc.invalidateQueries({ queryKey: ["finance"] });
+    },
   });
 };

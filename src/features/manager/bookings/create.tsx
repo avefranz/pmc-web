@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,32 +7,122 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
-import { useAssets } from "@/lib/hooks/use-assets";
+import { useAsset } from "@/lib/hooks/use-assets";
 import { useListingsByAsset } from "@/lib/hooks/use-listings";
 import { useCreateBooking, useBookingsByAsset } from "@/lib/hooks/use-bookings";
 import { ListingStatus, RentalType } from "@/lib/types/enums";
-import { formatThb } from "@/lib/utils/format";
+import { formatThb, formatDate } from "@/lib/utils/format";
 import { toast } from "sonner";
 
-export default function CreateBookingPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const preselectedAssetId = searchParams.get("assetId") ?? "";
+const LONG_TERM_DURATIONS = [1, 2, 3, 6, 12, 18, 24];
+const SHORT_TERM_MAX_DAYS = 90;
+const LONG_TERM_MOVE_IN_WINDOW_DAYS = 30;
 
-  const { data: assets } = useAssets();
-  const [assetId, setAssetId] = useState(preselectedAssetId);
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
+  return toDateStr(d);
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return toDateStr(d);
+}
+
+export default function CreateBookingPage() {
+  const [searchParams] = useSearchParams();
+  const assetId = searchParams.get("assetId") ?? "";
+  if (!assetId) return <Navigate to="/manager/assets" replace />;
+  return <CreateBookingForm assetId={assetId} />;
+}
+
+function CreateBookingForm({ assetId }: { assetId: string }) {
+  const navigate = useNavigate();
+
+  const { data: asset } = useAsset(assetId);
   const { data: listings } = useListingsByAsset(assetId);
   const { data: existingBookings } = useBookingsByAsset(assetId);
   const createBooking = useCreateBooking();
 
   const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
+  const [checkOut, setCheckOut] = useState("");          // short-term only
+  const [durationMonths, setDurationMonths] = useState(""); // long-term only
   const [depositAmount, setDepositAmount] = useState("");
+  const [windowFullyBooked, setWindowFullyBooked] = useState(false);
 
-  function isDateDisabled(date: Date): boolean {
+  const activeListing = listings?.find((l) => l.status === ListingStatus.Active);
+  const isShortTerm = activeListing?.rentalType === RentalType.ShortTerm;
+
+  // Auto-default check-in for long-term: first available date in move-in window
+  useEffect(() => {
+    if (isShortTerm || !activeListing?.startDate || checkIn !== "") return;
+    if (existingBookings === undefined) return; // wait for data
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (date < today) return true;
+    const listingStart = new Date(activeListing.startDate + "T00:00:00");
+    listingStart.setHours(0, 0, 0, 0);
+    const windowStart = listingStart > today ? listingStart : today;
+    const windowEndStr = addDays(activeListing.startDate, LONG_TERM_MOVE_IN_WINDOW_DAYS);
+    const windowEnd = new Date(windowEndStr + "T00:00:00");
+    windowEnd.setHours(0, 0, 0, 0);
+
+    const cursor = new Date(windowStart);
+    while (cursor <= windowEnd) {
+      const dateStr = toDateStr(cursor);
+      const occupied = (existingBookings ?? []).some((b) => {
+        const start = new Date(b.checkInDate.length === 10 ? b.checkInDate + "T00:00:00" : b.checkInDate);
+        const end = new Date(b.checkOutDate.length === 10 ? b.checkOutDate + "T00:00:00" : b.checkOutDate);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        return cursor >= start && cursor <= end;
+      });
+      if (!occupied) {
+        setCheckIn(dateStr);
+        setWindowFullyBooked(false);
+        return;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    setWindowFullyBooked(true);
+  }, [activeListing, existingBookings, isShortTerm, checkIn]);
+
+  // For long-term, compute check-out from check-in + duration
+  const computedCheckOut = useMemo(() => {
+    if (!isShortTerm && checkIn && durationMonths) return addMonths(checkIn, parseInt(durationMonths));
+    return isShortTerm ? checkOut : "";
+  }, [isShortTerm, checkIn, durationMonths, checkOut]);
+
+  function isCheckInDisabled(date: Date): boolean {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const listingStart = activeListing?.startDate
+      ? new Date(activeListing.startDate + "T00:00:00")
+      : today;
+    listingStart.setHours(0, 0, 0, 0);
+    const minDate = listingStart > today ? listingStart : today;
+    if (date < minDate) return true;
+
+    if (activeListing?.endDate) {
+      const listingEnd = new Date(activeListing.endDate + "T00:00:00");
+      listingEnd.setHours(0, 0, 0, 0);
+      if (date > listingEnd) return true;
+    }
+
+    // Long-term: cap to move-in window
+    if (!isShortTerm && activeListing?.startDate) {
+      const windowEnd = new Date(activeListing.startDate + "T00:00:00");
+      windowEnd.setDate(windowEnd.getDate() + LONG_TERM_MOVE_IN_WINDOW_DAYS);
+      windowEnd.setHours(0, 0, 0, 0);
+      if (date > windowEnd) return true;
+    }
+
     return (existingBookings ?? []).some((b) => {
       const start = new Date(b.checkInDate.length === 10 ? b.checkInDate + "T00:00:00" : b.checkInDate);
       const end = new Date(b.checkOutDate.length === 10 ? b.checkOutDate + "T00:00:00" : b.checkOutDate);
@@ -42,23 +132,44 @@ export default function CreateBookingPage() {
     });
   }
 
-  const activeListing = listings?.find((l) => l.status === ListingStatus.Active);
-  const isShortTerm = activeListing?.rentalType === RentalType.ShortTerm;
+  function isCheckOutDisabled(date: Date): boolean {
+    if (isCheckInDisabled(date)) return true;
+    if (!checkIn) return true;
+    const checkInDate = new Date(checkIn + "T00:00:00");
+    checkInDate.setHours(0, 0, 0, 0);
+    if (date <= checkInDate) return true;
+    const maxDate = new Date(checkIn + "T00:00:00");
+    maxDate.setDate(maxDate.getDate() + SHORT_TERM_MAX_DAYS);
+    maxDate.setHours(0, 0, 0, 0);
+    if (date > maxDate) return true;
+    return false;
+  }
 
   // Price preview
-  const nights = (() => {
-    if (!checkIn || !checkOut) return 0;
-    const a = new Date(checkIn + "T00:00:00");
-    const b = new Date(checkOut + "T00:00:00");
-    return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86_400_000));
-  })();
-
-  // basePrice is always the daily/nightly rate from the backend (LongTerm = baseMonthlyRate / 30)
+  const monthlyRate = activeListing?.baseMonthlyRate ?? (activeListing ? activeListing.basePrice * 30 : 0);
   const dailyRate = activeListing?.basePrice ?? 0;
-  const estimatedRent = nights > 0 ? Math.round(dailyRate * nights) : 0;
+
+  const nights = useMemo(() => {
+    if (!checkIn || !computedCheckOut) return 0;
+    const a = new Date(checkIn + "T00:00:00");
+    const b = new Date(computedCheckOut + "T00:00:00");
+    return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86_400_000));
+  }, [checkIn, computedCheckOut]);
+
+  const estimatedRent = useMemo(() => {
+    if (!activeListing || !nights) return 0;
+    if (!isShortTerm && durationMonths) return Math.round(monthlyRate * parseInt(durationMonths));
+    return Math.round(dailyRate * nights);
+  }, [activeListing, isShortTerm, durationMonths, monthlyRate, dailyRate, nights]);
+
+  function handleCheckInChange(val: string) {
+    setCheckIn(val);
+    setCheckOut("");
+  }
 
   async function handleSubmit() {
-    if (!assetId || !checkIn || !checkOut || !depositAmount) {
+    const hasCheckOut = isShortTerm ? !!checkOut : !!durationMonths;
+    if (!checkIn || !hasCheckOut || !depositAmount) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -66,7 +177,7 @@ export default function CreateBookingPage() {
       const result = await createBooking.mutateAsync({
         assetId,
         checkInDate: checkIn,
-        checkOutDate: checkOut,
+        checkOutDate: computedCheckOut,
         depositAmount: parseFloat(depositAmount),
       });
       toast.success("Booking created — invoices generated automatically");
@@ -76,14 +187,14 @@ export default function CreateBookingPage() {
     }
   }
 
+  const canSubmit = !!checkIn && (isShortTerm ? !!checkOut : !!durationMonths) && !!depositAmount && !!activeListing && !windowFullyBooked;
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-6">
-        <Link to="/manager/bookings">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Bookings
-          </Button>
-        </Link>
+        <Button variant="ghost" size="sm" onClick={() => navigate(`/manager/assets/${assetId}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to property
+        </Button>
       </div>
 
       <h1 className="text-2xl font-bold mb-6">New Booking</h1>
@@ -93,20 +204,10 @@ export default function CreateBookingPage() {
         <CardContent className="space-y-4">
 
           <div className="space-y-1">
-            <Label>Property *</Label>
-            <Select value={assetId} onValueChange={(v) => { setAssetId(v); setCheckIn(""); setCheckOut(""); }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select property..." />
-              </SelectTrigger>
-              <SelectContent>
-                {assets?.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.internalName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Property</Label>
+            <p className="text-sm font-medium py-2">{asset?.internalName ?? "—"}</p>
           </div>
 
-          {/* Active listing info */}
           {activeListing && (
             <div className="rounded-md bg-muted px-3 py-2 text-sm space-y-0.5">
               <div className="flex items-center gap-2 flex-wrap">
@@ -125,31 +226,67 @@ export default function CreateBookingPage() {
               </p>
             </div>
           )}
-          {assetId && listings !== undefined && !activeListing && (
+          {listings !== undefined && !activeListing && (
             <p className="text-sm text-destructive">
               No active listing found for this property. Please publish a listing first.
             </p>
           )}
+          {windowFullyBooked && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+              No available move-in dates — the property is fully booked for the next {LONG_TERM_MOVE_IN_WINDOW_DAYS} days. The current booking must end before a new one can be created.
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <Label>Check-in date *</Label>
-              <DatePicker value={checkIn} onChange={setCheckIn} placeholder="Select date" isDisabled={isDateDisabled} />
-            </div>
-            <div className="space-y-1">
-              <Label>Check-out date *</Label>
-              <DatePicker value={checkOut} onChange={setCheckOut} placeholder="Select date" isDisabled={isDateDisabled} />
-            </div>
+          <div className="space-y-1">
+            <Label>Check-in date *</Label>
+            <DatePicker value={checkIn} onChange={handleCheckInChange} placeholder="Select date" isDisabled={isCheckInDisabled} />
+            {!isShortTerm && (
+              <p className="text-xs text-muted-foreground">
+                Move-in flexibility: up to {LONG_TERM_MOVE_IN_WINDOW_DAYS} days from listing start. First month is prorated by day.
+              </p>
+            )}
           </div>
 
-          {/* Price preview */}
-          {activeListing && nights > 0 && (
+          {isShortTerm ? (
+            <div className="space-y-1">
+              <Label>Check-out date * <span className="text-muted-foreground font-normal">(max {SHORT_TERM_MAX_DAYS} days)</span></Label>
+              <DatePicker
+                value={checkOut}
+                onChange={setCheckOut}
+                placeholder="Select date"
+                isDisabled={isCheckOutDisabled}
+              />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label>Duration *</Label>
+              <Select value={durationMonths} onValueChange={setDurationMonths}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select number of months..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {LONG_TERM_DURATIONS.map((m) => (
+                    <SelectItem key={m} value={String(m)}>
+                      {m} {m === 1 ? "month" : "months"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {checkIn && durationMonths && (
+                <p className="text-xs text-muted-foreground">
+                  Check-out: {formatDate(computedCheckOut)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {activeListing && estimatedRent > 0 && (
             <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm space-y-1.5">
               <div className="flex justify-between text-muted-foreground">
                 <span>
                   {isShortTerm
                     ? `${formatThb(dailyRate)}/night × ${nights} nights`
-                    : `${formatThb(Math.round(dailyRate))}/day × ${nights} days`}
+                    : `${formatThb(monthlyRate)}/mo × ${durationMonths} ${parseInt(durationMonths) === 1 ? "month" : "months"}`}
                 </span>
                 <span className="font-semibold text-foreground">{formatThb(estimatedRent)}</span>
               </div>
@@ -174,8 +311,8 @@ export default function CreateBookingPage() {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createBooking.isPending || !assetId || !activeListing}>
+            <Button variant="outline" onClick={() => navigate(`/manager/assets/${assetId}`)}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={createBooking.isPending || !canSubmit}>
               {createBooking.isPending ? "Creating..." : "Create booking"}
             </Button>
           </div>

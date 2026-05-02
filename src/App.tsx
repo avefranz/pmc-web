@@ -16,7 +16,6 @@ import NoAccessPage from "@/pages/no-access";
 import ManagerDashboard from "@/features/manager/dashboard";
 import AssetsPage from "@/features/manager/assets";
 import AssetDetailPage from "@/features/manager/assets/detail";
-import BookingsPage from "@/features/manager/bookings";
 import BookingDetailPage from "@/features/manager/bookings/detail";
 import TicketsPage from "@/features/manager/tickets";
 import TicketDetailPage from "@/features/manager/tickets/detail";
@@ -63,7 +62,7 @@ export default function App() {
         <Route index element={<ManagerDashboard />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route path="assets/:id" element={<AssetDetailPage />} />
-        <Route path="bookings" element={<BookingsPage />} />
+        <Route path="bookings" element={<Navigate to="/manager/assets" replace />} />
         <Route path="bookings/new" element={<CreateBookingPage />} />
         <Route path="bookings/:id" element={<BookingDetailPage />} />
         <Route path="tickets" element={<TicketsPage />} />

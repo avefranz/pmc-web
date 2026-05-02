@@ -367,22 +367,38 @@ export default function AssetDetailPage() {
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [newVersionConfirmOpen, setNewVersionConfirmOpen] = useState(false);
   const [publishStartDate, setPublishStartDate] = useState("");
-  const [publishEndDate, setPublishEndDate] = useState("");
+  const [publishEndDate, setPublishEndDate] = useState("");       // short-term only
+  const [publishDurationMonths, setPublishDurationMonths] = useState(""); // long-term only
+
+  const isListingLongTerm = listing?.rentalType === RentalType.LongTerm;
+
+  function addMonthsToDate(dateStr: string, months: number): string {
+    const d = new Date(dateStr + "T00:00:00");
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const computedPublishEndDate = isListingLongTerm && publishStartDate && publishDurationMonths
+    ? addMonthsToDate(publishStartDate, parseInt(publishDurationMonths))
+    : publishEndDate;
 
   function openPublishDialog() {
     setPublishStartDate(isRealDate(listing?.startDate) ? listing!.startDate! : "");
     setPublishEndDate(isRealDate(listing?.endDate) ? listing!.endDate! : "");
+    setPublishDurationMonths("");
     setPublishConfirmOpen(true);
   }
 
   async function handlePublish() {
     if (!listing) return;
-    const canPublish = !!publishStartDate && !!publishEndDate;
+    const canPublish = isListingLongTerm
+      ? !!publishStartDate && !!publishDurationMonths
+      : !!publishStartDate && !!publishEndDate;
     if (!canPublish) return;
     try {
       await listingsApi.update(listing.id, {
         startDate: publishStartDate,
-        endDate: publishEndDate,
+        endDate: computedPublishEndDate,
       });
       await publishListing.mutateAsync();
       toast.success("Listing published and now active");
@@ -1029,16 +1045,45 @@ export default function AssetDetailPage() {
             <p>If there is already an active listing for this property, it will be <span className="font-medium text-foreground">superseded</span> (archived) and replaced by this version.</p>
             <div className="space-y-2">
               <Label className="text-foreground">Validity period <span className="text-destructive">*</span></Label>
-              <div className="grid grid-cols-2 gap-2">
-                <DatePicker value={publishStartDate} onChange={setPublishStartDate} placeholder="Start date" />
-                <DatePicker value={publishEndDate} onChange={setPublishEndDate} placeholder="End date" />
-              </div>
+              {isListingLongTerm ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Start date</p>
+                      <DatePicker value={publishStartDate} onChange={setPublishStartDate} placeholder="Start date" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Duration</p>
+                      <Select value={publishDurationMonths} onValueChange={setPublishDurationMonths}>
+                        <SelectTrigger><SelectValue placeholder="Months..." /></SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 6, 12, 18, 24].map((m) => (
+                            <SelectItem key={m} value={String(m)}>
+                              {m} {m === 1 ? "month" : "months"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {publishStartDate && publishDurationMonths && (
+                    <p className="text-xs text-muted-foreground">
+                      Valid until: {formatDate(computedPublishEndDate)}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <DatePicker value={publishStartDate} onChange={setPublishStartDate} placeholder="Start date" />
+                  <DatePicker value={publishEndDate} onChange={setPublishEndDate} placeholder="End date" />
+                </div>
+              )}
               <p className="text-xs">Bookings can only be created within this window.</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPublishConfirmOpen(false)}>Cancel</Button>
-            <Button onClick={handlePublish} disabled={publishListing.isPending || !publishStartDate || !publishEndDate}>
+            <Button onClick={handlePublish} disabled={publishListing.isPending || !publishStartDate || (isListingLongTerm ? !publishDurationMonths : !publishEndDate)}>
               {publishListing.isPending ? "Publishing…" : "Publish"}
             </Button>
           </DialogFooter>

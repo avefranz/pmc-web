@@ -11,6 +11,7 @@ import { useListing, useUpdateAmenities, useUploadListingMedia } from "@/lib/hoo
 import { useAmenities, useAmenityCategories } from "@/lib/hooks/use-references";
 import { AmenityToggleGrid } from "@/components/shared/amenity-toggle-grid";
 import { formatThb } from "@/lib/utils/format";
+import { RentalType } from "@/lib/types/enums";
 import { toast } from "sonner";
 
 
@@ -85,7 +86,11 @@ export default function ListingDetailPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">{listing.title}</h1>
-          <p className="text-muted-foreground text-sm mt-1">{formatThb(listing.basePrice)}/night base rate</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            {listing.rentalType === RentalType.LongTerm
+              ? `${formatThb(listing.baseMonthlyRate ?? listing.basePrice * 30)}/mo`
+              : `${formatThb(listing.basePrice)}/night`}
+          </p>
         </div>
       </div>
 
