@@ -40,7 +40,7 @@ function ManagedRow({ asset }: { asset: AssetDto }) {
       </span>
       <div className="flex items-center gap-2 shrink-0">
         <Button asChild variant="outline" size="sm">
-          <Link to={`/me/host/managed/${asset.id}/invite`}>
+          <Link to="/me/host/managed/invite">
             <UserPlus size={13} className="mr-1" />Invite landlord
           </Link>
         </Button>
