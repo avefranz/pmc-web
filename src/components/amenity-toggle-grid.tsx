@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils/cn";
+import { amenityIcon } from "@/lib/utils/amenity-icons";
 import type { AmenityDefinition } from "@/lib/types";
 
 export interface AmenityCategory {
@@ -15,18 +16,21 @@ export interface AmenityToggleGridProps {
   compact?: boolean;
 }
 
-function AmenityIcon({ icon, isPresent }: { icon?: string; isPresent: boolean }) {
+function AmenityIcon({ name, icon, isPresent }: { name: string; icon?: string; isPresent: boolean }) {
+  const cls = cn("w-5 h-5 shrink-0", isPresent ? "text-fg" : "text-fg-subtle");
+
   if (icon && [...icon].length <= 2) {
-    return <span className="text-xl leading-none">{icon}</span>;
+    return <span className="text-lg leading-none">{icon}</span>;
   }
   if (icon?.startsWith("http")) {
     return <img src={icon} alt="" className="w-5 h-5 object-contain" />;
   }
+  const Lucide = amenityIcon(name);
+  if (Lucide) return <Lucide className={cls} strokeWidth={1.5} />;
+
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
-      className={cn("w-5 h-5 shrink-0", isPresent ? "text-brand" : "text-fg-subtle")}>
-      <path strokeLinecap="round" strokeLinejoin="round"
-        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className={cls}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }
@@ -58,7 +62,7 @@ function AmenityCard({ amenity, isPresent, isPending, onToggle, compact = false 
           compact ? "right-1 top-1 h-3 w-3 text-[7px]" : "right-2 top-2 h-4 w-4 text-[9px]",
         )}>✓</span>
       )}
-      {!compact && <AmenityIcon icon={amenity.icon} isPresent={isPresent} />}
+      {!compact && <AmenityIcon name={amenity.name} icon={amenity.icon} isPresent={isPresent} />}
       <span className={cn(
         "leading-snug truncate",
         compact ? "text-xs" : "text-sm",

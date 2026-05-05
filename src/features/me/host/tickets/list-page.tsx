@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -118,7 +118,7 @@ export function TicketsListPage() {
         <div className="bg-bg-card rounded-xl shadow-card overflow-hidden">
           <div className="divide-y divide-border">
             {filtered.map((t) => (
-              <div key={t.id} className="flex items-center gap-3 px-4 py-3 hover:bg-bg-subtle transition-colors">
+              <Link key={t.id} to={`/me/host/tickets/${t.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-bg-subtle transition-colors">
                 <span className="text-base shrink-0">{ticketKindIcon(t.kind)}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -138,7 +138,7 @@ export function TicketsListPage() {
                 <span className="text-xs text-fg-muted shrink-0 hidden sm:block">
                   {formatRelative(t.createdAt)}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

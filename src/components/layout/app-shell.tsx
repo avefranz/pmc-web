@@ -55,7 +55,7 @@ export function AppShell() {
     <div className="min-h-screen flex flex-col bg-bg">
       <TopBar />
       <main className="flex-1 pb-16 md:pb-0">
-        <div className="max-w-[var(--container)] mx-auto px-4 md:px-6 py-6 md:py-8">
+        <div className="w-full px-4 md:px-8 lg:px-12 py-6 md:py-8">
           <Outlet />
         </div>
       </main>

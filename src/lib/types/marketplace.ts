@@ -41,6 +41,7 @@ export interface MarketplaceListingAmenityDto {
 }
 
 export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
+  assetId?: string;
   description: string | null;
   houseRules: string | null;
   publishedAt: string;

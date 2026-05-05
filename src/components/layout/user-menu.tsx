@@ -12,7 +12,7 @@ import { useMe } from "@/lib/hooks/use-auth";
 import { initials } from "@/lib/utils/format";
 import { useQueryClient } from "@tanstack/react-query";
 
-export function UserMenu() {
+export function UserMenu({ compact }: { compact?: boolean } = {}) {
   const navigate = useNavigate();
   const { token, clearAuth } = useAuthStore();
   const { data: caps } = useCapabilities();
@@ -46,7 +46,7 @@ export function UserMenu() {
           <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center">
             <span className="text-white text-xs font-semibold">{initials(name)}</span>
           </div>
-          <span className="text-sm font-medium text-fg hidden sm:block">{name}</span>
+          {!compact && <span className="text-sm font-medium text-fg hidden sm:block">{name}</span>}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { BedDouble, Bath, Users, Zap, ChevronLeft, ChevronRight, Heart, SlidersHorizontal } from "lucide-react";
+import { BedDouble, Zap, ChevronLeft, ChevronRight, Heart, SlidersHorizontal } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMarketplaceListings } from "@/lib/hooks/use-marketplace";
+import { useMarketplaceListings, useMarketplaceCities } from "@/lib/hooks/use-marketplace";
 import { formatThb } from "@/lib/utils/format";
 import type { MarketplaceListingPreviewDto, MarketplaceRentalType, MarketplaceSortOrder } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils/cn";
@@ -35,9 +35,15 @@ function WishHeart({ id }: { id: string }) {
   return (
     <button
       onClick={toggle}
-      className="w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-sm hover:scale-110 transition-transform"
+      className="hover:scale-110 transition-transform p-0.5"
+      style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.45))" }}
     >
-      <Heart size={14} fill={on ? "#E0945C" : "none"} stroke={on ? "#E0945C" : "#222"} strokeWidth={2} />
+      <Heart
+        size={20}
+        fill={on ? "white" : "rgba(0,0,0,0.35)"}
+        stroke="white"
+        strokeWidth={2}
+      />
     </button>
   );
 }
@@ -49,18 +55,26 @@ function ListingCard({ listing, idx }: { listing: MarketplaceListingPreviewDto; 
   const price = isLT ? (listing.baseMonthlyRate ?? listing.basePrice * 30) : listing.basePrice;
   const photo = listing.coverImageUrl ?? FALLBACKS[idx % FALLBACKS.length];
 
+  const specs = [
+    listing.bedrooms ? `${listing.bedrooms} bed` : null,
+    listing.bathrooms ? `${listing.bathrooms} bath` : null,
+    listing.maxOccupancy ? `${listing.maxOccupancy} guests` : null,
+  ].filter(Boolean).join(" · ");
+
   return (
     <Link to={`/listings/${listing.id}`} className="group block">
-      <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-bg-subtle mb-3">
+      {/* Photo */}
+      <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle mb-3">
         <img
           src={photo}
           alt={listing.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
           loading="lazy"
         />
+        {/* Instant badge */}
         {listing.instantBookEnabled && (
-          <div className="absolute top-3 left-3 flex items-center gap-1 bg-brand text-white text-[11px] font-semibold px-2 py-1 rounded-full">
-            <Zap size={9} />Instant
+          <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 backdrop-blur-sm text-fg text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
+            <Zap size={10} className="text-brand" />Instant
           </div>
         )}
         <div className="absolute top-3 right-3">
@@ -68,20 +82,22 @@ function ListingCard({ listing, idx }: { listing: MarketplaceListingPreviewDto; 
         </div>
       </div>
 
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-fg-muted mb-0.5">{listing.cityName} · {isLT ? "Long-term" : "Short-term"}</p>
-          <p className="text-sm font-semibold text-fg line-clamp-2 leading-snug">{listing.title}</p>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-fg-muted">
-            {!!listing.bedrooms && <span className="flex items-center gap-1"><BedDouble size={11} />{listing.bedrooms} bd</span>}
-            {!!listing.bathrooms && <span className="flex items-center gap-1"><Bath size={11} />{listing.bathrooms} ba</span>}
-            {!!listing.maxOccupancy && <span className="flex items-center gap-1"><Users size={11} />{listing.maxOccupancy} guests</span>}
-          </div>
+      {/* Info stack */}
+      <div className="space-y-0.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-fg line-clamp-1 leading-snug">{listing.cityName}</p>
+          {listing.instantBookEnabled && (
+            <Zap size={11} className="text-brand shrink-0" />
+          )}
         </div>
-        <div className="text-right shrink-0">
-          <p className="text-sm font-bold text-fg">{formatThb(price)}</p>
-          <p className="text-xs text-fg-muted">/ {isLT ? "mo" : "night"}</p>
-        </div>
+        <p className="text-sm text-fg-muted line-clamp-1 leading-snug">{listing.title}</p>
+        {specs && (
+          <p className="text-sm text-fg-muted">{specs}</p>
+        )}
+        <p className="text-sm text-fg pt-0.5">
+          <span className="font-semibold">{formatThb(price)}</span>
+          <span className="text-fg-muted font-normal"> / {isLT ? "month" : "night"}</span>
+        </p>
       </div>
     </Link>
   );
@@ -90,10 +106,87 @@ function ListingCard({ listing, idx }: { listing: MarketplaceListingPreviewDto; 
 function CardSkeleton() {
   return (
     <div>
-      <Skeleton className="aspect-[4/3] rounded-2xl mb-3" />
-      <Skeleton className="h-3.5 w-1/3 mb-1.5" />
-      <Skeleton className="h-4 w-3/4 mb-1" />
-      <Skeleton className="h-3 w-1/2" />
+      <Skeleton className="aspect-square rounded-2xl mb-3" />
+      <Skeleton className="h-4 w-2/3 mb-1.5" />
+      <Skeleton className="h-3.5 w-3/4 mb-1" />
+      <Skeleton className="h-3.5 w-1/2 mb-1" />
+      <Skeleton className="h-4 w-1/3 mt-1" />
+    </div>
+  );
+}
+
+// ─── Category filter bar ──────────────────────────────────────────────────────
+
+const TYPE_FILTERS: { val: MarketplaceRentalType | ""; label: string; icon: string }[] = [
+  { val: "",          label: "All homes",   icon: "🏠" },
+  { val: "LongTerm",  label: "Long-term",   icon: "🏢" },
+  { val: "ShortTerm", label: "Short-term",  icon: "🌴" },
+];
+
+const BED_FILTERS: { val: string; label: string }[] = [
+  { val: "",  label: "Any" },
+  { val: "1", label: "1+" },
+  { val: "2", label: "2+" },
+  { val: "3", label: "3+" },
+  { val: "4", label: "4+" },
+];
+
+function CategoryBar({
+  rentalType,
+  bedrooms,
+  onType,
+  onBeds,
+}: {
+  rentalType: string;
+  bedrooms: string;
+  onType: (v: string) => void;
+  onBeds: (v: string) => void;
+}) {
+  return (
+    <div className="sticky top-20 z-30 bg-white border-b border-border">
+      <div className="w-full px-4 md:px-8 lg:px-12">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-2.5 scrollbar-hide">
+          {/* Type filters — single-line, compact */}
+          {TYPE_FILTERS.map((f) => (
+            <button
+              key={f.val}
+              onClick={() => onType(f.val)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all shrink-0 whitespace-nowrap",
+                rentalType === f.val
+                  ? "border-fg bg-fg text-white"
+                  : "border-transparent text-fg-muted hover:text-fg hover:bg-bg-subtle",
+              )}
+            >
+              <span className="text-sm leading-none">{f.icon}</span>
+              {f.label}
+            </button>
+          ))}
+
+          <div className="w-px h-5 bg-border mx-1 shrink-0" />
+
+          {/* Beds */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-xs text-fg-muted font-medium px-1 flex items-center gap-1">
+              <BedDouble size={12} /> Beds:
+            </span>
+            {BED_FILTERS.map((f) => (
+              <button
+                key={f.val}
+                onClick={() => onBeds(f.val)}
+                className={cn(
+                  "px-2.5 py-1 rounded-full border text-xs font-semibold transition-all shrink-0",
+                  bedrooms === f.val
+                    ? "border-fg bg-fg text-white"
+                    : "border-border text-fg-muted hover:border-fg hover:text-fg",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -110,13 +203,18 @@ export function ListingsPage() {
   const page       = params.get("page")        ? Number(params.get("page"))     : 1;
 
   const { data, isLoading } = useMarketplaceListings({ cityId, rentalType, sort, bedrooms, page, pageSize: PAGE_SIZE });
+  const { data: cities } = useMarketplaceCities();
 
-  function setSort(v: string) {
+  function set(key: string, val: string) {
     const next = new URLSearchParams(params);
-    if (!v || v === "Newest") next.delete("sort");
-    else next.set("sort", v);
+    if (!val) next.delete(key);
+    else next.set(key, val);
     next.delete("page");
     setParams(next);
+  }
+
+  function setSort(v: string) {
+    set("sort", v === "Newest" ? "" : v);
   }
 
   function setPage(p: number) {
@@ -125,127 +223,134 @@ export function ListingsPage() {
     setParams(next);
   }
 
-  function clearFilters() {
-    setParams({});
-  }
+  function clearFilters() { setParams({}); }
 
   const total = data?.totalCount ?? 0;
   const totalPages = data?.totalPages ?? 1;
   const hasActiveFilters = !!(cityId || rentalType || bedrooms);
+  const rentalTypeStr = params.get("rentalType") ?? "";
+  const bedroomsStr = params.get("bedrooms") ?? "";
 
   return (
-    <div className="max-w-[var(--container)] mx-auto px-4 md:px-6 py-6">
-      {/* Toolbar: active filters summary + sort + count */}
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
-        {/* Active filter chips */}
-        {hasActiveFilters && (
-          <div className="flex items-center gap-2 flex-wrap">
+    <>
+      <CategoryBar
+        rentalType={rentalTypeStr}
+        bedrooms={bedroomsStr}
+        onType={(v) => set("rentalType", v)}
+        onBeds={(v) => set("bedrooms", v)}
+      />
+
+      <div className="w-full px-4 md:px-8 lg:px-12 py-5">
+        {/* Toolbar: active city chip + result count + sort */}
+        {(hasActiveFilters || !isLoading) && (
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             {cityId && (
               <span className="flex items-center gap-1.5 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
-                {params.get("cityId")}
-                <button onClick={() => { const n = new URLSearchParams(params); n.delete("cityId"); setParams(n); }} className="hover:opacity-70 transition-opacity">×</button>
+                {cities?.find((c) => c.id === cityId)?.name.en ?? `City ${cityId}`}
+                <button
+                  onClick={() => set("cityId", "")}
+                  className="hover:opacity-70 transition-opacity ml-0.5"
+                >
+                  ×
+                </button>
               </span>
             )}
-            {rentalType && (
-              <span className="flex items-center gap-1.5 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
-                {rentalType === "LongTerm" ? "Long-term" : "Short-term"}
-                <button onClick={() => { const n = new URLSearchParams(params); n.delete("rentalType"); setParams(n); }} className="hover:opacity-70 transition-opacity">×</button>
-              </span>
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="text-xs text-fg-muted underline underline-offset-2 hover:text-fg transition-colors"
+              >
+                Clear all
+              </button>
             )}
-            {bedrooms && (
-              <span className="flex items-center gap-1.5 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
-                {bedrooms}+ beds
-                <button onClick={() => { const n = new URLSearchParams(params); n.delete("bedrooms"); setParams(n); }} className="hover:opacity-70 transition-opacity">×</button>
-              </span>
-            )}
-            <button onClick={clearFilters} className="text-xs text-fg-muted underline underline-offset-2 hover:text-fg transition-colors">
-              Clear all
-            </button>
+
+            <div className="ml-auto flex items-center gap-3">
+              {!isLoading && (
+                <span className="text-sm text-fg-muted">
+                  {total.toLocaleString()} {total === 1 ? "place" : "places"}
+                </span>
+              )}
+              <Select value={sort ?? "Newest"} onValueChange={setSort}>
+                <SelectTrigger className="w-44 h-9 rounded-full text-sm border-border bg-white shadow-sm">
+                  <SlidersHorizontal size={13} className="mr-1.5 text-fg-muted" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Newest">Newest</SelectItem>
+                  <SelectItem value="PriceAsc">Price: low → high</SelectItem>
+                  <SelectItem value="PriceDesc">Price: high → low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
-          {!isLoading && (
-            <span className="text-sm text-fg-muted">
-              {total} {total === 1 ? "place" : "places"}
-            </span>
-          )}
-          <Select value={sort ?? "Newest"} onValueChange={setSort}>
-            <SelectTrigger className="w-40 h-9 rounded-full text-sm border-border bg-white shadow-sm">
-              <SlidersHorizontal size={13} className="mr-1.5 text-fg-muted" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Newest">Newest</SelectItem>
-              <SelectItem value="PriceAsc">Price: low → high</SelectItem>
-              <SelectItem value="PriceDesc">Price: high → low</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
-      ) : !data?.items.length ? (
-        <div className="flex flex-col items-center justify-center py-32 text-center">
-          <div className="text-5xl mb-4">🏠</div>
-          <p className="text-xl font-semibold text-fg mb-1">No places found</p>
-          <p className="text-sm text-fg-muted mb-4">Try adjusting your search filters</p>
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="text-sm font-semibold text-fg underline underline-offset-2 hover:text-fg-muted transition-colors">
-              Clear filters
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-8">
-          {data.items.map((listing, idx) => (
-            <ListingCard key={listing.id} listing={listing} idx={(page - 1) * PAGE_SIZE + idx} />
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5 mt-12">
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full w-9 h-9 p-0"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            <ChevronLeft size={14} />
-          </Button>
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            const p = i + 1;
-            return (
+        {/* Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-6">
+            {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        ) : !data?.items.length ? (
+          <div className="flex flex-col items-center justify-center py-32 text-center">
+            <div className="text-5xl mb-4">🏠</div>
+            <p className="text-xl font-semibold text-fg mb-1">No places found</p>
+            <p className="text-sm text-fg-muted mb-4">Try adjusting your filters</p>
+            {hasActiveFilters && (
               <button
-                key={p}
-                onClick={() => setPage(p)}
-                className={cn(
-                  "w-9 h-9 rounded-full text-sm font-medium transition-colors",
-                  p === page ? "bg-fg text-white" : "text-fg-muted hover:bg-[#f7f7f7] hover:text-fg",
-                )}
+                onClick={clearFilters}
+                className="text-sm font-semibold text-fg underline underline-offset-2 hover:text-fg-muted transition-colors"
               >
-                {p}
+                Clear filters
               </button>
-            );
-          })}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full w-9 h-9 p-0"
-            disabled={page >= totalPages}
-            onClick={() => setPage(page + 1)}
-          >
-            <ChevronRight size={14} />
-          </Button>
-        </div>
-      )}
-    </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-6">
+            {data.items.map((listing, idx) => (
+              <ListingCard key={listing.id} listing={listing} idx={(page - 1) * PAGE_SIZE + idx} />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-1.5 mt-12">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full w-9 h-9 p-0"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              <ChevronLeft size={14} />
+            </Button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              const p = i + 1;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={cn(
+                    "w-9 h-9 rounded-full text-sm font-medium transition-colors",
+                    p === page ? "bg-fg text-white" : "text-fg-muted hover:bg-bg hover:text-fg",
+                  )}
+                >
+                  {p}
+                </button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full w-9 h-9 p-0"
+              disabled={page >= totalPages}
+              onClick={() => setPage(page + 1)}
+            >
+              <ChevronRight size={14} />
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

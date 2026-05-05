@@ -56,6 +56,7 @@ export interface AssetDto {
   fuzzyLatitude?: number;
   fuzzyLongitude?: number;
   timezone?: string;
+  ownerId?: string;
 }
 
 export interface AssetMemberDto {
@@ -106,11 +107,9 @@ export interface ListingDto {
   houseRules?: string;
   rentalType?: string;
   status: ListingStatus;
-  startDate: string;
-  endDate: string;
-  publishedAt?: string;
   startDate?: string | null;
   endDate?: string | null;
+  publishedAt?: string;
   supersededByListingId?: string;
   isEditable: boolean;
   media: ListingMediaDto[];
@@ -138,6 +137,7 @@ export interface BookingDto {
   hasContract: boolean;
   contractUrl?: string;
   tenantName?: string;
+  assetName?: string;
   listingTitle?: string;
   primaryImageUrl?: string;
   daysRemaining?: number;
@@ -398,7 +398,8 @@ export interface SpawnChildTicketRequest {
 }
 
 export interface CreateBookingRequest {
-  assetId: string;
+  assetId?: string;
+  listingId?: string;
   checkInDate: string;
   checkOutDate: string;
   depositAmount: number;

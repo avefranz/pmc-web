@@ -26,15 +26,22 @@ function SearchPill() {
 
   const pillRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
+  // Close on outside click or Escape
   useEffect(() => {
     function onDown(e: MouseEvent) {
       if (pillRef.current && !pillRef.current.contains(e.target as Node)) {
         setActive(null);
       }
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setActive(null);
+    }
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   function toggle(id: PanelId) {
@@ -73,7 +80,7 @@ function SearchPill() {
         <button
           onClick={() => toggle("where")}
           className={cn(
-            "flex flex-col justify-center px-5 py-2.5 rounded-l-full text-left min-w-[130px] hover:bg-[#f7f7f7] transition-colors",
+            "flex flex-col justify-center px-5 py-2.5 rounded-l-full text-left min-w-[130px] hover:bg-bg transition-colors",
             active === "where" && "bg-white shadow-inner",
           )}
         >
@@ -85,7 +92,7 @@ function SearchPill() {
         <button
           onClick={() => toggle("type")}
           className={cn(
-            "hidden md:flex flex-col justify-center px-5 py-2.5 text-left min-w-[120px] hover:bg-[#f7f7f7] transition-colors",
+            "hidden md:flex flex-col justify-center px-5 py-2.5 text-left min-w-[120px] hover:bg-bg transition-colors",
             active === "type" && "bg-white shadow-inner",
           )}
         >
@@ -97,7 +104,7 @@ function SearchPill() {
         <button
           onClick={() => toggle("beds")}
           className={cn(
-            "hidden md:flex flex-col justify-center px-5 py-2.5 text-left min-w-[110px] hover:bg-[#f7f7f7] transition-colors",
+            "hidden md:flex flex-col justify-center px-5 py-2.5 text-left min-w-[110px] hover:bg-bg transition-colors",
             active === "beds" && "bg-white shadow-inner",
           )}
         >
@@ -108,10 +115,10 @@ function SearchPill() {
         {/* Search button */}
         <button
           onClick={handleSearch}
-          className="flex items-center gap-2 pl-3 pr-2 py-2 rounded-r-full bg-brand hover:bg-[var(--color-primary-hover)] transition-colors my-1.5 mr-1.5"
+          className="flex items-center gap-2 h-9 rounded-full bg-brand hover:bg-[var(--color-primary-hover)] transition-colors my-1.5 mr-1.5 px-3"
         >
-          <Search size={14} className="text-white" />
-          {hasFilter && <span className="text-white text-xs font-semibold pr-1 hidden sm:block">Search</span>}
+          <Search size={15} className="text-white" strokeWidth={2.5} />
+          {hasFilter && <span className="text-white text-xs font-semibold hidden sm:block">Search</span>}
         </button>
       </div>
 
@@ -124,7 +131,7 @@ function SearchPill() {
               <div className="space-y-1">
                 <button
                   onClick={() => { setDraft((d) => ({ ...d, cityId: "" })); setActive(null); }}
-                  className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-[#f7f7f7] transition-colors", !draft.cityId && "font-semibold text-fg")}
+                  className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-bg transition-colors", !draft.cityId && "font-semibold text-fg")}
                 >
                   All cities
                 </button>
@@ -132,7 +139,7 @@ function SearchPill() {
                   <button
                     key={c.id}
                     onClick={() => { setDraft((d) => ({ ...d, cityId: String(c.id) })); setActive(null); }}
-                    className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-[#f7f7f7] transition-colors", draft.cityId === String(c.id) && "font-semibold text-fg bg-[#f7f7f7]")}
+                    className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-bg transition-colors", draft.cityId === String(c.id) && "font-semibold text-fg bg-bg")}
                   >
                     {c.name.en}
                     {c.activeListingsCount > 0 && (
@@ -156,7 +163,7 @@ function SearchPill() {
                   <button
                     key={opt.val}
                     onClick={() => { setDraft((d) => ({ ...d, rentalType: opt.val })); setActive(null); }}
-                    className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-[#f7f7f7] transition-colors", draft.rentalType === opt.val && "font-semibold text-fg bg-[#f7f7f7]")}
+                    className={cn("w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-bg transition-colors", draft.rentalType === opt.val && "font-semibold text-fg bg-bg")}
                   >
                     {opt.label}
                   </button>
@@ -245,27 +252,27 @@ function MarketplaceUserMenu() {
           {token ? (
             <>
               {name && <div className="px-4 py-2 text-sm font-semibold text-fg border-b border-border mb-1">{name}</div>}
-              <button onClick={() => { navigate("/me/trips"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-[#f7f7f7] transition-colors">
+              <button onClick={() => { navigate("/me/trips"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 My trips
               </button>
-              <button onClick={() => { navigate("/me/host"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-[#f7f7f7] transition-colors">
+              <button onClick={() => { navigate("/me/host"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 Host dashboard
               </button>
-              <button onClick={() => { navigate("/me/profile"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-[#f7f7f7] transition-colors">
+              <button onClick={() => { navigate("/me/profile"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 Account
               </button>
               <div className="border-t border-border mt-1 pt-1">
-                <button onClick={signOut} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-[#f7f7f7] transition-colors">
+                <button onClick={signOut} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                   Sign out
                 </button>
               </div>
             </>
           ) : (
             <>
-              <button onClick={() => { navigate("/register"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-fg hover:bg-[#f7f7f7] transition-colors">
+              <button onClick={() => { navigate("/register"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-fg hover:bg-bg transition-colors">
                 Sign up
               </button>
-              <button onClick={() => { navigate("/login"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-[#f7f7f7] transition-colors">
+              <button onClick={() => { navigate("/login"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 Log in
               </button>
             </>
@@ -284,25 +291,23 @@ export function PublicShell() {
   return (
     <div className="min-h-screen flex flex-col bg-bg">
       <header className="sticky top-0 z-40 bg-white border-b border-border">
-        <div className="max-w-[var(--container)] mx-auto w-full px-4 md:px-6 h-20 flex items-center justify-between gap-4">
-          {/* Logo */}
-          <Link to="/listings" className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+        <div className="w-full px-4 md:px-8 lg:px-12 h-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+          {/* Logo — left */}
+          <Link to="/listings" className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center shrink-0">
               <span className="text-white font-bold text-sm leading-none">S</span>
             </div>
             <span className="font-bold text-lg text-brand hidden lg:block">siamo</span>
           </Link>
 
-          {/* Search pill — centered */}
-          <div className="flex-1 flex justify-center">
-            <SearchPill />
-          </div>
+          {/* Search pill — truly centered */}
+          <SearchPill />
 
           {/* Right actions */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 justify-end">
             <Link
               to={token ? "/me/host" : "/login"}
-              className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-[#f7f7f7] transition-colors whitespace-nowrap"
+              className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
             >
               <Home size={14} />
               {token ? "Switch to hosting" : "Siamo your home"}
@@ -315,6 +320,23 @@ export function PublicShell() {
       <main className="flex-1">
         <Outlet />
       </main>
+
+      <footer className="border-t border-border mt-12 py-8">
+        <div className="w-full px-4 md:px-8 lg:px-12 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-fg-muted">
+            <div className="w-5 h-5 rounded bg-brand flex items-center justify-center">
+              <span className="text-white font-bold text-[10px] leading-none">S</span>
+            </div>
+            <span className="font-medium text-fg">Siamo</span>
+            <span>· © {new Date().getFullYear()}</span>
+          </div>
+          <div className="flex items-center gap-5 text-xs text-fg-muted">
+            <a href="#" className="hover:text-fg transition-colors">Support</a>
+            <a href="#" className="hover:text-fg transition-colors">Privacy</a>
+            <a href="#" className="hover:text-fg transition-colors">Terms</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

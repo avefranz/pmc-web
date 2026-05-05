@@ -21,8 +21,10 @@ import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
 
 // Host deep features
 import { TicketsListPage } from "@/features/me/host/tickets/list-page";
+import { TicketDetailPage } from "@/features/me/host/tickets/detail-page";
 import { FinancePage } from "@/features/me/host/finance/page";
 import { BookingDetailPage } from "@/features/me/host/bookings/detail-page";
+import { CreateBookingPage } from "@/features/me/host/bookings/create-page";
 
 // Marketplace
 import { ListingsPage } from "@/features/marketplace/listings-page";
@@ -72,10 +74,11 @@ export default function App() {
         <Route path="/me/profile" element={<ProfilePage />} />
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
-        <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
         <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
+        <Route path="/me/host/bookings/new" element={<CreateBookingPage />} />
         <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
         <Route path="/me/host/tickets" element={<TicketsListPage />} />
+        <Route path="/me/host/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/me/host/finance" element={<FinancePage />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
           <Route path="/me/host/managed" element={<ManagedListPage />} />

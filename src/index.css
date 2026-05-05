@@ -4,13 +4,13 @@
 
 @layer base {
   :root {
-    --background: 0 0% 96.9%;
+    --background: 0 0% 100%;
     --foreground: 0 0% 13%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 13%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 13%;
-    --primary: 22 67% 62%;
+    --primary: 0 0% 10%;
     --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 100%;
     --secondary-foreground: 0 0% 13%;
@@ -22,7 +22,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 92%;
     --input: 0 0% 87%;
-    --ring: 22 67% 62%;
+    --ring: 0 0% 10%;
     --radius: 10px;
   }
 
@@ -58,5 +58,15 @@
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }

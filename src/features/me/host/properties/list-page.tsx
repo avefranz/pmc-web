@@ -100,8 +100,8 @@ export function PropertiesListPage() {
   }
 
   const list = assets ?? [];
-  const ownedAssets = me ? list.filter((a: any) => a.ownerId === me.id) : list;
-  const managedAssets = me ? list.filter((a: any) => a.ownerId !== me.id) : [];
+  const ownedAssets = me ? list.filter((a) => a.ownerId === me.id) : list;
+  const managedAssets = me ? list.filter((a) => a.ownerId !== me.id) : [];
 
   if (!list.length) {
     return (
@@ -111,7 +111,6 @@ export function PropertiesListPage() {
           icon={<Building2 size={40} />}
           title="No properties yet"
           description="Add your first property to start hosting on Siamo."
-          action={<Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"><Link to="/me/host/properties/new">Add property</Link></Button>}
         />
       </div>
     );

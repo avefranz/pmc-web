@@ -60,7 +60,7 @@ export function TripDetailPage() {
 
   const isActive = booking.status === BookingStatus.Active || booking.status === BookingStatus.Confirmed;
   const presentAmenities = listing?.amenities?.filter((a) => a.isPresent) ?? [];
-  const daysLeft = (booking as any).daysRemaining;
+  const daysLeft = booking.daysRemaining;
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -99,7 +99,7 @@ export function TripDetailPage() {
       <Card>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted mb-2">Lease</h3>
         <InfoRow label="Monthly rent">
-          <span className="font-semibold">{formatThb((booking as any).rentAmount ?? 0)}</span>
+          <span className="font-semibold">{formatThb(booking.rentAmount ?? 0)}</span>
         </InfoRow>
         <InfoRow label="Check-in">{formatDate(booking.checkInDate)}</InfoRow>
         <InfoRow label="Check-out">{formatDate(booking.checkOutDate)}</InfoRow>
@@ -175,7 +175,7 @@ export function TripDetailPage() {
         className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
       >
         <Link to="/me/host/tickets">
-          <Plus size={14} className="mr-1.5" />Get support
+          <Plus size={14} className="mr-1.5" />Contact support
         </Link>
       </Button>
     </div>

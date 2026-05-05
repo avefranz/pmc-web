@@ -30,10 +30,10 @@ export default function LineCallbackPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-      <div className="text-center text-white">
-        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm opacity-70">Signing in with LINE...</p>
+    <div className="min-h-screen flex items-center justify-center bg-bg">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-sm text-fg-muted">Signing in with LINE...</p>
       </div>
     </div>
   );

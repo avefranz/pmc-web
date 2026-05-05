@@ -57,7 +57,7 @@ export function ManagedListPage() {
   const { data: me } = useMe();
 
   const managedAssets = me
-    ? (assets ?? []).filter((a: any) => a.ownerId !== me.id)
+    ? (assets ?? []).filter((a) => a.ownerId !== me.id)
     : (assets ?? []);
 
   if (isLoading) {
