@@ -9,6 +9,10 @@ import LineCallbackPage from "@/pages/line-callback";
 import RoleRouterPage from "@/pages/role-router";
 import InviteAcceptPage from "@/pages/invite-accept";
 
+// Host
+import { HostHomePage } from "@/features/me/host/host-home-page";
+import { PropertiesListPage } from "@/features/me/host/properties/list-page";
+
 // Placeholder — replaced in subsequent commits
 function ComingSoon({ label }: { label: string }) {
   return (
@@ -43,8 +47,8 @@ export default function App() {
         <Route path="/me/trips/:id" element={<ComingSoon label="Trip detail" />} />
         <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
         <Route path="/me/profile" element={<ComingSoon label="Profile" />} />
-        <Route path="/me/host" element={<ComingSoon label="Hosting" />} />
-        <Route path="/me/host/properties" element={<ComingSoon label="Properties" />} />
+        <Route path="/me/host" element={<HostHomePage />} />
+        <Route path="/me/host/properties" element={<PropertiesListPage />} />
         <Route path="/me/host/properties/new" element={<ComingSoon label="New property" />} />
         <Route path="/me/host/properties/:id" element={<ComingSoon label="Property detail" />} />
         <Route path="/me/host/bookings/:id" element={<ComingSoon label="Booking detail" />} />
