@@ -5,43 +5,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { useAcceptInvite } from "@/lib/hooks/use-invites";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { authApi } from "@/lib/api/auth.api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function InviteAcceptPage() {
-  // Support both /invite/:token (path) and /invite?token=xxx (query) formats
   const { token: tokenParam } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
-  const token = tokenParam ?? searchParams.get("token") ?? undefined;
+  const inviteToken = tokenParam ?? searchParams.get("token") ?? undefined;
   const navigate = useNavigate();
   const accept = useAcceptInvite();
-  const { user, setUser } = useAuthStore();
+  const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
 
-  const inviteRedirect = encodeURIComponent(`/invite?token=${token}`);
+  const inviteRedirect = encodeURIComponent(`/invite?token=${inviteToken}`);
 
   async function handleAccept() {
-    if (!token) return;
+    if (!inviteToken) return;
     try {
-      await accept.mutateAsync(token);
-      // Refresh user profile so new role is picked up
-      const freshUser = await authApi.me();
-      setUser(freshUser);
-      qc.setQueryData(["me"], freshUser);
+      await accept.mutateAsync(inviteToken);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
       setDone(true);
-      // Give the user a moment to read the success message, then route to correct portal
-      setTimeout(() => navigate("/role-router", { replace: true }), 1800);
+      setTimeout(() => navigate("/me/trips", { replace: true }), 1800);
     } catch {
       setError("This invite link is invalid or has expired.");
     }
   }
 
-  if (!user) {
+  if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-        <Card className="w-full max-w-sm">
+      <div className="min-h-screen flex items-center justify-center bg-bg px-4">
+        <Card className="w-full max-w-sm shadow-pop">
           <CardHeader>
             <CardTitle>You've been invited</CardTitle>
             <CardDescription>
@@ -50,7 +45,7 @@ export default function InviteAcceptPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button
-              className="w-full"
+              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
               onClick={() => navigate(`/register?redirect=${inviteRedirect}`)}
             >
               Create account
@@ -59,7 +54,7 @@ export default function InviteAcceptPage() {
               <div className="absolute inset-0 flex items-center">
                 <Separator />
               </div>
-              <div className="relative flex justify-center text-xs uppercase">
+              <div className="relative flex justify-center text-xs">
                 <span className="bg-background px-2 text-muted-foreground">or</span>
               </div>
             </div>
@@ -77,25 +72,25 @@ export default function InviteAcceptPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-      <Card className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center bg-bg px-4">
+      <Card className="w-full max-w-sm shadow-pop">
         <CardHeader>
           <CardTitle>Accept invitation</CardTitle>
           <CardDescription>
-            You've been invited to access a property on PMC.
+            You've been invited to access a property on Siamo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {done ? (
             <div className="text-center py-2">
-              <p className="text-green-600 font-medium mb-1">Invitation accepted!</p>
-              <p className="text-sm text-muted-foreground">Redirecting to your portal…</p>
+              <p className="text-success font-medium mb-1">Invitation accepted!</p>
+              <p className="text-sm text-fg-muted">Redirecting…</p>
             </div>
           ) : (
             <>
               {error && <p className="text-destructive text-sm">{error}</p>}
               <Button
-                className="w-full"
+                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
                 onClick={handleAccept}
                 disabled={accept.isPending}
               >
