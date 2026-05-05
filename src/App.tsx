@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthGuard, PublicOnlyGuard } from "@/components/layout/auth-guard";
 import { AppShell } from "@/components/layout/app-shell";
+import { PublicShell } from "@/components/layout/public-shell";
 
 // Auth pages
 import LoginPage from "@/pages/login";
@@ -18,18 +19,27 @@ import ProfilePage from "@/pages/profile";
 import { ManagedListPage } from "@/features/me/host/managed/list-page";
 import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
 
+// Host deep features
+import { TicketsListPage } from "@/features/me/host/tickets/list-page";
+import { FinancePage } from "@/features/me/host/finance/page";
+import { BookingDetailPage } from "@/features/me/host/bookings/detail-page";
+
+// Marketplace
+import { ListingsPage } from "@/features/marketplace/listings-page";
+import { ListingDetailPage } from "@/features/marketplace/listing-detail-page";
+
 // Host
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
 import { PropertyCreateWizard } from "@/features/me/host/properties/create-wizard";
 import { PropertyDetailPage } from "@/features/me/host/properties/detail-page";
 
-// Placeholder — replaced in subsequent commits
 function ComingSoon({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-32 text-center">
-      <p className="text-lg font-medium text-fg">{label}</p>
-      <p className="text-sm text-fg-muted mt-1">Coming in next commit…</p>
+      <div className="w-14 h-14 rounded-2xl bg-bg-subtle flex items-center justify-center text-2xl mb-4">🚧</div>
+      <p className="text-lg font-semibold text-fg">{label}</p>
+      <p className="text-sm text-fg-muted mt-1">This section is coming soon.</p>
     </div>
   );
 }
@@ -48,8 +58,10 @@ export default function App() {
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
 
       {/* Public marketplace */}
-      <Route path="/listings" element={<ComingSoon label="Marketplace" />} />
-      <Route path="/listings/:id" element={<ComingSoon label="Listing detail" />} />
+      <Route element={<PublicShell />}>
+        <Route path="/listings" element={<ListingsPage />} />
+        <Route path="/listings/:id" element={<ListingDetailPage />} />
+      </Route>
 
       {/* /me — unified cabinet */}
       <Route element={<AuthGuard><AppShell /></AuthGuard>}>
@@ -62,9 +74,9 @@ export default function App() {
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
         <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
         <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
-        <Route path="/me/host/bookings/:id" element={<ComingSoon label="Booking detail" />} />
-        <Route path="/me/host/tickets" element={<ComingSoon label="Tickets" />} />
-        <Route path="/me/host/finance" element={<ComingSoon label="Finance" />} />
+        <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
+        <Route path="/me/host/tickets" element={<TicketsListPage />} />
+        <Route path="/me/host/finance" element={<FinancePage />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
           <Route path="/me/host/managed" element={<ManagedListPage />} />
           <Route path="/me/host/managed/invite" element={<InviteLandlordPage />} />
@@ -73,7 +85,7 @@ export default function App() {
 
       {/* Admin */}
       <Route element={<AuthGuard require="admin"><AppShell /></AuthGuard>}>
-        <Route path="/admin" element={<ComingSoon label="Admin panel — coming soon" />} />
+        <Route path="/admin" element={<ComingSoon label="Admin panel" />} />
       </Route>
 
       {/* Catch-all */}

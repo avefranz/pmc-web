@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,12 +14,23 @@ import { useQueryClient } from "@tanstack/react-query";
 
 export function UserMenu() {
   const navigate = useNavigate();
-  const { clearAuth } = useAuthStore();
+  const { token, clearAuth } = useAuthStore();
   const { data: caps } = useCapabilities();
   const { data: me } = useMe();
   const qc = useQueryClient();
 
   const name = me?.firstName ?? me?.lineName ?? me?.email ?? "Account";
+
+  if (!token) {
+    return (
+      <Link
+        to="/login"
+        className="flex items-center gap-2 rounded-pill border border-border px-4 py-1.5 text-sm font-medium text-fg bg-bg-card hover:shadow-card transition-shadow"
+      >
+        Sign in
+      </Link>
+    );
+  }
 
   function handleSignOut() {
     clearAuth();
