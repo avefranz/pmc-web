@@ -21,15 +21,15 @@ export default function RoleRouterPage() {
 
     const roles = resolvedUser.roles;
     if (roles.includes("Tenant")) {
-      navigate("/tenant");
+      navigate("/tenant", { replace: true });
     } else if (roles.includes("Landlord")) {
-      navigate("/landlord");
+      navigate("/landlord", { replace: true });
     } else if (roles.includes("Admin")) {
-      navigate("/manager");
+      navigate("/manager", { replace: true });
     } else {
-      navigate("/no-access");
+      navigate("/no-access", { replace: true });
     }
-  }, [isSuccess, isError, meData]);
+  }, [isSuccess, isError, meData, user]);
 
   if (!token) {
     return <Navigate to="/login" replace />;

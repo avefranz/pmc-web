@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +39,16 @@ export default function CreateBookingPage() {
   return <CreateBookingForm assetId={assetId} />;
 }
 
+const fieldLabelStyle: React.CSSProperties = {
+  fontFamily: "var(--mono)",
+  fontSize: 10,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase" as const,
+  color: "var(--ink-4)",
+  display: "block",
+  marginBottom: 6,
+};
+
 function CreateBookingForm({ assetId }: { assetId: string }) {
   const navigate = useNavigate();
 
@@ -50,18 +58,18 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
   const createBooking = useCreateBooking();
 
   const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");          // short-term only
-  const [durationMonths, setDurationMonths] = useState(""); // long-term only
+  const [checkOut, setCheckOut] = useState("");
+  const [durationMonths, setDurationMonths] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [windowFullyBooked, setWindowFullyBooked] = useState(false);
 
   const activeListing = listings?.find((l) => l.status === ListingStatus.Active);
   const isShortTerm = activeListing?.rentalType === RentalType.ShortTerm;
 
-  // Auto-default check-in for long-term: first available date in move-in window
+  // Auto-default check-in for long-term
   useEffect(() => {
     if (isShortTerm || !activeListing?.startDate || checkIn !== "") return;
-    if (existingBookings === undefined) return; // wait for data
+    if (existingBookings === undefined) return;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -92,7 +100,6 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
     setWindowFullyBooked(true);
   }, [activeListing, existingBookings, isShortTerm, checkIn]);
 
-  // For long-term, compute check-out from check-in + duration
   const computedCheckOut = useMemo(() => {
     if (!isShortTerm && checkIn && durationMonths) return addMonths(checkIn, parseInt(durationMonths));
     return isShortTerm ? checkOut : "";
@@ -101,28 +108,23 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
   function isCheckInDisabled(date: Date): boolean {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const listingStart = activeListing?.startDate
       ? new Date(activeListing.startDate + "T00:00:00")
       : today;
     listingStart.setHours(0, 0, 0, 0);
     const minDate = listingStart > today ? listingStart : today;
     if (date < minDate) return true;
-
     if (activeListing?.endDate) {
       const listingEnd = new Date(activeListing.endDate + "T00:00:00");
       listingEnd.setHours(0, 0, 0, 0);
       if (date > listingEnd) return true;
     }
-
-    // Long-term: cap to move-in window
     if (!isShortTerm && activeListing?.startDate) {
       const windowEnd = new Date(activeListing.startDate + "T00:00:00");
       windowEnd.setDate(windowEnd.getDate() + LONG_TERM_MOVE_IN_WINDOW_DAYS);
       windowEnd.setHours(0, 0, 0, 0);
       if (date > windowEnd) return true;
     }
-
     return (existingBookings ?? []).some((b) => {
       const start = new Date(b.checkInDate.length === 10 ? b.checkInDate + "T00:00:00" : b.checkInDate);
       const end = new Date(b.checkOutDate.length === 10 ? b.checkOutDate + "T00:00:00" : b.checkOutDate);
@@ -145,7 +147,6 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
     return false;
   }
 
-  // Price preview
   const monthlyRate = activeListing?.baseMonthlyRate ?? (activeListing ? activeListing.basePrice * 30 : 0);
   const dailyRate = activeListing?.basePrice ?? 0;
 
@@ -191,29 +192,47 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <Button variant="ghost" size="sm" onClick={() => navigate(`/manager/assets/${assetId}`)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to property
-        </Button>
+      {/* Back */}
+      <div style={{ marginBottom: 20 }}>
+        <button
+          className="bm-pagehead__back"
+          onClick={() => navigate(`/manager/assets/${assetId}`)}
+          style={{ display: "flex", alignItems: "center", gap: 4 }}
+        >
+          <ArrowLeft size={12} /> Back to property
+        </button>
       </div>
 
-      <h1 className="text-2xl font-bold mb-6">New Booking</h1>
+      <div className="adm-pagehead" style={{ marginBottom: 24 }}>
+        <div>
+          <div className="adm-pagehead__eyebrow">
+            {asset?.internalName ?? "Property"} · Bookings
+          </div>
+          <h1 className="adm-pagehead__title">New Booking</h1>
+        </div>
+      </div>
 
-      <Card className="max-w-2xl">
-        <CardHeader><CardTitle>Booking details</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
+      <div className="adm-card" style={{ maxWidth: 600 }}>
+        <div className="adm-card__head">
+          <div className="adm-card__title">Booking details</div>
+        </div>
+        <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-          <div className="space-y-1">
-            <Label>Property</Label>
-            <p className="text-sm font-medium py-2">{asset?.internalName ?? "—"}</p>
+          {/* Property */}
+          <div>
+            <label style={fieldLabelStyle}>Property</label>
+            <p style={{ fontFamily: "var(--sans)", fontSize: 14, fontWeight: 600 }}>
+              {asset?.internalName ?? "—"}
+            </p>
           </div>
 
+          {/* Listing info */}
           {activeListing && (
-            <div className="rounded-md bg-muted px-3 py-2 text-sm space-y-0.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-muted-foreground">Active listing:</span>
-                <span className="font-medium">{activeListing.title}</span>
-                <span className="text-muted-foreground">
+            <div style={{ border: "1px solid var(--ink-5)", padding: "10px 12px", background: "var(--surface-muted)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>Active listing:</span>
+                <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600 }}>{activeListing.title}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
                   · {isShortTerm
                     ? `${formatThb(activeListing.basePrice)}/night`
                     : activeListing.baseMonthlyRate != null
@@ -221,35 +240,41 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
                       : `${formatThb(activeListing.basePrice)}/mo`}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", letterSpacing: "0.04em" }}>
                 Valid {activeListing.startDate} – {activeListing.endDate}
               </p>
             </div>
           )}
           {listings !== undefined && !activeListing && (
-            <p className="text-sm text-destructive">
-              No active listing found for this property. Please publish a listing first.
+            <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--danger)" }}>
+              No active listing found. Please publish a listing first.
             </p>
           )}
           {windowFullyBooked && (
-            <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
-              No available move-in dates — the property is fully booked for the next {LONG_TERM_MOVE_IN_WINDOW_DAYS} days. The current booking must end before a new one can be created.
+            <div style={{ border: "1px solid var(--danger)", padding: "10px 12px" }}>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--danger)" }}>
+                No available move-in dates — fully booked for the next {LONG_TERM_MOVE_IN_WINDOW_DAYS} days.
+              </p>
             </div>
           )}
 
-          <div className="space-y-1">
-            <Label>Check-in date *</Label>
+          {/* Check-in */}
+          <div>
+            <Label style={fieldLabelStyle as React.CSSProperties}>Check-in date *</Label>
             <DatePicker value={checkIn} onChange={handleCheckInChange} placeholder="Select date" isDisabled={isCheckInDisabled} />
             {!isShortTerm && (
-              <p className="text-xs text-muted-foreground">
-                Move-in flexibility: up to {LONG_TERM_MOVE_IN_WINDOW_DAYS} days from listing start. First month is prorated by day.
+              <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", letterSpacing: "0.04em", marginTop: 6 }}>
+                Move-in flexibility: up to {LONG_TERM_MOVE_IN_WINDOW_DAYS} days from listing start. First month prorated by day.
               </p>
             )}
           </div>
 
+          {/* Check-out / Duration */}
           {isShortTerm ? (
-            <div className="space-y-1">
-              <Label>Check-out date * <span className="text-muted-foreground font-normal">(max {SHORT_TERM_MAX_DAYS} days)</span></Label>
+            <div>
+              <Label style={fieldLabelStyle as React.CSSProperties}>
+                Check-out date * (max {SHORT_TERM_MAX_DAYS} days)
+              </Label>
               <DatePicker
                 value={checkOut}
                 onChange={setCheckOut}
@@ -258,11 +283,11 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
               />
             </div>
           ) : (
-            <div className="space-y-1">
-              <Label>Duration *</Label>
+            <div>
+              <Label style={fieldLabelStyle as React.CSSProperties}>Duration *</Label>
               <Select value={durationMonths} onValueChange={setDurationMonths}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select number of months..." />
+                  <SelectValue placeholder="Select number of months…" />
                 </SelectTrigger>
                 <SelectContent>
                   {LONG_TERM_DURATIONS.map((m) => (
@@ -273,31 +298,35 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
                 </SelectContent>
               </Select>
               {checkIn && durationMonths && (
-                <p className="text-xs text-muted-foreground">
+                <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", letterSpacing: "0.04em", marginTop: 6 }}>
                   Check-out: {formatDate(computedCheckOut)}
                 </p>
               )}
             </div>
           )}
 
+          {/* Rent preview */}
           {activeListing && estimatedRent > 0 && (
-            <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm space-y-1.5">
-              <div className="flex justify-between text-muted-foreground">
-                <span>
+            <div style={{ border: "1px solid var(--ink-5)", padding: "10px 12px", background: "var(--surface-muted)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
                   {isShortTerm
                     ? `${formatThb(dailyRate)}/night × ${nights} nights`
                     : `${formatThb(monthlyRate)}/mo × ${durationMonths} ${parseInt(durationMonths) === 1 ? "month" : "months"}`}
                 </span>
-                <span className="font-semibold text-foreground">{formatThb(estimatedRent)}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700 }}>
+                  {formatThb(estimatedRent)}
+                </span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Estimated rent — exact amount confirmed by the system after booking.
+              <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", marginTop: 4 }}>
+                Estimated — exact amount confirmed after booking.
               </p>
             </div>
           )}
 
-          <div className="space-y-1">
-            <Label>Security deposit (THB) *</Label>
+          {/* Deposit */}
+          <div>
+            <Label style={fieldLabelStyle as React.CSSProperties}>Security deposit (THB) *</Label>
             <Input
               type="number"
               min="0"
@@ -305,19 +334,29 @@ function CreateBookingForm({ assetId }: { assetId: string }) {
               onChange={(e) => setDepositAmount(e.target.value)}
               placeholder="e.g. 50000"
             />
-            <p className="text-xs text-muted-foreground">
+            <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", letterSpacing: "0.04em", marginTop: 6 }}>
               Rent &amp; deposit invoices are generated automatically on creation.
             </p>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={() => navigate(`/manager/assets/${assetId}`)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createBooking.isPending || !canSubmit}>
-              {createBooking.isPending ? "Creating..." : "Create booking"}
-            </Button>
+          {/* Actions */}
+          <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
+            <button
+              className="adm-btn adm-btn--ghost"
+              onClick={() => navigate(`/manager/assets/${assetId}`)}
+            >
+              Cancel
+            </button>
+            <button
+              className="adm-btn adm-btn--ink"
+              onClick={handleSubmit}
+              disabled={createBooking.isPending || !canSubmit}
+            >
+              {createBooking.isPending ? "Creating…" : "Create booking"}
+            </button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

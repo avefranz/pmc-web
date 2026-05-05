@@ -1,69 +1,110 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
 import { useTicket } from "@/lib/hooks/use-tickets";
-import { ticketStatusColor, ticketPriorityColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { ticketKindIcon } from "@/lib/utils/ticket-status";
 import { formatRelative, formatDate } from "@/lib/utils/format";
 import { MessageVisibility } from "@/lib/types/enums";
+
+function ticketStatusBm(s: string) {
+  if (["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(s)) return "bm-status bm-status--neutral";
+  if (["Blocked", "Rejected"].includes(s)) return "bm-status bm-status--live";
+  if (["InProgress", "Approved"].includes(s)) return "bm-status bm-status--ok";
+  if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(s)) return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
+function priorityBm(p: string) {
+  if (p === "Urgent") return "bm-status bm-status--live";
+  if (p === "High")   return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
 
 export default function LandlordTicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: ticket, isLoading } = useTicket(id!);
 
-  if (isLoading) return <div className="p-4 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-40" /></div>;
-  if (!ticket) return <div className="p-4 text-muted-foreground">Ticket not found.</div>;
+  if (isLoading) {
+    return (
+      <div className="bm-page">
+        <Skeleton className="h-7 w-48 mb-3" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+  if (!ticket) return <div className="bm-page"><p className="bm-meta">Ticket not found.</p></div>;
 
   const publicMessages = ticket.messages.filter((m) => m.visibility === MessageVisibility.Public);
 
   return (
-    <div className="p-4 pb-6">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
-        <ArrowLeft className="h-4 w-4" /> Back
-      </button>
+    <div className="bm-page">
+      <button onClick={() => navigate(-1)} className="bm-pagehead__back">← Back</button>
 
-      <div className="flex items-start gap-3 mb-4">
-        <span className="text-3xl">{ticketKindIcon(ticket.kind)}</span>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-muted-foreground font-mono mb-1">{ticket.displayId}</p>
-          <h1 className="font-bold text-lg leading-tight">{ticket.title}</h1>
-          {ticket.assetName && <p className="text-sm text-muted-foreground mt-1">{ticket.assetName}</p>}
+      {/* Header */}
+      <div style={{ marginTop: 12, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <span style={{ fontSize: 28, lineHeight: 1 }}>{ticketKindIcon(ticket.kind)}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="bm-meta" style={{ marginBottom: 4 }}>{ticket.displayId}</p>
+            <h1 style={{
+              fontFamily: "var(--bm-sans)",
+              fontSize: 18,
+              fontWeight: 600,
+              lineHeight: 1.3,
+              marginBottom: 6,
+            }}>{ticket.title}</h1>
+            {ticket.assetName && <p className="bm-meta">{ticket.assetName}</p>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <span className={ticketStatusBm(ticket.status)}>{ticket.status}</span>
+          <span className={priorityBm(ticket.priority)}>{ticket.priority}</span>
+          <span className="bm-status bm-status--neutral">{ticket.kind}</span>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <Badge className={`border-0 ${ticketStatusColor(ticket.status)}`}>{ticket.status}</Badge>
-        <Badge className={`border-0 ${ticketPriorityColor(ticket.priority)}`}>{ticket.priority}</Badge>
-        <Badge className="border-0 bg-gray-100 text-gray-600">{ticket.kind}</Badge>
-      </div>
+      {/* Description */}
+      {ticket.description && (
+        <>
+          <div className="bm-divider">— Description</div>
+          <div className="bm-cell bm-cell--first">
+            <p style={{
+              fontFamily: "var(--bm-sans)",
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: "var(--bm-ink)",
+              whiteSpace: "pre-wrap",
+            }}>{ticket.description}</p>
+            <p className="bm-meta" style={{ marginTop: 8 }}>Created {formatDate(ticket.createdAt)}</p>
+          </div>
+        </>
+      )}
 
-      <Card className="mb-4">
-        <CardContent className="p-4 text-sm">
-          <p className="text-muted-foreground text-xs mb-1">Description</p>
-          <p className="whitespace-pre-wrap">{ticket.description || "—"}</p>
-          <p className="text-xs text-muted-foreground mt-3">{formatDate(ticket.createdAt)}</p>
-        </CardContent>
-      </Card>
-
-      <h2 className="font-semibold text-sm mb-3">Messages</h2>
-      <div className="space-y-2">
-        {publicMessages.length === 0 && (
-          <p className="text-sm text-muted-foreground">No messages yet.</p>
-        )}
-        {publicMessages.map((m) => (
-          <Card key={m.id}>
-            <CardContent className="p-3 text-sm">
-              <div className="flex justify-between mb-1">
-                <span className="font-medium text-xs">{m.authorName ?? "—"}</span>
-                <span className="text-xs text-muted-foreground">{formatRelative(m.createdAt)}</span>
-              </div>
-              <p className="whitespace-pre-wrap">{m.body}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Messages */}
+      <div className="bm-divider">— Messages</div>
+      {publicMessages.length === 0 ? (
+        <div className="bm-cell bm-cell--first">
+          <p className="bm-meta">No messages yet.</p>
+        </div>
+      ) : (
+        publicMessages.map((m, i) => (
+          <div key={m.id} className={`bm-cell${i === 0 ? " bm-cell--first" : ""}`}>
+            <div className="bm-cell__head">
+              <span style={{ fontFamily: "var(--bm-mono)", fontSize: 11, fontWeight: 600 }}>
+                {m.authorName ?? "—"}
+              </span>
+              <span className="bm-meta">{formatRelative(m.createdAt)}</span>
+            </div>
+            <p style={{
+              fontFamily: "var(--bm-sans)",
+              fontSize: 13,
+              lineHeight: 1.6,
+              marginTop: 4,
+              whiteSpace: "pre-wrap",
+            }}>{m.body}</p>
+          </div>
+        ))
+      )}
     </div>
   );
 }

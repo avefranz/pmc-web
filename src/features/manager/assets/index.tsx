@@ -1,80 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Plus, BedDouble, Bath, Users } from "lucide-react";
-import { PageHeader } from "@/components/shared/page-header";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Plus, BedDouble, Bath, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { CreatePropertyWizard } from "./create-wizard";
 import type { AssetDto } from "@/lib/types";
 
-const STATUS_STYLE: Record<string, { badge: string; dot: string; label: string }> = {
-  Occupied:       { badge: "bg-green-100 text-green-700", dot: "bg-green-500", label: "Occupied" },
-  Vacant:         { badge: "bg-gray-100 text-gray-600",  dot: "bg-gray-400",  label: "Vacant" },
-  ActionRequired: { badge: "bg-red-100 text-red-700",    dot: "bg-red-500",   label: "Action required" },
-};
-
-function OccupancyBadge({ status }: { status: AssetDto["occupancyStatus"] }) {
-  const s = STATUS_STYLE[status] ?? STATUS_STYLE.Vacant;
-  return (
-    <Badge className={`text-xs border-0 flex items-center gap-1 ${s.badge}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-      {s.label}
-    </Badge>
-  );
+function occupancyTag(status: AssetDto["occupancyStatus"]) {
+  if (status === "Occupied")       return "adm-tag adm-tag--success";
+  if (status === "ActionRequired") return "adm-tag adm-tag--danger";
+  return "adm-tag adm-tag--neutral";
 }
-
-function PropertyCard({ asset }: { asset: AssetDto }) {
-  return (
-    <Link to={`/manager/assets/${asset.id}`}>
-      <Card className="hover:shadow-md transition-all h-full group overflow-hidden">
-        {/* Photo or placeholder */}
-        <div className="h-40 bg-muted overflow-hidden relative">
-          {asset.primaryImageUrl ? (
-            <img
-              src={asset.primaryImageUrl}
-              alt={asset.internalName}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
-              <Building2 className="h-10 w-10 text-slate-300" />
-            </div>
-          )}
-          <div className="absolute top-2 right-2">
-            <OccupancyBadge status={asset.occupancyStatus} />
-          </div>
-        </div>
-
-        <CardContent className="p-4">
-          <h3 className="font-semibold text-sm mb-1 truncate">{asset.internalName}</h3>
-
-          {asset.currentTenantName ? (
-            <p className="text-xs text-muted-foreground mb-2 truncate">
-              {asset.currentTenantName}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground mb-2 italic">No tenant</p>
-          )}
-
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <BedDouble className="h-3 w-3" />{asset.bedrooms}
-            </span>
-            <span className="flex items-center gap-1">
-              <Bath className="h-3 w-3" />{asset.bathrooms}
-            </span>
-            <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" />max {asset.maxOccupancy}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
+function occupancyLabel(status: AssetDto["occupancyStatus"]) {
+  if (status === "ActionRequired") return "Action needed";
+  return status;
 }
 
 export default function AssetsPage() {
@@ -83,40 +22,98 @@ export default function AssetsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Properties"
-        description="Manage all your rental units and buildings."
-        action={
-          assets?.length ? (
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Add property
-            </Button>
-          ) : undefined
-        }
-      />
+      {/* ── PAGE HEAD ──────────────────────────────────────────────────────── */}
+      <div className="adm-pagehead">
+        <div>
+          <div className="adm-pagehead__eyebrow">Workspace · Properties</div>
+          <h1 className="adm-pagehead__title">Properties</h1>
+        </div>
+        <div className="adm-pagehead__actions">
+          <button className="adm-btn adm-btn--ink" onClick={() => setCreateOpen(true)}>
+            <Plus size={13} /> Add property
+          </button>
+        </div>
+      </div>
 
+      {/* ── LIST ───────────────────────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-52" />
-          ))}
+        <div className="adm-card">
+          <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+          </div>
         </div>
       ) : !assets?.length ? (
-        <EmptyState
-          icon={<Building2 className="h-10 w-10" />}
-          title="No properties yet"
-          description="Add your first property to start managing leases, tickets, and finances."
-          action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Add property
-            </Button>
-          }
-        />
+        <div className="adm-empty" style={{ marginTop: 0 }}>
+          <span style={{ fontSize: 28 }}>🏠</span>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>No properties yet</div>
+          <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
+            Add your first property to start managing leases, tickets, and finances.
+          </div>
+        </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {assets.map((asset) => (
-            <PropertyCard key={asset.id} asset={asset} />
-          ))}
+        <div className="adm-card">
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th style={{ width: 56 }}></th>
+                <th>Property</th>
+                <th>Specs</th>
+                <th>Tenant</th>
+                <th style={{ textAlign: "right" }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assets.map((asset) => (
+                <tr key={asset.id}>
+                  <td style={{ paddingLeft: 20, width: 56 }}>
+                    {asset.primaryImageUrl ? (
+                      <img
+                        src={asset.primaryImageUrl}
+                        alt={asset.internalName}
+                        style={{ width: 40, height: 40, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 40, height: 40, background: "var(--surface-muted)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 18,
+                      }}>🏠</div>
+                    )}
+                  </td>
+                  <td>
+                    <Link to={`/manager/assets/${asset.id}`} style={{ textDecoration: "none", display: "block" }}>
+                      <div className="adm-table__title">{asset.internalName}</div>
+                    </Link>
+                  </td>
+                  <td>
+                    <span style={{ display: "flex", alignItems: "center", gap: 12, fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <BedDouble size={11} />{asset.bedrooms}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <Bath size={11} />{asset.bathrooms}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <Users size={11} />max {asset.maxOccupancy}
+                      </span>
+                    </span>
+                  </td>
+                  <td>
+                    {asset.currentTenantName ? (
+                      <span className="adm-table__sub" style={{ fontStyle: "italic" }}>{asset.currentTenantName}</span>
+                    ) : (
+                      <span className="adm-table__num" style={{ color: "var(--ink-4)" }}>Vacant</span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: "right", paddingRight: 20 }}>
+                    <span className={occupancyTag(asset.occupancyStatus)}>
+                      {occupancyLabel(asset.occupancyStatus)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

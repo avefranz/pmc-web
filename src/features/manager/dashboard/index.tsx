@@ -1,22 +1,33 @@
 import { Link } from "react-router-dom";
-import { TrendingUp, TrendingDown, Building2, DollarSign, Plus } from "lucide-react";
-import { PageHeader } from "@/components/shared/page-header";
-import { StatCard } from "@/components/shared/stat-card";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { TrendingUp, TrendingDown, Building2, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { useFinanceOverview } from "@/lib/hooks/use-finance";
 import { useTickets } from "@/lib/hooks/use-tickets";
 import { useAssets } from "@/lib/hooks/use-assets";
-import { formatThb, formatRelative, changePercentColor } from "@/lib/utils/format";
-import { ticketPriorityColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { formatThb, formatRelative, formatDate } from "@/lib/utils/format";
+import { ticketKindIcon } from "@/lib/utils/ticket-status";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 const CLOSED_STATUSES = new Set(["Closed", "Completed", "Cancelled", "Canceled", "Verified"]);
-
 const PRIORITY_ORDER: Record<string, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+
+function priorityTag(p: string) {
+  if (p === "Urgent") return "adm-tag adm-tag--danger";
+  if (p === "High")   return "adm-tag adm-tag--warn";
+  if (p === "Normal") return "adm-tag adm-tag--neutral";
+  return "adm-tag adm-tag--neutral";
+}
+
+function occupancyTag(status: string) {
+  if (status === "Occupied")       return "adm-tag adm-tag--success";
+  if (status === "ActionRequired") return "adm-tag adm-tag--danger";
+  return "adm-tag adm-tag--neutral";
+}
+
+function occupancyLabel(status: string) {
+  if (status === "ActionRequired") return "Action needed";
+  return status;
+}
 
 export default function ManagerDashboard() {
   const { user } = useAuthStore();
@@ -28,163 +39,185 @@ export default function ManagerDashboard() {
     .filter((t) => !CLOSED_STATUSES.has(t.status))
     .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9));
 
-  const pctPositive = (overview?.changePercent ?? 0) >= 0;
+  const pct = overview?.changePercent ?? 0;
+  const pctUp = pct > 0;
+  const pctFlat = pct === 0;
+  const occupied = assets?.filter((a) => a.occupancyStatus === "Occupied").length ?? 0;
+  const todayStr = formatDate(new Date().toISOString());
 
   return (
     <div>
-      <PageHeader
-        title={`Welcome back${user?.firstName ? `, ${user.firstName}` : ""}`}
-        description="Here's what's happening across your properties."
-      />
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <StatCard
-          label="This month"
-          value={overviewLoading ? "—" : formatThb(overview?.currentMonthIncome ?? 0)}
-          sub={
-            overviewLoading
-              ? undefined
-              : `${pctPositive ? "+" : ""}${overview?.changePercent.toFixed(1)}% vs last month`
-          }
-          subColor={changePercentColor(overview?.changePercent ?? 0)}
-          icon={pctPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          loading={overviewLoading}
-          accent
-        />
-        <StatCard
-          label="Projected (EOM)"
-          value={overviewLoading ? "—" : formatThb(overview?.projectedEndOfMonth ?? 0)}
-          icon={<DollarSign className="h-4 w-4" />}
-          loading={overviewLoading}
-        />
-        <StatCard
-          label="Properties"
-          value={assetsLoading ? "—" : String(assets?.length ?? 0)}
-          sub={
-            assetsLoading
-              ? undefined
-              : `${assets?.filter((a) => a.occupancyStatus === "Occupied").length ?? 0} occupied`
-          }
-          icon={<Building2 className="h-4 w-4" />}
-          loading={assetsLoading}
-        />
+      {/* ── PAGE HEAD ──────────────────────────────────────────────────────── */}
+      <div className="adm-pagehead">
+        <div>
+          <div className="adm-pagehead__eyebrow">
+            {todayStr} · PMC Workspace
+          </div>
+          <h1 className="adm-pagehead__title">
+            {user?.firstName ? <>Good morning, <em>{user.firstName}</em></> : "Dashboard"}
+          </h1>
+        </div>
+        <div className="adm-pagehead__actions">
+          <Link to="/manager/tickets/new" className="adm-btn adm-btn--sm">
+            <Plus size={13} /> New ticket
+          </Link>
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Open Tickets */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center justify-between">
-              Open Tickets
-              <div className="flex items-center gap-2">
-                <Link to="/manager/tickets/new">
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                    <Plus className="h-3 w-3 mr-1" />New
-                  </Button>
-                </Link>
-                <Link to="/manager/tickets" className="text-sm font-normal text-primary hover:underline">
-                  View all
-                </Link>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {ticketsLoading ? (
-              <div className="p-6 space-y-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : !openTickets.length ? (
-              <EmptyState
-                icon="🎉"
-                title="All clear"
-                description="No open tickets right now."
-                className="py-10"
-              />
-            ) : (
-              <ul className="divide-y">
-                {openTickets.slice(0, 6).map((t) => (
-                  <li key={t.id}>
-                    <Link
-                      to={`/manager/tickets/${t.id}`}
-                      className="flex items-start gap-3 px-6 py-3 hover:bg-muted/50 transition-colors"
-                    >
-                      <span className="text-lg shrink-0 mt-0.5">{ticketKindIcon(t.kind)}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{t.title}</p>
-                        <p className="text-xs text-muted-foreground">{t.assetName}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge className={`text-xs ${ticketPriorityColor(t.priority)} border-0`}>
-                          {t.priority}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{formatRelative(t.createdAt)}</span>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      {/* ── KPI ROW ────────────────────────────────────────────────────────── */}
+      <div className="adm-kpi-row" style={{ marginBottom: 24 }}>
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">This month</div>
+          {overviewLoading
+            ? <Skeleton className="h-7 w-32 mt-1" />
+            : <div className="adm-kpi__value">{formatThb(overview?.currentMonthIncome ?? 0)}</div>
+          }
+          {!overviewLoading && (
+            <div className={`adm-kpi__delta ${pctFlat ? "adm-kpi__delta--flat" : pctUp ? "adm-kpi__delta--up" : "adm-kpi__delta--down"}`}>
+              {pctUp ? <TrendingUp size={11} /> : pctFlat ? null : <TrendingDown size={11} />}
+              {pct > 0 ? "+" : ""}{pct.toFixed(1)}% vs last month
+            </div>
+          )}
+        </div>
 
-        {/* Properties overview */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center justify-between">
-              Properties
-              <Link to="/manager/assets" className="text-sm font-normal text-primary hover:underline">
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">Projected (EOM)</div>
+          {overviewLoading
+            ? <Skeleton className="h-7 w-32 mt-1" />
+            : <div className="adm-kpi__value">{formatThb(overview?.projectedEndOfMonth ?? 0)}</div>
+          }
+        </div>
+
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">Properties</div>
+          {assetsLoading
+            ? <Skeleton className="h-7 w-16 mt-1" />
+            : <div className="adm-kpi__value">{assets?.length ?? 0}</div>
+          }
+          {!assetsLoading && (
+            <div className="adm-kpi__delta adm-kpi__delta--flat">
+              {occupied} occupied · {(assets?.length ?? 0) - occupied} vacant
+            </div>
+          )}
+        </div>
+
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">Open tickets</div>
+          {ticketsLoading
+            ? <Skeleton className="h-7 w-16 mt-1" />
+            : <div className="adm-kpi__value">{openTickets.length}</div>
+          }
+          {!ticketsLoading && openTickets.length > 0 && (
+            <div className="adm-kpi__delta adm-kpi__delta--down">
+              {openTickets.filter(t => t.priority === "Urgent" || t.priority === "High").length} high-priority
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 2-COL GRID ─────────────────────────────────────────────────────── */}
+      <div className="adm-2col-wide">
+
+        {/* Open Tickets ─────────────────────────────────────────── */}
+        <div className="adm-card">
+          <div className="adm-card__head">
+            <div>
+              <div className="adm-card__title">Open tickets</div>
+              {!ticketsLoading && openTickets.length > 0 && (
+                <div className="adm-card__sub">sorted by priority</div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Link to="/manager/tickets/new" className="adm-btn adm-btn--sm">
+                <Plus size={12} />New
+              </Link>
+              <Link to="/manager/tickets" className="adm-btn adm-btn--sm adm-btn--ghost">
                 View all
               </Link>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {assetsLoading ? (
-              <div className="p-6 space-y-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : !assets?.length ? (
-              <EmptyState
-                icon={<Building2 className="h-8 w-8" />}
-                title="No properties yet"
-                description="Add your first property to get started."
-                className="py-10"
-              />
-            ) : (
-              <ul className="divide-y">
-                {assets.slice(0, 6).map((a) => (
-                  <li key={a.id}>
-                    <Link
-                      to={`/manager/assets/${a.id}`}
-                      className="flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{a.internalName}</p>
-                        {a.currentTenantName && (
-                          <p className="text-xs text-muted-foreground">{a.currentTenantName}</p>
-                        )}
-                      </div>
-                      <Badge
-                        className={`text-xs border-0 ${
-                          a.occupancyStatus === "Occupied"
-                            ? "bg-green-100 text-green-700"
-                            : a.occupancyStatus === "ActionRequired"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {a.occupancyStatus}
-                      </Badge>
-                    </Link>
-                  </li>
+            </div>
+          </div>
+
+          {ticketsLoading ? (
+            <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : !openTickets.length ? (
+            <div className="adm-empty">
+              <span style={{ fontSize: 24 }}>🎉</span>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>All clear</div>
+              <div style={{ fontSize: 12 }}>No open tickets right now.</div>
+            </div>
+          ) : (
+            <table className="adm-table">
+              <tbody>
+                {openTickets.slice(0, 7).map((t) => (
+                  <tr key={t.id}>
+                    <td style={{ width: 28, paddingLeft: 20 }}>
+                      <span style={{ fontSize: 15 }}>{ticketKindIcon(t.kind)}</span>
+                    </td>
+                    <td>
+                      <Link to={`/manager/tickets/${t.id}`} style={{ textDecoration: "none", display: "block" }}>
+                        <div className="adm-table__title">{t.title}</div>
+                        <div className="adm-table__sub">{t.assetName}</div>
+                      </Link>
+                    </td>
+                    <td style={{ textAlign: "right", paddingRight: 8 }}>
+                      <span className={priorityTag(t.priority)}>{t.priority}</span>
+                    </td>
+                    <td style={{ textAlign: "right", paddingRight: 20 }}>
+                      <span className="adm-table__num">{formatRelative(t.createdAt)}</span>
+                    </td>
+                  </tr>
                 ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Properties ───────────────────────────────────────────── */}
+        <div className="adm-card">
+          <div className="adm-card__head">
+            <div className="adm-card__title">Properties</div>
+            <Link to="/manager/assets" className="adm-btn adm-btn--sm adm-btn--ghost">
+              View all
+            </Link>
+          </div>
+
+          {assetsLoading ? (
+            <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : !assets?.length ? (
+            <div className="adm-empty">
+              <Building2 size={24} style={{ opacity: 0.4 }} />
+              <div style={{ fontWeight: 500, fontSize: 14 }}>No properties yet</div>
+              <div style={{ fontSize: 12 }}>Add your first property to get started.</div>
+            </div>
+          ) : (
+            <table className="adm-table">
+              <tbody>
+                {assets.slice(0, 7).map((a) => (
+                  <tr key={a.id}>
+                    <td style={{ paddingLeft: 20 }}>
+                      <Link to={`/manager/assets/${a.id}`} style={{ textDecoration: "none", display: "block" }}>
+                        <div className="adm-table__title">{a.internalName}</div>
+                        {a.currentTenantName && (
+                          <div className="adm-table__sub">{a.currentTenantName}</div>
+                        )}
+                      </Link>
+                    </td>
+                    <td style={{ textAlign: "right", paddingRight: 20 }}>
+                      <span className={occupancyTag(a.occupancyStatus)}>
+                        {occupancyLabel(a.occupancyStatus)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
       </div>
     </div>
   );

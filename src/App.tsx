@@ -1,7 +1,8 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { AuthGuard } from "@/components/layout/auth-guard";
+import { AuthGuard, PublicOnlyGuard } from "@/components/layout/auth-guard";
 import { ManagerShell } from "@/components/layout/manager-shell";
 import { LandlordShell, TenantShell } from "@/components/layout/mobile-shell";
+import { MarketplaceShell } from "@/components/layout/marketplace-shell";
 
 // Auth pages
 import LoginPage from "@/pages/login";
@@ -32,6 +33,10 @@ import LandlordIncome from "@/features/landlord/income";
 import LandlordTickets from "@/features/landlord/tickets";
 import LandlordTicketDetail from "@/features/landlord/tickets/detail";
 
+// Marketplace pages
+import MarketplaceListingsPage from "@/features/marketplace/listings";
+import MarketplaceListingDetailPage from "@/features/marketplace/listings/detail";
+
 // Tenant pages
 import TenantHome from "@/features/tenant/home";
 import TenantTickets from "@/features/tenant/tickets";
@@ -41,14 +46,20 @@ import TenantInvoices from "@/features/tenant/invoices";
 export default function App() {
   return (
     <Routes>
-      {/* Public */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      {/* Public — redirect to portal if already logged in */}
+      <Route path="/login"    element={<PublicOnlyGuard><LoginPage /></PublicOnlyGuard>} />
+      <Route path="/register" element={<PublicOnlyGuard><RegisterPage /></PublicOnlyGuard>} />
       <Route path="/line-callback" element={<LineCallbackPage />} />
       <Route path="/role-router" element={<RoleRouterPage />} />
       <Route path="/invite" element={<InviteAcceptPage />} />
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
       <Route path="/no-access" element={<NoAccessPage />} />
+
+      {/* Public marketplace */}
+      <Route path="/listings" element={<MarketplaceShell />}>
+        <Route index element={<MarketplaceListingsPage />} />
+        <Route path=":id" element={<MarketplaceListingDetailPage />} />
+      </Route>
 
       {/* Manager (Admin) */}
       <Route
@@ -107,7 +118,7 @@ export default function App() {
       </Route>
 
       {/* Catch-all */}
-      <Route path="/" element={<Navigate to="/role-router" replace />} />
+      <Route path="/" element={<Navigate to="/listings" replace />} />
       <Route path="*" element={<Navigate to="/role-router" replace />} />
     </Routes>
   );

@@ -4,10 +4,7 @@ import {
   ArrowLeft, Plus, Trash2, Pencil, Wifi, Zap,
   ImagePlus, BedDouble, Bath, Users, X, AlertTriangle, Copy, Check, Link2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -33,16 +30,15 @@ import { UtilityType, RentalType, ListingStatus } from "@/lib/types/enums";
 import type { AmenityDto, ListingMediaDto } from "@/lib/types";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils/cn";
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function OccupancyBadge({ status }: { status: string }) {
-  const cls =
-    status === "Occupied" ? "bg-green-100 text-green-700" :
-    status === "ActionRequired" ? "bg-red-100 text-red-700" :
-    "bg-gray-100 text-gray-600";
-  return <Badge className={`border-0 ${cls}`}>{status}</Badge>;
+  const variant =
+    status === "Occupied" ? "adm-tag--success" :
+    status === "ActionRequired" ? "adm-tag--danger" :
+    "adm-tag--neutral";
+  return <span className={`adm-tag ${variant}`}>{status}</span>;
 }
 
 function Section({
@@ -50,8 +46,8 @@ function Section({
 }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-base">{title}</h2>
+      <div className="adm-card__head" style={{ marginBottom: 12 }}>
+        <div className="adm-card__title">{title}</div>
         {action}
       </div>
       {children}
@@ -108,7 +104,7 @@ function MediaSection({ listingId, media }: { listingId: string; media: ListingM
       <div>
         <div className="grid gap-2 grid-cols-4 sm:grid-cols-5 lg:grid-cols-6">
           {media.map((m) => (
-            <div key={m.id} className="aspect-video rounded-lg overflow-hidden bg-muted relative group">
+            <div key={m.id} style={{ aspectRatio: "16/9", overflow: "hidden", background: "var(--surface-muted)", position: "relative" }} className="group">
               {/* Click to view full size */}
               <img
                 src={m.url}
@@ -121,28 +117,30 @@ function MediaSection({ listingId, media }: { listingId: string; media: ListingM
               <button
                 onClick={(e) => { e.stopPropagation(); setConfirmId(m.id); }}
                 disabled={deleting === m.id}
-                className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-50"
+                style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, background: "rgba(0,0,0,0.65)", color: "white", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: 0 }}
+                className="group-hover:opacity-100"
               >
                 {deleting === m.id
-                  ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                  : <X className="h-3.5 w-3.5" />}
+                  ? <div style={{ width: 10, height: 10, border: "1.5px solid white", borderTopColor: "transparent", borderRadius: "50%" }} />
+                  : <X size={12} />}
               </button>
             </div>
           ))}
 
           {/* Upload button */}
           <label
-            className={cn(
-              "aspect-video rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors",
-              uploading && "opacity-50 pointer-events-none",
-            )}
+            style={{
+              opacity: uploading ? 0.5 : 1,
+              pointerEvents: uploading ? "none" : undefined,
+            }}
+            style={{ aspectRatio: "16/9", border: "1px dashed var(--ink-5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer" }}
           >
             {uploading ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
+              <div style={{ width: 18, height: 18, border: "2px solid var(--ink)", borderTopColor: "transparent", borderRadius: "50%" }} />
             ) : (
-              <ImagePlus className="h-5 w-5 text-muted-foreground/60" />
+              <ImagePlus size={18} style={{ color: "var(--ink-4)" }} />
             )}
-            <span className="text-xs text-muted-foreground">
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
               {uploading ? "Uploading…" : media.length === 0 ? "Add first photo" : "Add photo"}
             </span>
             <input
@@ -157,7 +155,7 @@ function MediaSection({ listingId, media }: { listingId: string; media: ListingM
         </div>
 
         {media.length === 0 && (
-          <p className="text-xs text-muted-foreground mt-2">
+          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginTop: 8 }}>
             Photos help tenants and landlords recognize the property at a glance.
           </p>
         )}
@@ -170,15 +168,15 @@ function MediaSection({ listingId, media }: { listingId: string; media: ListingM
           onClick={() => setLightboxUrl(null)}
         >
           <button
-            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            style={{ position: "absolute", right: 16, top: 16, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)", color: "white", padding: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setLightboxUrl(null)}
           >
-            <X className="h-5 w-5" />
+            <X size={18} />
           </button>
           <img
             src={lightboxUrl}
             alt="Full size preview"
-            className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+            style={{ maxHeight: "90vh", maxWidth: "90vw", objectFit: "contain" }}
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -190,24 +188,24 @@ function MediaSection({ listingId, media }: { listingId: string; media: ListingM
           <DialogHeader>
             <DialogTitle>Delete this photo?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
             This action cannot be undone.
           </p>
           <DialogFooter>
-            <Button
-              variant="outline"
+            <button
+              className="adm-btn adm-btn--ghost"
               onClick={() => setConfirmId(null)}
               disabled={!!deleting}
             >
               Cancel
-            </Button>
-            <Button
-              variant="destructive"
+            </button>
+            <button
+              className="adm-btn adm-btn--danger"
               disabled={!!deleting}
               onClick={() => confirmId && handleDelete(confirmId)}
             >
               {deleting ? "Deleting…" : "Delete"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -252,8 +250,8 @@ function AmenitiesSection({ listingId, listingAmenities }: { listingId: string; 
     }
   }
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading amenities…</p>;
-  if (!refAmenities?.length) return <p className="text-sm text-muted-foreground">No amenities configured.</p>;
+  if (isLoading) return <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>Loading amenities…</p>;
+  if (!refAmenities?.length) return <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No amenities configured.</p>;
 
   const presentList = refAmenities.filter((a) => presentSet.has(a.id));
 
@@ -261,29 +259,40 @@ function AmenitiesSection({ listingId, listingAmenities }: { listingId: string; 
     <>
       <div>
         {presentList.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No amenities selected.</p>
+          <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No amenities selected.</p>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {presentList.map((a) => (
               <span
                 key={a.id}
-                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  borderRadius: 4,
+                  background: "var(--surface-muted)",
+                  padding: "3px 8px",
+                  fontFamily: "var(--sans)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "var(--ink)",
+                }}
               >
                 {a.icon && [...a.icon].length <= 2 && (
-                  <span className="text-sm leading-none">{a.icon}</span>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>{a.icon}</span>
                 )}
                 {a.name}
               </span>
             ))}
           </div>
         )}
-        <div className="flex items-center justify-between mt-3">
-          <p className="text-xs text-muted-foreground">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
             {presentList.length} of {refAmenities.length} selected
           </p>
-          <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+          <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={() => setEditOpen(true)}>
             Edit amenities
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -519,7 +528,7 @@ export default function AssetDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-32 w-full" />
@@ -527,7 +536,7 @@ export default function AssetDetailPage() {
     );
   }
 
-  if (!asset) return <div className="text-muted-foreground">Property not found.</div>;
+  if (!asset) return <div style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>Property not found.</div>;
 
   const activeBooking = bookings?.find((b) => b.status === "Active");
   const upcomingBookings = bookings?.filter(
@@ -544,91 +553,125 @@ export default function AssetDetailPage() {
       title="Landlord"
       action={
         !landlord && !landlordLink ? (
-          <Button size="sm" variant="outline" onClick={handleGenerateLandlordInvite} disabled={generateInvite.isPending}>
+          <button
+            className="adm-btn adm-btn--ghost adm-btn--sm"
+            onClick={handleGenerateLandlordInvite}
+            disabled={generateInvite.isPending}
+          >
             <Link2 className="h-3.5 w-3.5 mr-1" />
             {generateInvite.isPending ? "Generating…" : "Invite"}
-          </Button>
+          </button>
         ) : undefined
       }
     >
       {landlord ? (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-bold shrink-0">
+        <div className="adm-card">
+          <div style={{ padding: 16 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div style={{
+                height: 36, width: 36, borderRadius: "50%",
+                background: "var(--surface-muted)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "var(--sans)", fontSize: 13, fontWeight: 700,
+                flexShrink: 0,
+              }}>
                 {((landlord.firstName ?? landlord.lineName ?? landlord.email ?? "?")[0]).toUpperCase()}
               </div>
-              <div className="flex-1 min-w-0 space-y-0.5">
-                <p className="font-semibold text-sm">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontFamily: "var(--sans)", fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
                   {landlord.firstName && landlord.lastName
                     ? `${landlord.firstName} ${landlord.lastName}`
                     : landlord.lineName ?? landlord.email ?? "Landlord"}
                 </p>
-                {landlord.email && <p className="text-xs text-muted-foreground">{landlord.email}</p>}
-                {landlord.lineName && <p className="text-xs text-muted-foreground">LINE: {landlord.lineName}</p>}
-                <p className="text-xs text-muted-foreground font-mono">{landlord.userId.slice(0, 8)}…</p>
+                {landlord.email && <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{landlord.email}</p>}
+                {landlord.lineName && <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>LINE: {landlord.lineName}</p>}
+                <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{landlord.userId.slice(0, 8)}…</p>
               </div>
-              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-7 w-7 shrink-0"
-                onClick={() => setUnlinkLandlordOpen(true)} title="Unlink">
+              <button
+                className="adm-btn adm-btn--icon adm-btn--danger"
+                style={{ height: 28, width: 28, flexShrink: 0 }}
+                onClick={() => setUnlinkLandlordOpen(true)}
+                title="Unlink"
+              >
                 <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              </button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : !landlordLink ? (
-        <p className="text-sm text-muted-foreground">No landlord linked.</p>
+        <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No landlord linked.</p>
       ) : null}
       {landlordLink && (
-        <Card className="border-green-200 bg-green-50">
-          <CardContent className="p-3 space-y-2.5">
-            <p className="text-xs text-muted-foreground">Expires {formatDate(landlordLink.expiresAt)}</p>
-            <div className="bg-white rounded px-2 py-1.5 border border-green-200 break-all">
-              <p className="text-xs font-mono text-gray-700">{landlordLink.link}</p>
+        <div className="adm-card" style={{ borderColor: "var(--success)", background: "color-mix(in srgb, var(--success) 8%, white)" }}>
+          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Expires {formatDate(landlordLink.expiresAt)}</p>
+            <div style={{
+              background: "white",
+              borderRadius: 4,
+              padding: "6px 8px",
+              border: "1px solid color-mix(in srgb, var(--success) 30%, transparent)",
+              wordBreak: "break-all",
+            }}>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>{landlordLink.link}</p>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleCopyLandlordLink} className="flex-1 bg-green-700 hover:bg-green-800 h-7 text-xs">
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="adm-btn adm-btn--ink adm-btn--sm"
+                style={{ flex: 1 }}
+                onClick={handleCopyLandlordLink}
+              >
                 {linkCopied ? <><Check className="h-3 w-3 mr-1" />Copied!</> : <><Copy className="h-3 w-3 mr-1" />Copy link</>}
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setLandlordLink(null)}>Dismiss</Button>
+              </button>
+              <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={() => setLandlordLink(null)}>Dismiss</button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </Section>
   );
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div style={{ maxWidth: 1152, display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Back */}
       <div>
         <Link to="/manager/assets">
-          <Button variant="ghost" size="sm">
+          <button className="adm-btn adm-btn--ghost adm-btn--sm">
             <ArrowLeft className="h-4 w-4 mr-1" />Properties
-          </Button>
+          </button>
         </Link>
       </div>
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div>
-          <h1 className="text-2xl font-bold">{asset.internalName}</h1>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1.5">
-            <span className="flex items-center gap-1"><BedDouble className="h-3.5 w-3.5" />{asset.bedrooms} bed</span>
-            <span className="flex items-center gap-1"><Bath className="h-3.5 w-3.5" />{asset.bathrooms} bath</span>
-            <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />max {asset.maxOccupancy}</span>
+          <h1 style={{ fontFamily: "var(--sans)", fontSize: 22, fontWeight: 700, color: "var(--ink)" }}>{asset.internalName}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)", marginTop: 6 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><BedDouble className="h-3.5 w-3.5" />{asset.bedrooms} bed</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Bath className="h-3.5 w-3.5" />{asset.bathrooms} bath</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Users className="h-3.5 w-3.5" />max {asset.maxOccupancy}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <OccupancyBadge status={asset.occupancyStatus} />
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteOpen(true)}>
+          <button
+            className="adm-btn adm-btn--icon adm-btn--danger"
+            onClick={() => setDeleteOpen(true)}
+          >
             <Trash2 className="h-4 w-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* ── Photos — full width ── */}
       {listing && (
-        <Section title="Photos" action={<span className="text-xs text-muted-foreground">{listing.media.length} photo{listing.media.length !== 1 ? "s" : ""}</span>}>
+        <Section
+          title="Photos"
+          action={
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
+              {listing.media.length} photo{listing.media.length !== 1 ? "s" : ""}
+            </span>
+          }
+        >
           <MediaSection listingId={listing.id} media={listing.media} />
         </Section>
       )}
@@ -637,7 +680,7 @@ export default function AssetDetailPage() {
       <div className="grid grid-cols-[3fr_2fr] gap-6 items-start">
 
         {/* ── LEFT: operational ── */}
-        <div className="space-y-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
           {/* Booking */}
           <Section
@@ -645,57 +688,59 @@ export default function AssetDetailPage() {
             action={
               landlord ? (
                 <Link to={`/manager/bookings/new?assetId=${id}`}>
-                  <Button size="sm"><Plus className="h-4 w-4 mr-1" />New booking</Button>
+                  <button className="adm-btn adm-btn--ink adm-btn--sm">
+                    <Plus className="h-4 w-4 mr-1" />New booking
+                  </button>
                 </Link>
               ) : (
-                <span className="text-xs text-muted-foreground">No landlord linked</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>No landlord linked</span>
               )
             }
           >
             {activeBooking ? (
-              <div className="space-y-2">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Link to={`/manager/bookings/${activeBooking.id}`}>
-                  <Card className="border-green-200 bg-green-50 hover:shadow-sm transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge className="bg-green-100 text-green-700 border-0 text-xs shrink-0">Active</Badge>
-                            <span className="font-semibold text-sm truncate">{activeBooking.tenantName ?? "No tenant"}</span>
+                  <div className="adm-card" style={{ borderColor: "var(--success)", background: "color-mix(in srgb, var(--success) 8%, white)", cursor: "pointer" }}>
+                    <div style={{ padding: 16 }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span className="adm-tag adm-tag--success" style={{ fontSize: 11, flexShrink: 0 }}>Active</span>
+                            <span style={{ fontFamily: "var(--sans)", fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeBooking.tenantName ?? "No tenant"}</span>
                           </div>
-                          <p className="text-xs text-muted-foreground">
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
                             {formatDate(activeBooking.checkInDate)} → {formatDate(activeBooking.checkOutDate)}
                           </p>
                           {activeBooking.daysRemaining != null && (
-                            <p className="text-xs font-medium text-green-700 mt-0.5">{activeBooking.daysRemaining} days remaining</p>
+                            <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 12, color: "var(--success)", marginTop: 2 }}>{activeBooking.daysRemaining} days remaining</p>
                           )}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-bold text-base">{formatThb(activeBooking.rentAmount)}</p>
-                          <p className="text-xs text-muted-foreground">total</p>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 16 }}>{formatThb(activeBooking.rentAmount)}</p>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>total</p>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 </Link>
                 {upcomingBookings.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1.5 mt-2">Upcoming</p>
-                    <div className="space-y-1.5">
+                    <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 12, color: "var(--ink-3)", marginBottom: 6, marginTop: 8 }}>Upcoming</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {upcomingBookings.map((b) => (
                         <Link key={b.id} to={`/manager/bookings/${b.id}`}>
-                          <Card className="hover:shadow-sm transition-shadow">
-                            <CardContent className="p-3 flex items-center justify-between">
+                          <div className="adm-card" style={{ cursor: "pointer" }}>
+                            <div style={{ padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                               <div>
-                                <p className="text-sm font-medium">{b.tenantName ?? "No tenant"}</p>
-                                <p className="text-xs text-muted-foreground">{formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}</p>
+                                <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 13 }}>{b.tenantName ?? "No tenant"}</p>
+                                <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}</p>
                               </div>
-                              <div className="text-right">
-                                <Badge className="border-0 bg-blue-100 text-blue-700 text-xs">{b.status}</Badge>
-                                <p className="text-xs text-muted-foreground mt-0.5">{formatThb(b.rentAmount)} total</p>
+                              <div style={{ textAlign: "right" }}>
+                                <span className="adm-tag adm-tag--ink" style={{ fontSize: 11 }}>{b.status}</span>
+                                <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>{formatThb(b.rentAmount)} total</p>
                               </div>
-                            </CardContent>
-                          </Card>
+                            </div>
+                          </div>
                         </Link>
                       ))}
                     </div>
@@ -703,46 +748,52 @@ export default function AssetDetailPage() {
                 )}
               </div>
             ) : upcomingBookings.length > 0 ? (
-              <div className="space-y-1.5">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {upcomingBookings.map((b) => (
                   <Link key={b.id} to={`/manager/bookings/${b.id}`}>
-                    <Card className="hover:shadow-sm transition-shadow">
-                      <CardContent className="p-3 flex items-center justify-between">
+                    <div className="adm-card" style={{ cursor: "pointer" }}>
+                      <div style={{ padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <div>
-                          <p className="text-sm font-medium">{b.tenantName ?? "No tenant"}</p>
-                          <p className="text-xs text-muted-foreground">{formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}</p>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 13 }}>{b.tenantName ?? "No tenant"}</p>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}</p>
                         </div>
-                        <div className="text-right">
-                          <Badge className="border-0 bg-blue-100 text-blue-700 text-xs">{b.status}</Badge>
-                          <p className="text-xs text-muted-foreground mt-0.5">{formatThb(b.rentAmount)}/mo</p>
+                        <div style={{ textAlign: "right" }}>
+                          <span className="adm-tag adm-tag--ink" style={{ fontSize: 11 }}>{b.status}</span>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>{formatThb(b.rentAmount)}/mo</p>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   </Link>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No bookings yet.</p>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No bookings yet.</p>
             )}
           </Section>
 
           {/* Financial */}
           {summary && (
-            <div className="grid grid-cols-3 gap-3">
-              <Card><CardContent className="p-4">
-                <p className="text-xs text-muted-foreground mb-1">Revenue</p>
-                <p className="text-lg font-bold">{formatThb(summary.totalRevenue)}</p>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <p className="text-xs text-muted-foreground mb-1">Expenses</p>
-                <p className="text-lg font-bold">{formatThb(summary.totalExpenses)}</p>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <p className="text-xs text-muted-foreground mb-1">Net profit</p>
-                <p className={`text-lg font-bold ${summary.netProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                  {formatThb(summary.netProfit)}
-                </p>
-              </CardContent></Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div className="adm-card">
+                <div style={{ padding: 16 }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 4 }}>Revenue</p>
+                  <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 18 }}>{formatThb(summary.totalRevenue)}</p>
+                </div>
+              </div>
+              <div className="adm-card">
+                <div style={{ padding: 16 }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 4 }}>Expenses</p>
+                  <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 18 }}>{formatThb(summary.totalExpenses)}</p>
+                </div>
+              </div>
+              <div className="adm-card">
+                <div style={{ padding: 16 }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 4 }}>Net profit</p>
+                  <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 18, color: summary.netProfit >= 0 ? "var(--success)" : "var(--danger)" }}>
+                    {formatThb(summary.netProfit)}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -751,30 +802,32 @@ export default function AssetDetailPage() {
             title="Tickets"
             action={
               <Link to={`/manager/tickets/new?assetId=${id}`}>
-                <Button size="sm" variant="outline"><Plus className="h-4 w-4 mr-1" />New ticket</Button>
+                <button className="adm-btn adm-btn--ghost adm-btn--sm">
+                  <Plus className="h-4 w-4 mr-1" />New ticket
+                </button>
               </Link>
             }
           >
             {!openTickets.length ? (
-              <p className="text-sm text-muted-foreground">No open tickets.</p>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No open tickets.</p>
             ) : (
-              <div className="space-y-1.5">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {openTickets.slice(0, 5).map((t) => (
                   <Link key={t.id} to={`/manager/tickets/${t.id}`}>
-                    <Card className="hover:shadow-sm transition-shadow">
-                      <CardContent className="p-3 flex items-center gap-3">
-                        <span className="text-base">{ticketKindIcon(t.kind)}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{t.title}</p>
-                          <p className="text-xs text-muted-foreground">{t.displayId}</p>
+                    <div className="adm-card" style={{ cursor: "pointer" }}>
+                      <div style={{ padding: 12, display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 16 }}>{ticketKindIcon(t.kind)}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title}</p>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{t.displayId}</p>
                         </div>
-                        <Badge className={`text-xs border-0 ${ticketStatusColor(t.status)}`}>{t.status}</Badge>
-                      </CardContent>
-                    </Card>
+                        <span className={`adm-tag ${ticketStatusColor(t.status)}`} style={{ fontSize: 11 }}>{t.status}</span>
+                      </div>
+                    </div>
                   </Link>
                 ))}
                 {openTickets.length > 5 && (
-                  <p className="text-xs text-muted-foreground text-center pt-1">+{openTickets.length - 5} more</p>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", textAlign: "center", paddingTop: 4 }}>+{openTickets.length - 5} more</p>
                 )}
               </div>
             )}
@@ -782,7 +835,7 @@ export default function AssetDetailPage() {
         </div>
 
         {/* ── RIGHT: property info ── */}
-        <div className="space-y-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
           {/* Rental details */}
           <Section
@@ -790,84 +843,99 @@ export default function AssetDetailPage() {
             action={listing && (
               listing.status === ListingStatus.Draft
                 ? (
-                  <Button size="sm" onClick={openPublishDialog}>
+                  <button className="adm-btn adm-btn--ink adm-btn--sm" onClick={openPublishDialog}>
                     Publish listing
-                  </Button>
+                  </button>
                 )
                 : listing.isEditable
-                ? <Button size="sm" variant="outline" onClick={openEditSettings}><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Button>
+                ? (
+                  <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={openEditSettings}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                  </button>
+                )
                 : (
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => setNewVersionConfirmOpen(true)}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={() => setNewVersionConfirmOpen(true)}>
                       <Plus className="h-3.5 w-3.5 mr-1" />New version
-                    </Button>
+                    </button>
                     {activeBooking && (
-                      <Button size="sm" variant="outline" onClick={() => setHotfixOpen(true)}>
+                      <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={() => setHotfixOpen(true)}>
                         Hotfix
-                      </Button>
+                      </button>
                     )}
                   </div>
                 )
             )}
           >
             {listing ? (
-              <Card>
-                <CardContent className="p-4 space-y-3 text-sm">
-                  <div className="flex items-start justify-between gap-2">
+              <div className="adm-card">
+                <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                     <div>
                       {listing.rentalType === RentalType.ShortTerm ? (
                         <>
-                          <p className="text-xs text-muted-foreground mb-0.5">Nightly rate</p>
-                          <p className="font-bold text-xl">{formatThb(listing.basePrice)}<span className="text-sm font-normal text-muted-foreground">/night</span></p>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 2 }}>Nightly rate</p>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 20 }}>
+                            {formatThb(listing.basePrice)}
+                            <span style={{ fontFamily: "var(--sans)", fontWeight: 400, fontSize: 13, color: "var(--ink-3)" }}>/night</span>
+                          </p>
                         </>
                       ) : (
                         <>
-                          <p className="text-xs text-muted-foreground mb-0.5">Monthly rent</p>
-                          <p className="font-bold text-xl">
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 2 }}>Monthly rent</p>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 700, fontSize: 20 }}>
                             {listing.baseMonthlyRate != null ? formatThb(listing.baseMonthlyRate) : formatThb(listing.basePrice)}
-                            <span className="text-sm font-normal text-muted-foreground">/mo</span>
+                            <span style={{ fontFamily: "var(--sans)", fontWeight: 400, fontSize: 13, color: "var(--ink-3)" }}>/mo</span>
                           </p>
                         </>
                       )}
                     </div>
-                    <Badge className="border-0 bg-muted text-muted-foreground text-xs shrink-0">
+                    <span className="adm-tag adm-tag--neutral" style={{ fontSize: 11, flexShrink: 0 }}>
                       {listing.rentalType === RentalType.ShortTerm ? "Short term" : "Long term"}
-                    </Badge>
+                    </span>
                   </div>
                   {(!isRealDate(listing.startDate) || !isRealDate(listing.endDate)) && (
-                    <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2">
-                      <p className="text-xs text-amber-700 font-medium">No validity period set</p>
-                      <p className="text-xs text-amber-600 mt-0.5">Bookings cannot be created until a validity period is set. Dates are set when you publish.</p>
+                    <div style={{
+                      borderRadius: 6,
+                      background: "color-mix(in srgb, var(--warning) 10%, white)",
+                      border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)",
+                      padding: "8px 12px",
+                    }}>
+                      <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 12, color: "var(--warning)" }}>No validity period set</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>Bookings cannot be created until a validity period is set. Dates are set when you publish.</p>
                     </div>
                   )}
                   {isRealDate(listing.startDate) && isRealDate(listing.endDate) && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span>Valid:</span>
-                      <span className="font-medium text-foreground">{formatDate(listing.startDate)} → {formatDate(listing.endDate)}</span>
+                    <div className="adm-kv">
+                      <span className="adm-kv__k">Valid</span>
+                      <span className="adm-kv__v">{formatDate(listing.startDate)} → {formatDate(listing.endDate)}</span>
                     </div>
                   )}
                   {listing.status === ListingStatus.Draft && (
-                    <p className="text-xs text-amber-600 font-medium">Draft — publish to make available for bookings.</p>
+                    <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 12, color: "var(--warning)" }}>Draft — publish to make available for bookings.</p>
                   )}
                   {listing.description && (
                     <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">Description</p>
-                      <p className="text-muted-foreground text-xs leading-relaxed line-clamp-3">{listing.description}</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginBottom: 2 }}>Description</p>
+                      <p style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{listing.description}</p>
                     </div>
                   )}
                   {(listing.wifiName || listing.wifiPassword) && (
-                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-muted/50">
-                      <Wifi className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      padding: 10, borderRadius: 6, background: "var(--surface-muted)",
+                    }}>
+                      <Wifi className="h-3.5 w-3.5" style={{ flexShrink: 0, marginTop: 2, color: "var(--ink-3)" }} />
                       <div>
-                        <p className="text-xs font-medium">{listing.wifiName}</p>
-                        {listing.wifiPassword && <p className="text-xs text-muted-foreground">{listing.wifiPassword}</p>}
+                        <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 12 }}>{listing.wifiName}</p>
+                        {listing.wifiPassword && <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{listing.wifiPassword}</p>}
                       </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Not configured.</p>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>Not configured.</p>
             )}
           </Section>
 
@@ -877,28 +945,35 @@ export default function AssetDetailPage() {
           {/* Utilities */}
           <Section
             title="Utilities"
-            action={<Button size="sm" variant="outline" onClick={() => setAddUtilityOpen(true)}><Plus className="h-4 w-4 mr-1" />Add</Button>}
+            action={
+              <button className="adm-btn adm-btn--ghost adm-btn--sm" onClick={() => setAddUtilityOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />Add
+              </button>
+            }
           >
             {!utilities?.length ? (
-              <p className="text-sm text-muted-foreground">No utility contracts.</p>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>No utility contracts.</p>
             ) : (
-              <div className="space-y-1.5">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {utilities.map((u) => (
-                  <Card key={u.id}>
-                    <CardContent className="p-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                  <div key={u.id} className="adm-card">
+                    <div style={{ padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Zap className="h-3.5 w-3.5" style={{ color: "var(--ink-3)" }} />
                         <div>
-                          <p className="text-sm font-medium">{u.utilityType}</p>
-                          <p className="text-xs text-muted-foreground">{u.providerName} · {u.accountNumber}</p>
+                          <p style={{ fontFamily: "var(--sans)", fontWeight: 500, fontSize: 13 }}>{u.utilityType}</p>
+                          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{u.providerName} · {u.accountNumber}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-7 w-7"
-                        onClick={() => deleteUtility.mutate(u.id)}>
+                      <button
+                        className="adm-btn adm-btn--icon adm-btn--danger"
+                        style={{ height: 28, width: 28 }}
+                        onClick={() => deleteUtility.mutate(u.id)}
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </CardContent>
-                  </Card>
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -917,21 +992,21 @@ export default function AssetDetailPage() {
       {/* ── Listing history — full width ── */}
       {listings && listings.length > 1 && (
         <Section title="Listing history">
-          <div className="space-y-1.5">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {listings
               .filter((l) => l.id !== listing?.id)
               .map((l) => {
-                const statusColor =
-                  l.status === ListingStatus.Active ? "bg-green-100 text-green-700" :
-                  l.status === ListingStatus.Draft ? "bg-yellow-100 text-yellow-700" :
-                  "bg-gray-100 text-gray-500";
+                const tagVariant =
+                  l.status === ListingStatus.Active ? "adm-tag--success" :
+                  l.status === ListingStatus.Draft ? "adm-tag--warn" :
+                  "adm-tag--neutral";
                 return (
-                  <Card key={l.id}>
-                    <CardContent className="p-3 flex items-center gap-4 text-sm">
-                      <Badge className={`border-0 text-xs shrink-0 ${statusColor}`}>{l.status}</Badge>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{l.title}</p>
-                        <p className="text-xs text-muted-foreground">
+                  <div key={l.id} className="adm-card">
+                    <div style={{ padding: 12, display: "flex", alignItems: "center", gap: 16, fontSize: 13 }}>
+                      <span className={`adm-tag ${tagVariant}`} style={{ fontSize: 11, flexShrink: 0 }}>{l.status}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontFamily: "var(--sans)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</p>
+                        <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
                           {l.rentalType === RentalType.ShortTerm
                             ? `${formatThb(l.basePrice)}/night`
                             : l.baseMonthlyRate != null
@@ -941,10 +1016,10 @@ export default function AssetDetailPage() {
                         </p>
                       </div>
                       {l.publishedAt && (
-                        <p className="text-xs text-muted-foreground shrink-0">Published {formatDate(l.publishedAt)}</p>
+                        <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", flexShrink: 0 }}>Published {formatDate(l.publishedAt)}</p>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 );
               })}
           </div>
@@ -981,7 +1056,7 @@ export default function AssetDetailPage() {
                       onChange={(e) => setEditPrice(Number(e.target.value))}
                       placeholder="e.g. 2500"
                     />
-                    <p className="text-xs text-muted-foreground">Price per night × number of nights = rent</p>
+                    <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Price per night × number of nights = rent</p>
                   </>
                 ) : (
                   <>
@@ -992,7 +1067,7 @@ export default function AssetDetailPage() {
                       onChange={(e) => setEditMonthlyPrice(Number(e.target.value))}
                       placeholder="e.g. 50000"
                     />
-                    <p className="text-xs text-muted-foreground">Divided by 30 to calculate daily rate</p>
+                    <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Divided by 30 to calculate daily rate</p>
                   </>
                 )}
               </div>
@@ -1028,10 +1103,10 @@ export default function AssetDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditSettingsOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveSettings} disabled={saving}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setEditSettingsOpen(false)}>Cancel</button>
+            <button className="adm-btn adm-btn--ink" onClick={handleSaveSettings} disabled={saving}>
               {saving ? "Saving…" : "Save"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1040,20 +1115,20 @@ export default function AssetDetailPage() {
       <Dialog open={publishConfirmOpen} onOpenChange={setPublishConfirmOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Publish listing?</DialogTitle></DialogHeader>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Publishing makes this listing <span className="font-medium text-foreground">active</span> — it becomes available for new bookings immediately.</p>
-            <p>If there is already an active listing for this property, it will be <span className="font-medium text-foreground">superseded</span> (archived) and replaced by this version.</p>
+          <div className="space-y-3" style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
+            <p>Publishing makes this listing <span style={{ fontWeight: 500, color: "var(--ink)" }}>active</span> — it becomes available for new bookings immediately.</p>
+            <p>If there is already an active listing for this property, it will be <span style={{ fontWeight: 500, color: "var(--ink)" }}>superseded</span> (archived) and replaced by this version.</p>
             <div className="space-y-2">
               <Label className="text-foreground">Validity period <span className="text-destructive">*</span></Label>
               {isListingLongTerm ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Start date</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Start date</p>
                       <DatePicker value={publishStartDate} onChange={setPublishStartDate} placeholder="Start date" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Duration</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Duration</p>
                       <Select value={publishDurationMonths} onValueChange={setPublishDurationMonths}>
                         <SelectTrigger><SelectValue placeholder="Months..." /></SelectTrigger>
                         <SelectContent>
@@ -1067,7 +1142,7 @@ export default function AssetDetailPage() {
                     </div>
                   </div>
                   {publishStartDate && publishDurationMonths && (
-                    <p className="text-xs text-muted-foreground">
+                    <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
                       Valid until: {formatDate(computedPublishEndDate)}
                     </p>
                   )}
@@ -1078,14 +1153,18 @@ export default function AssetDetailPage() {
                   <DatePicker value={publishEndDate} onChange={setPublishEndDate} placeholder="End date" />
                 </div>
               )}
-              <p className="text-xs">Bookings can only be created within this window.</p>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Bookings can only be created within this window.</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPublishConfirmOpen(false)}>Cancel</Button>
-            <Button onClick={handlePublish} disabled={publishListing.isPending || !publishStartDate || (isListingLongTerm ? !publishDurationMonths : !publishEndDate)}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setPublishConfirmOpen(false)}>Cancel</button>
+            <button
+              className="adm-btn adm-btn--ink"
+              onClick={handlePublish}
+              disabled={publishListing.isPending || !publishStartDate || (isListingLongTerm ? !publishDurationMonths : !publishEndDate)}
+            >
               {publishListing.isPending ? "Publishing…" : "Publish"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1094,16 +1173,16 @@ export default function AssetDetailPage() {
       <Dialog open={newVersionConfirmOpen} onOpenChange={setNewVersionConfirmOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Create new version?</DialogTitle></DialogHeader>
-          <div className="space-y-2 text-sm text-muted-foreground">
-            <p>This creates a <span className="font-medium text-foreground">draft copy</span> of the current listing that you can freely edit.</p>
+          <div className="space-y-2" style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
+            <p>This creates a <span style={{ fontWeight: 500, color: "var(--ink)" }}>draft copy</span> of the current listing that you can freely edit.</p>
             <p>The current listing stays active until you publish the new version. Once published, the new version replaces the old one for future bookings.</p>
-            <p>Existing bookings are <span className="font-medium text-foreground">not affected</span>.</p>
+            <p>Existing bookings are <span style={{ fontWeight: 500, color: "var(--ink)" }}>not affected</span>.</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewVersionConfirmOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateNewVersion} disabled={createNewVersion.isPending}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setNewVersionConfirmOpen(false)}>Cancel</button>
+            <button className="adm-btn adm-btn--ink" onClick={handleCreateNewVersion} disabled={createNewVersion.isPending}>
               {createNewVersion.isPending ? "Creating…" : "Create draft"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1112,7 +1191,7 @@ export default function AssetDetailPage() {
       <Dialog open={hotfixOpen} onOpenChange={setHotfixOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Apply hotfix</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
             This listing is frozen due to an active booking. A hotfix applies a minor correction without creating a new version.
           </p>
           <div className="space-y-1">
@@ -1125,10 +1204,10 @@ export default function AssetDetailPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setHotfixOpen(false)}>Cancel</Button>
-            <Button onClick={handleHotfix} disabled={hotfixSaving || !hotfixReason.trim()}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setHotfixOpen(false)}>Cancel</button>
+            <button className="adm-btn adm-btn--ink" onClick={handleHotfix} disabled={hotfixSaving || !hotfixReason.trim()}>
               {hotfixSaving ? "Applying…" : "Apply"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1163,10 +1242,10 @@ export default function AssetDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddUtilityOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddUtility} disabled={createUtility.isPending}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setAddUtilityOpen(false)}>Cancel</button>
+            <button className="adm-btn adm-btn--ink" onClick={handleAddUtility} disabled={createUtility.isPending}>
               {createUtility.isPending ? "Adding…" : "Add"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1180,9 +1259,9 @@ export default function AssetDetailPage() {
               Unlink landlord
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
             Remove{" "}
-            <span className="font-semibold text-foreground">
+            <span style={{ fontWeight: 600, color: "var(--ink)" }}>
               {landlord?.firstName && landlord?.lastName
                 ? `${landlord.firstName} ${landlord.lastName}`
                 : landlord?.email ?? "this landlord"}
@@ -1190,11 +1269,11 @@ export default function AssetDetailPage() {
             from the property? They will lose access. You can re-invite them afterwards.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUnlinkLandlordOpen(false)} disabled={unlinkLandlord.isPending}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setUnlinkLandlordOpen(false)} disabled={unlinkLandlord.isPending}>
               Cancel
-            </Button>
-            <Button
-              variant="destructive"
+            </button>
+            <button
+              className="adm-btn adm-btn--danger"
               disabled={unlinkLandlord.isPending}
               onClick={async () => {
                 try {
@@ -1207,7 +1286,7 @@ export default function AssetDetailPage() {
               }}
             >
               {unlinkLandlord.isPending ? "Removing…" : "Remove"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1221,22 +1300,22 @@ export default function AssetDetailPage() {
               Delete property
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p style={{ fontFamily: "var(--sans)", fontSize: 13, color: "var(--ink-3)" }}>
             Are you sure you want to delete{" "}
-            <span className="font-semibold text-foreground">{asset.internalName}</span>?
+            <span style={{ fontWeight: 600, color: "var(--ink)" }}>{asset.internalName}</span>?
             This action cannot be undone.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleteAsset.isPending}>
+            <button className="adm-btn adm-btn--ghost" onClick={() => setDeleteOpen(false)} disabled={deleteAsset.isPending}>
               Cancel
-            </Button>
-            <Button
-              variant="destructive"
+            </button>
+            <button
+              className="adm-btn adm-btn--danger"
               onClick={handleDeleteAsset}
               disabled={deleteAsset.isPending}
             >
               {deleteAsset.isPending ? "Deleting…" : "Delete"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

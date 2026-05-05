@@ -1,15 +1,36 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAsset, useAssetSummary } from "@/lib/hooks/use-assets";
 import { useBookingsByAsset } from "@/lib/hooks/use-bookings";
 import { useTicketsByAsset } from "@/lib/hooks/use-tickets";
 import { formatThb, formatDate } from "@/lib/utils/format";
-import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { ticketKindIcon } from "@/lib/utils/ticket-status";
+
+function bookingStatusBm(s: string) {
+  if (s === "Active") return "bm-status bm-status--ok";
+  if (s === "Confirmed") return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
+function ticketStatusBm(s: string) {
+  if (["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(s)) return "bm-status bm-status--neutral";
+  if (["Blocked", "Rejected"].includes(s)) return "bm-status bm-status--live";
+  if (["InProgress", "Approved"].includes(s)) return "bm-status bm-status--ok";
+  if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(s)) return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
+function occupancyBm(s: string) {
+  if (s === "Occupied") return "bm-status bm-status--ok";
+  if (s === "ActionRequired") return "bm-status bm-status--live";
+  return "bm-status bm-status--neutral";
+}
+
+function occupancyLabel(s: string) {
+  if (s === "ActionRequired") return "Action needed";
+  return s;
+}
 
 export default function LandlordAssetDetail() {
   const { id } = useParams<{ id: string }>();
@@ -17,118 +38,111 @@ export default function LandlordAssetDetail() {
   const { data: summary } = useAssetSummary(id!);
   const { data: bookings } = useBookingsByAsset(id!);
   const { data: tickets } = useTicketsByAsset(id!);
+  const [tab, setTab] = useState<"bookings" | "tickets">("bookings");
 
   if (isLoading) {
     return (
-      <div className="p-4 space-y-3">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-16 w-full" />
+      <div className="bm-page">
+        <Skeleton className="h-7 w-48 mb-3" />
+        <Skeleton className="h-20 w-full mb-3" />
+        <Skeleton className="h-14 w-full" />
       </div>
     );
   }
 
-  if (!asset) return <div className="p-4 text-muted-foreground">Not found.</div>;
+  if (!asset) return <div className="bm-page"><p className="bm-meta">Not found.</p></div>;
 
   return (
-    <div className="p-4 pb-6">
-      <Link to="/landlord" className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
-        <ArrowLeft className="h-4 w-4" /> Back
-      </Link>
+    <div className="bm-page">
+      {/* Back */}
+      <Link to="/landlord" className="bm-pagehead__back">← Portfolio</Link>
 
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-bold">{asset.internalName}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {asset.bedrooms}bd · {asset.bathrooms}ba · max {asset.maxOccupancy}
-          </p>
+      {/* Header */}
+      <div style={{ marginTop: 12, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+          <div>
+            <h1 className="bm-display" style={{ fontSize: 24, marginBottom: 4 }}>{asset.internalName}</h1>
+            <p className="bm-meta">{asset.bedrooms}bd · {asset.bathrooms}ba · max {asset.maxOccupancy}</p>
+          </div>
+          <span className={occupancyBm(asset.occupancyStatus)}>{occupancyLabel(asset.occupancyStatus)}</span>
         </div>
-        <Badge className={`text-xs border-0 ${
-          asset.occupancyStatus === "Occupied" ? "bg-green-100 text-green-700"
-          : asset.occupancyStatus === "ActionRequired" ? "bg-red-100 text-red-700"
-          : "bg-gray-100 text-gray-500"
-        }`}>{asset.occupancyStatus}</Badge>
       </div>
 
+      {/* KPI row */}
       {summary && (
-        <div className="grid grid-cols-3 gap-2 mb-5">
-          <Card>
-            <CardContent className="p-3">
-              <p className="text-xs text-muted-foreground mb-1">Revenue</p>
-              <p className="font-bold text-sm">{formatThb(summary.totalRevenue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-3">
-              <p className="text-xs text-muted-foreground mb-1">Expenses</p>
-              <p className="font-bold text-sm">{formatThb(summary.totalExpenses)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-3">
-              <p className="text-xs text-muted-foreground mb-1">Net</p>
-              <p className={`font-bold text-sm ${summary.netProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                {formatThb(summary.netProfit)}
-              </p>
-            </CardContent>
-          </Card>
+        <div className="bm-kpi-row" style={{ marginBottom: 20 }}>
+          <div className="bm-kpi">
+            <div className="bm-kpi__label">Revenue</div>
+            <div className="bm-kpi__value" style={{ fontSize: 20 }}>{formatThb(summary.totalRevenue)}</div>
+          </div>
+          <div className="bm-kpi">
+            <div className="bm-kpi__label">Expenses</div>
+            <div className="bm-kpi__value" style={{ fontSize: 20 }}>{formatThb(summary.totalExpenses)}</div>
+          </div>
+          <div className="bm-kpi">
+            <div className="bm-kpi__label">Net</div>
+            <div className="bm-kpi__value" style={{
+              fontSize: 20,
+              color: summary.netProfit >= 0 ? "var(--bm-ok)" : "var(--bm-accent)",
+            }}>{formatThb(summary.netProfit)}</div>
+          </div>
         </div>
       )}
 
-      <Tabs defaultValue="bookings">
-        <TabsList className="mb-4 w-full">
-          <TabsTrigger value="bookings" className="flex-1">Bookings</TabsTrigger>
-          <TabsTrigger value="tickets" className="flex-1">Tickets</TabsTrigger>
-        </TabsList>
+      {/* Tab row */}
+      <div className="bm-tab-row" style={{ marginBottom: 0 }}>
+        <button
+          className={`bm-tab${tab === "bookings" ? " bm-tab--active" : ""}`}
+          onClick={() => setTab("bookings")}
+        >Bookings</button>
+        <button
+          className={`bm-tab${tab === "tickets" ? " bm-tab--active" : ""}`}
+          onClick={() => setTab("tickets")}
+        >Tickets</button>
+      </div>
 
-        <TabsContent value="bookings">
+      {/* Bookings */}
+      {tab === "bookings" && (
+        <div>
           {!bookings?.length ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No bookings yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {bookings.map((b) => (
-                <Card key={b.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="font-semibold text-sm">{b.tenantName ?? "No tenant"}</p>
-                      <Badge className={`text-xs border-0 ${b.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                        {b.status}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}
-                    </p>
-                    <p className="text-sm font-medium mt-1">{formatThb(b.rentAmount)}/mo</p>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="bm-cell bm-cell--first">
+              <p className="bm-meta" style={{ textAlign: "center", padding: "16px 0" }}>No bookings yet.</p>
             </div>
-          )}
-        </TabsContent>
+          ) : bookings.map((b, i) => (
+            <div key={b.id} className={`bm-cell${i === 0 ? " bm-cell--first" : ""}`}>
+              <div className="bm-cell__head">
+                <span className={bookingStatusBm(b.status)}>{b.status}</span>
+                <span className="bm-meta">{formatThb(b.rentAmount)}/mo</span>
+              </div>
+              <div className="bm-cell__title">{b.tenantName ?? "No tenant"}</div>
+              <div className="bm-cell__sub">{formatDate(b.checkInDate)} → {formatDate(b.checkOutDate)}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <TabsContent value="tickets">
+      {/* Tickets */}
+      {tab === "tickets" && (
+        <div>
           {!tickets?.length ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No tickets.</p>
-          ) : (
-            <div className="space-y-2">
-              {tickets.map((t) => (
-                <Link key={t.id} to={`/landlord/tickets/${t.id}`}>
-                  <Card className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <span className="text-xl shrink-0">{ticketKindIcon(t.kind)}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{t.title}</p>
-                        <p className="text-xs text-muted-foreground">{t.displayId}</p>
-                      </div>
-                      <Badge className={`text-xs border-0 shrink-0 ${ticketStatusColor(t.status)}`}>{t.status}</Badge>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
+            <div className="bm-cell bm-cell--first">
+              <p className="bm-meta" style={{ textAlign: "center", padding: "16px 0" }}>No tickets.</p>
             </div>
-          )}
-        </TabsContent>
-      </Tabs>
+          ) : tickets.map((t, i) => (
+            <Link key={t.id} to={`/landlord/tickets/${t.id}`} style={{ textDecoration: "none" }}>
+              <div className={`bm-cell${i === 0 ? " bm-cell--first" : ""}`}>
+                <div className="bm-cell__head">
+                  <span style={{ fontSize: 16 }}>{ticketKindIcon(t.kind)}</span>
+                  <span className={ticketStatusBm(t.status)}>{t.status}</span>
+                </div>
+                <div className="bm-cell__title">{t.title}</div>
+                <div className="bm-cell__sub">{t.displayId}</div>
+                <span className="bm-cell__arrow">›</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

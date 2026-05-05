@@ -1,16 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Copy, Check, Wifi, Eye, EyeOff, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Copy, Check, Wifi, Eye, EyeOff, Plus, Home } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/shared/empty-state";
 import { useMyBookings } from "@/lib/hooks/use-bookings";
 import { useListing } from "@/lib/hooks/use-listings";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus } from "@/lib/types/enums";
 import type { BookingDto } from "@/lib/types";
+import { useAuthStore } from "@/lib/stores/auth.store";
 import { toast } from "sonner";
 
 function CopyButton({ text }: { text: string }) {
@@ -22,12 +19,19 @@ function CopyButton({ text }: { text: string }) {
     setTimeout(() => setCopied(false), 2000);
   }
   return (
-    <button onClick={handle} className="text-muted-foreground hover:text-foreground transition-colors p-0.5">
-      {copied
-        ? <Check className="h-3.5 w-3.5 text-green-500" />
-        : <Copy className="h-3.5 w-3.5" />}
+    <button
+      onClick={handle}
+      style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: "var(--ink-3)", display: "flex" }}
+    >
+      {copied ? <Check size={13} style={{ color: "#2D7A4F" }} /> : <Copy size={13} />}
     </button>
   );
+}
+
+function daysUrgency(days: number) {
+  if (days <= 14) return { color: "#B53030", label: "Expires soon" };
+  if (days <= 30) return { color: "#9A6B00", label: "Ending this month" };
+  return { color: "var(--ink-3)", label: "Active" };
 }
 
 function ActiveBookingCard({ booking }: { booking: BookingDto }) {
@@ -36,159 +40,156 @@ function ActiveBookingCard({ booking }: { booking: BookingDto }) {
   const [showPassword, setShowPassword] = useState(false);
 
   const daysLeft = booking.daysRemaining ?? 0;
-  const daysColor =
-    daysLeft <= 14 ? "text-red-600 font-bold" :
-    daysLeft <= 30 ? "text-amber-600 font-bold" :
-    "text-foreground font-bold";
-
+  const urgency = daysUrgency(daysLeft);
   const presentAmenities = listing?.amenities.filter((a) => a.isPresent) ?? [];
 
   return (
-    <div className="space-y-4">
-
-      {/* Hero */}
-      <div className="relative rounded-2xl overflow-hidden">
+    <div>
+      {/* ── Property hero ──────────────────────────────────────────────────── */}
+      <div className="adm-prop-hero" style={{ marginBottom: 20, position: "relative" }}>
         {listing?.media[0] ? (
-          <img
-            src={listing.media[0].url}
-            alt={listing.title}
-            className="w-full h-52 object-cover"
-          />
+          <img src={listing.media[0].url} alt={listing.title} />
         ) : (
-          <div className="w-full h-52 bg-muted flex items-center justify-center text-5xl">🏠</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", opacity: 0.3 }}>
+            <Home size={48} />
+          </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-transparent" />
-        <div className="absolute bottom-0 left-0 p-4">
-          <h1 className="text-white font-bold text-xl leading-tight">
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(20,15,10,.65) 0%, transparent 50%)" }} />
+        <div style={{ position: "absolute", bottom: 20, left: 24 }}>
+          <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 22, color: "#FFF8EC", lineHeight: 1.2 }}>
             {listing?.title ?? "My unit"}
-          </h1>
-          <Badge className={`border-0 text-xs mt-1.5 backdrop-blur-sm ${
-            booking.status === BookingStatus.Active
-              ? "bg-green-400/90 text-green-950"
-              : "bg-white/25 text-white"
-          }`}>
-            {booking.status === BookingStatus.Active ? "Active lease" : booking.status}
-          </Badge>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <span className={`adm-tag ${booking.status === BookingStatus.Active ? "adm-tag--success" : "adm-tag--neutral"}`}>
+              {booking.status === BookingStatus.Active ? "Active lease" : booking.status}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Lease */}
-      <Card>
-        <CardContent className="p-4 divide-y divide-border">
-          <div className="flex items-center justify-between py-2.5 first:pt-0">
-            <p className="text-sm text-muted-foreground">Monthly rent</p>
-            <p className="font-bold">{formatThb(booking.rentAmount)}</p>
+      {/* ── Lease details ──────────────────────────────────────────────────── */}
+      <div className="adm-card" style={{ marginBottom: 16 }}>
+        <div className="adm-card__head">
+          <div className="adm-card__title">Lease</div>
+        </div>
+        <div style={{ padding: "0 20px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {[
+              { label: "Monthly rent", value: <strong style={{ fontFamily: "var(--mono)", fontSize: 15 }}>{formatThb(booking.rentAmount)}</strong> },
+              { label: "Lease ends",   value: formatDate(booking.checkOutDate) },
+              ...(booking.daysRemaining != null
+                ? [{ label: "Days remaining", value: <span style={{ color: urgency.color, fontWeight: 600, fontFamily: "var(--mono)" }}>{booking.daysRemaining} days</span> }]
+                : []),
+            ].map(({ label, value }, i) => (
+              <div key={i} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "10px 0",
+                borderBottom: i < 2 ? "1px solid var(--line)" : "none",
+              }}>
+                <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{label}</span>
+                <span style={{ fontSize: 13 }}>{value}</span>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center justify-between py-2.5">
-            <p className="text-sm text-muted-foreground">Lease ends</p>
-            <p className="text-sm">{formatDate(booking.checkOutDate)}</p>
-          </div>
-          {booking.daysRemaining != null && (
-            <div className="flex items-center justify-between py-2.5 last:pb-0">
-              <p className="text-sm text-muted-foreground">Days remaining</p>
-              <p className={`text-sm ${daysColor}`}>{booking.daysRemaining} days</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* WiFi */}
+      {/* ── WiFi ───────────────────────────────────────────────────────────── */}
       {listing && (listing.wifiName || listing.wifiPassword) && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Wifi className="h-4 w-4 text-muted-foreground" />
-              <p className="font-semibold text-sm">WiFi</p>
+        <div className="adm-card" style={{ marginBottom: 16 }}>
+          <div className="adm-card__head">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Wifi size={14} style={{ color: "var(--ink-3)" }} />
+              <div className="adm-card__title">WiFi</div>
             </div>
-            <div className="space-y-2.5">
-              {listing.wifiName && (
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground shrink-0">Network</p>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <p className="text-sm font-mono truncate">{listing.wifiName}</p>
-                    <CopyButton text={listing.wifiName} />
-                  </div>
+          </div>
+          <div style={{ padding: "0 20px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {listing.wifiName && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>Network</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{listing.wifiName}</span>
+                  <CopyButton text={listing.wifiName} />
                 </div>
-              )}
-              {listing.wifiPassword && (
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground shrink-0">Password</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-mono">
-                      {showPassword
-                        ? listing.wifiPassword
-                        : "•".repeat(Math.min(listing.wifiPassword.length, 12))}
-                    </p>
-                    <button
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-0.5"
-                    >
-                      {showPassword
-                        ? <EyeOff className="h-3.5 w-3.5" />
-                        : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                    <CopyButton text={listing.wifiPassword} />
-                  </div>
+              </div>
+            )}
+            {listing.wifiPassword && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>Password</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 13 }}>
+                    {showPassword ? listing.wifiPassword : "•".repeat(Math.min(listing.wifiPassword.length, 12))}
+                  </span>
+                  <button
+                    onClick={() => setShowPassword(v => !v)}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: "var(--ink-3)", display: "flex" }}
+                  >
+                    {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                  <CopyButton text={listing.wifiPassword} />
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
-      {/* Amenities */}
+      {/* ── Amenities ──────────────────────────────────────────────────────── */}
       {presentAmenities.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Amenities
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="adm-card" style={{ marginBottom: 16 }}>
+          <div className="adm-card__head">
+            <div className="adm-card__title">Amenities</div>
+          </div>
+          <div style={{ padding: "0 20px 16px", display: "flex", flexWrap: "wrap", gap: 6 }}>
             {presentAmenities.map((a) => (
-              <Badge key={a.amenityId} variant="secondary" className="text-xs">
-                {a.name}
-              </Badge>
+              <span key={a.amenityId} className="adm-tag adm-tag--neutral">{a.name}</span>
             ))}
           </div>
         </div>
       )}
 
-      {/* Report issue CTA */}
-      <Button
-        variant="outline"
-        className="w-full"
+      {/* ── CTA ────────────────────────────────────────────────────────────── */}
+      <button
         onClick={() => navigate("/tenant/tickets")}
+        className="adm-btn adm-btn--ink"
+        style={{ width: "100%", justifyContent: "center", marginTop: 4 }}
       >
-        <Plus className="h-4 w-4 mr-2" />
-        Report an issue
-      </Button>
+        <Plus size={13} /> Report an issue
+      </button>
     </div>
   );
 }
 
 export default function TenantHome() {
+  const { user } = useAuthStore();
   const { data: bookings, isLoading } = useMyBookings();
   const activeBooking = bookings?.find(
     (b) => b.status !== BookingStatus.Completed && b.status !== BookingStatus.Cancelled,
   );
 
-  if (isLoading) {
-    return (
-      <div className="p-4 space-y-3">
-        <Skeleton className="h-52 w-full rounded-2xl" />
-        <Skeleton className="h-28" />
-        <Skeleton className="h-20" />
-      </div>
-    );
-  }
-
   return (
-    <div className="p-4 pb-6">
-      {!activeBooking ? (
-        <EmptyState
-          icon="🏠"
-          title="No active lease"
-          description="Contact your manager to get set up."
-        />
+    <div className="adm-page" style={{ paddingBottom: 100 }}>
+      <div className="adm-pagehead">
+        <div>
+          <div className="adm-pagehead__eyebrow">Tenant · Active stay</div>
+          <h1 className="adm-pagehead__title">
+            {user?.firstName ? <>Welcome back, <em>{user.firstName}</em></> : "Active stay"}
+          </h1>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : !activeBooking ? (
+        <div className="adm-empty" style={{ marginTop: 0 }}>
+          <Home size={32} style={{ opacity: 0.3 }} />
+          <div style={{ fontWeight: 500, fontSize: 15 }}>No active lease</div>
+          <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Contact your manager to get set up.</div>
+        </div>
       ) : (
         <ActiveBookingCard booking={activeBooking} />
       )}

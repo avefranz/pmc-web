@@ -1,26 +1,23 @@
 import { useState } from "react";
-import { Copy, Check, Users, Building2, BookOpen } from "lucide-react";
-import { PageHeader } from "@/components/shared/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Copy, Check } from "lucide-react";
 import { useGenerateInvite } from "@/lib/hooks/use-invites";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useBookings } from "@/lib/hooks/use-bookings";
 import { InviteType } from "@/lib/types/enums";
 import { formatDate } from "@/lib/utils/format";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils/cn";
 
 type InviteMode = "landlord" | "tenant";
+
+const labelStyle: React.CSSProperties = {
+  fontFamily: "var(--mono)",
+  fontSize: 10,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  color: "var(--ink-4)",
+  display: "block",
+  marginBottom: 6,
+};
 
 export default function TeamPage() {
   const generate = useGenerateInvite();
@@ -30,8 +27,6 @@ export default function TeamPage() {
   const [mode, setMode] = useState<InviteMode>("landlord");
   const [assetId, setAssetId] = useState("");
   const [bookingId, setBookingId] = useState("");
-  const [recipientEmail, setRecipientEmail] = useState("");
-  const [recipientName, setRecipientName] = useState("");
   const [generated, setGenerated] = useState<{ link: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -69,167 +64,147 @@ export default function TeamPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Team & Access"
-        description="Invite landlords and tenants to access properties."
-      />
+      {/* Page head */}
+      <div className="adm-pagehead">
+        <div>
+          <div className="adm-pagehead__eyebrow">Workspace · Team</div>
+          <h1 className="adm-pagehead__title">Team &amp; Access</h1>
+        </div>
+      </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 items-start">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Generate invite link
-            </CardTitle>
-            <CardDescription>
-              Landlords get property-level access. Tenants get access to a specific booking.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+
+        {/* Generate invite card */}
+        <div className="adm-card">
+          <div className="adm-card__head">
+            <div>
+              <div className="adm-card__title">Generate invite link</div>
+              <div className="adm-card__sub">Landlords get property access. Tenants get booking access.</div>
+            </div>
+          </div>
+          <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+
             {/* Mode toggle */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handleModeChange("landlord")}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-sm font-medium",
-                  mode === "landlord"
-                    ? "border-primary bg-primary/5 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50"
-                )}
-              >
-                <Building2 className="h-5 w-5" />
-                Landlord
-                <span className="text-xs font-normal opacity-70">Property access</span>
-              </button>
-              <button
-                onClick={() => handleModeChange("tenant")}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-sm font-medium",
-                  mode === "tenant"
-                    ? "border-primary bg-primary/5 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50"
-                )}
-              >
-                <BookOpen className="h-5 w-5" />
-                Tenant
-                <span className="text-xs font-normal opacity-70">Booking access</span>
-              </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {(["landlord", "tenant"] as InviteMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleModeChange(m)}
+                  style={{
+                    padding: "10px 12px",
+                    border: `1px solid ${mode === m ? "var(--ink)" : "var(--ink-5)"}`,
+                    background: mode === m ? "var(--ink)" : "transparent",
+                    color: mode === m ? "var(--bm-paper)" : "var(--ink-3)",
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                >
+                  {m === "landlord" ? "Landlord" : "Tenant"}<br />
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>
+                    {m === "landlord" ? "Property access" : "Booking access"}
+                  </span>
+                </button>
+              ))}
             </div>
 
             {/* Selector */}
             {mode === "landlord" ? (
-              <div className="space-y-1.5">
-                <Label>Property</Label>
+              <div>
+                <label style={labelStyle}>Property</label>
                 {!assets?.length ? (
-                  <p className="text-sm text-muted-foreground">No properties yet.</p>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>No properties yet.</p>
                 ) : (
-                  <Select value={assetId} onValueChange={setAssetId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a property…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {assets.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.internalName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <select
+                    className="adm-select"
+                    value={assetId}
+                    onChange={(e) => setAssetId(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Select a property…</option>
+                    {assets.map((a) => (
+                      <option key={a.id} value={a.id}>{a.internalName}</option>
+                    ))}
+                  </select>
                 )}
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <Label>Booking</Label>
+              <div>
+                <label style={labelStyle}>Booking</label>
                 {!bookings?.length ? (
-                  <p className="text-sm text-muted-foreground">No bookings yet.</p>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>No bookings yet.</p>
                 ) : (
-                  <Select value={bookingId} onValueChange={setBookingId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a booking…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {bookings.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.listingTitle ?? "Booking"} — {b.checkInDate?.slice(0, 10)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <select
+                    className="adm-select"
+                    value={bookingId}
+                    onChange={(e) => setBookingId(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Select a booking…</option>
+                    {bookings.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.listingTitle ?? "Booking"} — {b.checkInDate?.slice(0, 10)}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
             )}
 
-            {/* Optional recipient info */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>
-                  Name <span className="text-xs text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  placeholder="John Doe"
-                  value={recipientName}
-                  onChange={(e) => setRecipientName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>
-                  Email <span className="text-xs text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  type="email"
-                  placeholder="john@example.com"
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <Button
-              className="w-full"
+            <button
+              className="adm-btn adm-btn--ink"
               onClick={handleGenerate}
               disabled={generate.isPending || !canSubmit}
+              style={{ width: "100%" }}
             >
               {generate.isPending ? "Generating…" : "Generate invite link"}
-            </Button>
-          </CardContent>
-        </Card>
+            </button>
+          </div>
+        </div>
 
-        {/* Result card */}
+        {/* Result */}
         {generated ? (
-          <Card className="border-green-200 bg-green-50">
-            <CardHeader>
-              <CardTitle className="text-green-800 text-base">Invite link ready</CardTitle>
-              <CardDescription className="text-green-700">
-                Expires {formatDate(generated.expiresAt)}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="bg-white rounded-md p-3 border border-green-200 break-all">
-                <p className="text-xs font-mono text-gray-700">{generated.link}</p>
+          <div className="adm-card" style={{ borderColor: "var(--bm-ok)" }}>
+            <div className="adm-card__head">
+              <div>
+                <div className="adm-card__title" style={{ color: "var(--bm-ok)" }}>Invite link ready</div>
+                <div className="adm-card__sub">Expires {formatDate(generated.expiresAt)}</div>
               </div>
-              <Button onClick={handleCopy} className="w-full bg-green-700 hover:bg-green-800">
-                {copied ? (
-                  <>
-                    <Check className="h-4 w-4 mr-1" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-1" />
-                    Copy link
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+            </div>
+            <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{
+                border: "1px solid var(--ink-5)",
+                padding: "10px 12px",
+                wordBreak: "break-all",
+              }}>
+                <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-2)" }}>{generated.link}</p>
+              </div>
+              <button
+                className="adm-btn adm-btn--ink"
+                onClick={handleCopy}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              >
+                {copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy link</>}
+              </button>
+            </div>
+          </div>
         ) : (
-          <div className="hidden lg:flex flex-col items-center justify-center text-center p-8 rounded-xl border-2 border-dashed border-muted h-full min-h-[200px]">
-            <Users className="h-8 w-8 text-muted-foreground/40 mb-3" />
-            <p className="text-sm text-muted-foreground">
+          <div style={{
+            border: "1px dashed var(--ink-5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 180,
+          }}>
+            <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
               Generated link will appear here
             </p>
           </div>
         )}
+
       </div>
     </div>
   );

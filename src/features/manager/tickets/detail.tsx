@@ -1,19 +1,8 @@
 import { useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, Plus, ChevronDown, Paperclip, X, ZoomIn } from "lucide-react";
+import { X, ZoomIn, Plus, Paperclip } from "lucide-react";
 import { Lightbox, useLightbox, type LightboxImage } from "@/components/ui/lightbox";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   useTicket,
   useUpdateTicketStatus,
@@ -24,10 +13,98 @@ import {
 import { ticketKeys } from "@/lib/hooks/use-tickets";
 import { ticketsApi } from "@/lib/api/tickets.api";
 import { useQueryClient } from "@tanstack/react-query";
-import { ticketStatusColor, ticketPriorityColor, ticketKindIcon, ticketKindLabel } from "@/lib/utils/ticket-status";
+import { ticketKindIcon, ticketKindLabel } from "@/lib/utils/ticket-status";
 import { formatDate, formatDateTime, formatRelative, formatThb } from "@/lib/utils/format";
 import { MessageVisibility, TicketKind } from "@/lib/types/enums";
 import { toast } from "sonner";
+
+function ticketStatusBm(s: string) {
+  if (["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(s)) return "bm-status bm-status--neutral";
+  if (["Blocked", "Rejected"].includes(s)) return "bm-status bm-status--live";
+  if (["InProgress", "Approved"].includes(s)) return "bm-status bm-status--ok";
+  if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(s)) return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
+function priorityBm(p: string) {
+  if (p === "Urgent") return "bm-status bm-status--live";
+  if (p === "High")   return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
+// ─── Checklist Panel ─────────────────────────────────────────────────────────
+
+function ChecklistPanel({ ticketId }: { ticketId: string }) {
+  const { data } = useTicket(ticketId);
+  const toggle = useToggleChecklistItem(ticketId);
+  const addItem = useAddChecklistItem(ticketId);
+  const [newTitle, setNewTitle] = useState("");
+
+  const items = data?.checklistItems ?? [];
+  const done = items.filter((i) => i.done).length;
+  const pct = items.length ? (done / items.length) * 100 : 0;
+
+  return (
+    <div>
+      <div className="adm-card__head" style={{ padding: "12px 16px" }}>
+        <div className="adm-card__title">Checklist</div>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>{done}/{items.length}</span>
+      </div>
+      <div style={{ padding: "0 16px 16px" }}>
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <div style={{ height: 2, background: "var(--ink-6)", marginBottom: 12 }}>
+            <div style={{ height: 2, background: "var(--ink)", width: `${pct}%`, transition: "width 0.2s" }} />
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {items.map((item) => (
+            <label key={item.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={item.done}
+                onChange={(e) => toggle.mutate({ itemId: item.id, done: e.target.checked })}
+                style={{ marginTop: 2, cursor: "pointer" }}
+              />
+              <span style={{
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+                textDecoration: item.done ? "line-through" : "none",
+                color: item.done ? "var(--ink-4)" : "var(--ink)",
+              }}>{item.title}</span>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            className="bm-input"
+            placeholder="Add item…"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            style={{ flex: 1 }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newTitle.trim()) {
+                addItem.mutate(newTitle.trim());
+                setNewTitle("");
+              }
+            }}
+          />
+          <button
+            className="adm-btn adm-btn--ghost adm-btn--sm"
+            disabled={!newTitle.trim() || addItem.isPending}
+            onClick={() => { addItem.mutate(newTitle.trim()); setNewTitle(""); }}
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Thread ───────────────────────────────────────────────────────────────────
 
 function TicketThread({ ticketId }: { ticketId: string }) {
   const { data } = useTicket(ticketId);
@@ -64,29 +141,20 @@ function TicketThread({ ticketId }: { ticketId: string }) {
     setUploading(true);
     const imagesToSend = [...attachedImages];
     try {
-      // Post the message and get its ID
       const { id: messageId } = await postMessage.mutateAsync({
         body: body.trim() || "📎",
         visibility,
       });
-
-      // Upload each image as an attachment to the message
       for (const img of imagesToSend) {
         await ticketsApi.uploadMessageAttachment(ticketId, messageId, img.file);
       }
-
-      // Clear compose box only on success
       setBody("");
-
-      // Invalidate once more to pick up attachments
       if (imagesToSend.length > 0) {
         qc.invalidateQueries({ queryKey: ticketKeys.detail(ticketId) });
       }
     } catch {
       toast.error("Failed to send message");
-      // body is preserved so the user can retry
     } finally {
-      // Always release blob URLs and clear attachments/uploading state
       imagesToSend.forEach((img) => URL.revokeObjectURL(img.preview));
       setAttachedImages([]);
       setUploading(false);
@@ -95,25 +163,29 @@ function TicketThread({ ticketId }: { ticketId: string }) {
 
   return (
     <div>
-      <h3 className="font-semibold text-sm mb-3">Thread</h3>
-      <div className="space-y-3 mb-4">
+      <div className="adm-card__head" style={{ padding: "12px 16px" }}>
+        <div className="adm-card__title">Thread</div>
+      </div>
+
+      {/* Timeline */}
+      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
         {timeline.map((item) => {
           if (item.type === "event") {
             const e = item.data;
             return (
-              <div key={e.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                <span>
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ height: 1, flex: 1, background: "var(--ink-6)" }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)" }}>
                   {e.eventType === "StatusChanged"
-                    ? `Status: ${e.fromValue} → ${e.toValue}`
-                    : e.eventType === "AssigneeChanged"
-                    ? `Assignee changed`
+                    ? `${e.fromValue} → ${e.toValue}`
                     : e.eventType === "Created"
-                    ? "Ticket created"
+                    ? "created"
                     : e.eventType}
                 </span>
-                <span>{formatRelative(e.createdAt)}</span>
-                <div className="h-px flex-1 bg-border" />
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)" }}>
+                  {formatRelative(e.createdAt)}
+                </span>
+                <div style={{ height: 1, flex: 1, background: "var(--ink-6)" }} />
               </div>
             );
           }
@@ -123,27 +195,34 @@ function TicketThread({ ticketId }: { ticketId: string }) {
           return (
             <div
               key={msg.id}
-              className={`rounded-lg p-3 text-sm ${
-                isInternal ? "bg-amber-50 border border-amber-200" : "bg-muted"
-              }`}
+              style={{
+                border: "1px solid",
+                borderColor: isInternal ? "var(--warn)" : "var(--ink-5)",
+                background: isInternal ? "rgba(184,132,26,0.06)" : "transparent",
+                padding: "10px 12px",
+              }}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium text-xs">{msg.authorName ?? "Unknown"}</span>
-                <div className="flex items-center gap-2">
-                  {isInternal && (
-                    <Badge className="text-xs bg-amber-100 text-amber-700 border-0">Internal</Badge>
-                  )}
-                  <span className="text-xs text-muted-foreground">{formatRelative(msg.createdAt)}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, gap: 8 }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700 }}>
+                  {msg.authorName ?? "Unknown"}
+                </span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {isInternal && <span className="adm-tag adm-tag--warn">Internal</span>}
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)" }}>
+                    {formatRelative(msg.createdAt)}
+                  </span>
                 </div>
               </div>
-              <p className="whitespace-pre-wrap">{msg.body}</p>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                {msg.body}
+              </p>
               {msg.attachments.length > 0 && (
-                <div className="flex gap-2 mt-2 flex-wrap">
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                   {msg.attachments.map((a, ai) => (
                     <button
                       key={a.id}
                       type="button"
-                      className="relative group rounded-md overflow-hidden border focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      style={{ position: "relative", border: "1px solid var(--ink-5)", overflow: "hidden" }}
                       onClick={() => setMsgLightbox({
                         images: msg.attachments.map((x) => ({ url: x.url, name: x.fileName ?? undefined })),
                         index: ai,
@@ -152,10 +231,13 @@ function TicketThread({ ticketId }: { ticketId: string }) {
                       <img
                         src={a.url}
                         alt={a.fileName ?? "Attachment"}
-                        className="h-24 w-24 object-cover transition-transform duration-200 group-hover:scale-105"
+                        style={{ width: 80, height: 80, objectFit: "cover", display: "block" }}
                       />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                        <ZoomIn className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div style={{
+                        position: "absolute", inset: 0, background: "rgba(0,0,0,0)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <ZoomIn size={16} color="white" style={{ opacity: 0 }} />
                       </div>
                     </button>
                   ))}
@@ -166,71 +248,81 @@ function TicketThread({ ticketId }: { ticketId: string }) {
         })}
 
         {timeline.length === 0 && (
-          <p className="text-xs text-muted-foreground">No messages yet.</p>
+          <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>No messages yet.</p>
         )}
       </div>
 
       {/* Compose */}
-      <div className="space-y-2">
-        <Textarea
-          placeholder="Write a message..."
+      <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <textarea
+          className="bm-input"
+          placeholder="Write a message…"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          className="min-h-[80px]"
+          rows={3}
+          style={{ width: "100%", resize: "vertical" }}
         />
 
-        {/* Image previews */}
         {attachedImages.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {attachedImages.map((img, idx) => (
-              <div key={idx} className="relative group">
-                <img src={img.preview} alt="" className="h-16 w-16 object-cover rounded-md border" />
+              <div key={idx} style={{ position: "relative" }}>
+                <img src={img.preview} alt="" style={{ width: 64, height: 64, objectFit: "cover", border: "1px solid var(--ink-5)" }} />
                 <button
                   onClick={() => removeImage(idx)}
-                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{
+                    position: "absolute", top: -4, right: -4,
+                    background: "var(--ink)", color: "var(--bm-paper)",
+                    border: "none", width: 16, height: 16, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
                 >
-                  <X className="h-2.5 w-2.5" />
+                  <X size={10} />
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={handleFileSelect}
+        />
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  {visibility === MessageVisibility.Public ? "Public" : "Internal"}
-                  <ChevronDown className="ml-1 h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setVisibility(MessageVisibility.Public)}>
-                  Public — tenant can see
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setVisibility(MessageVisibility.Internal)}>
-                  Internal — managers only
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-              <Paperclip className="h-3.5 w-3.5 mr-1" />
-              Attach
-            </Button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              className="adm-select"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as MessageVisibility)}
+              style={{ fontSize: 11 }}
+            >
+              <option value={MessageVisibility.Public}>Public</option>
+              <option value={MessageVisibility.Internal}>Internal</option>
+            </select>
+            <button
+              className="adm-btn adm-btn--ghost adm-btn--sm"
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              style={{ display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Paperclip size={11} /> Attach
+            </button>
           </div>
-          <Button
-            size="sm"
+          <button
+            className="adm-btn adm-btn--ink adm-btn--sm"
             onClick={handleSend}
             disabled={uploading || postMessage.isPending || (!body.trim() && attachedImages.length === 0)}
           >
-            <Send className="h-3.5 w-3.5 mr-1" />
-            {uploading ? "Sending..." : "Send"}
-          </Button>
+            {uploading ? "Sending…" : "Send"}
+          </button>
         </div>
       </div>
+
       {msgLightbox && (
         <Lightbox
           images={msgLightbox.images}
@@ -243,72 +335,7 @@ function TicketThread({ ticketId }: { ticketId: string }) {
   );
 }
 
-function ChecklistPanel({ ticketId }: { ticketId: string }) {
-  const { data } = useTicket(ticketId);
-  const toggle = useToggleChecklistItem(ticketId);
-  const addItem = useAddChecklistItem(ticketId);
-  const [newTitle, setNewTitle] = useState("");
-
-  const items = data?.checklistItems ?? [];
-  const done = items.filter((i) => i.done).length;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-sm">Checklist</h3>
-        <span className="text-xs text-muted-foreground">{done}/{items.length}</span>
-      </div>
-
-      {items.length > 0 && (
-        <div className="w-full bg-muted rounded-full h-1.5 mb-3">
-          <div
-            className="bg-primary h-1.5 rounded-full transition-all"
-            style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }}
-          />
-        </div>
-      )}
-
-      <div className="space-y-2 mb-3">
-        {items.map((item) => (
-          <div key={item.id} className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              checked={item.done}
-              onChange={(e) => toggle.mutate({ itemId: item.id, done: e.target.checked })}
-              className="mt-0.5 h-4 w-4 rounded border-border cursor-pointer"
-            />
-            <span className={`text-sm flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>
-              {item.title}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          className="flex-1 text-sm border border-input rounded-md px-2 py-1"
-          placeholder="Add item..."
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && newTitle.trim()) {
-              addItem.mutate(newTitle.trim());
-              setNewTitle("");
-            }
-          }}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!newTitle.trim() || addItem.isPending}
-          onClick={() => { addItem.mutate(newTitle.trim()); setNewTitle(""); }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -320,7 +347,7 @@ export default function TicketDetailPage() {
   async function handleStatusChange(status: string) {
     try {
       await updateStatus.mutateAsync({ id: id!, status: status as never });
-      toast.success(`Status updated to ${status}`);
+      toast.success(`Status → ${status}`);
     } catch {
       toast.error("Failed to update status");
     }
@@ -328,168 +355,167 @@ export default function TicketDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-64" />
+      <div>
+        <Skeleton className="h-8 w-64 mb-4" />
         <Skeleton className="h-48 w-full" />
       </div>
     );
   }
-
-  if (!ticket) return <div className="text-muted-foreground">Ticket not found.</div>;
+  if (!ticket) return <div className="adm-empty">Ticket not found.</div>;
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4">
-        <Link to="/manager/tickets">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" />Tickets
-          </Button>
-        </Link>
+      {/* Back */}
+      <div style={{ marginBottom: 16 }}>
+        <Link to="/manager/tickets" className="bm-pagehead__back">← Tickets</Link>
       </div>
 
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-6">
-        <span className="text-3xl">{ticketKindIcon(ticket.kind)}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-xs font-mono text-muted-foreground">{ticket.displayId}</span>
-            <Badge className="text-xs border-0">{ticketKindLabel(ticket.kind)}</Badge>
-            <Badge className={`text-xs border-0 ${ticketStatusColor(ticket.status)}`}>{ticket.status}</Badge>
-            <Badge className={`text-xs border-0 ${ticketPriorityColor(ticket.priority)}`}>{ticket.priority}</Badge>
+      {/* ── Header ── */}
+      <div className="adm-pagehead">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1 }}>
+          <span style={{ fontSize: 28, lineHeight: 1, marginTop: 4 }}>{ticketKindIcon(ticket.kind)}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+              <span className="adm-table__num">{ticket.displayId}</span>
+              <span className="adm-tag adm-tag--neutral">{ticketKindLabel(ticket.kind)}</span>
+              <span className={ticketStatusBm(ticket.status)}>{ticket.status}</span>
+              <span className={priorityBm(ticket.priority)}>{ticket.priority}</span>
+            </div>
+            <h1 className="adm-pagehead__title" style={{ marginBottom: 0 }}>{ticket.title}</h1>
+            {ticket.assetName && <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)", marginTop: 4 }}>{ticket.assetName}</p>}
           </div>
-          <h1 className="text-xl font-bold">{ticket.title}</h1>
-          {ticket.assetName && <p className="text-sm text-muted-foreground mt-1">{ticket.assetName}</p>}
         </div>
-
-        {/* Status transition */}
         {ticket.allowedNextStatuses.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" disabled={updateStatus.isPending}>
-                Change status <ChevronDown className="ml-1 h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {ticket.allowedNextStatuses.map((s) => (
-                <DropdownMenuItem key={s} onClick={() => handleStatusChange(s)}>
-                  <span className={`inline-block w-2 h-2 rounded-full mr-2 ${ticketStatusColor(s)}`} />
-                  {s}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="adm-pagehead__actions">
+            <div style={{ position: "relative" }}>
+              <select
+                className="adm-select"
+                onChange={(e) => { if (e.target.value) handleStatusChange(e.target.value); }}
+                defaultValue=""
+                disabled={updateStatus.isPending}
+              >
+                <option value="" disabled>Change status…</option>
+                {ticket.allowedNextStatuses.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         )}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left: meta */}
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="p-4 space-y-3 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Description</p>
-                <p className="mt-1 whitespace-pre-wrap">{ticket.description || "—"}</p>
-              </div>
-              <Separator />
-              {ticket.estimatedCost > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estimated cost</span>
-                  <span className="font-medium">{formatThb(ticket.estimatedCost)}</span>
-                </div>
-              )}
-              {ticket.actualCost != null && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Actual cost</span>
-                  <span className="font-medium">{formatThb(ticket.actualCost)}</span>
-                </div>
-              )}
-              {ticket.dueDate && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Due date</span>
-                  <span>{formatDate(ticket.dueDate)}</span>
-                </div>
-              )}
-              {ticket.scheduledFor && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Scheduled</span>
-                  <span>{formatDateTime(ticket.scheduledFor)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Created</span>
-                <span>{formatDate(ticket.createdAt)}</span>
-              </div>
-              {ticket.bookingId && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Booking</span>
-                  <Link to={`/manager/bookings/${ticket.bookingId}`} className="text-primary hover:underline text-xs">
-                    View booking
-                  </Link>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* ── 3-col layout ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20, marginTop: 8 }}>
 
-          {/* Child tickets */}
+        {/* ── LEFT: meta ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Details card */}
+          <div className="adm-card">
+            <div className="adm-card__head">
+              <div className="adm-card__title">Details</div>
+            </div>
+            <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="adm-kv">
+                <span className="adm-kv__k">Description</span>
+              </div>
+              <p style={{ fontFamily: "var(--sans)", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>
+                {ticket.description || "—"}
+              </p>
+              <div style={{ borderTop: "1px solid var(--ink-6)", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                {ticket.estimatedCost > 0 && (
+                  <div className="adm-kv">
+                    <span className="adm-kv__k">Est. cost</span>
+                    <span className="adm-kv__v">{formatThb(ticket.estimatedCost)}</span>
+                  </div>
+                )}
+                {ticket.actualCost != null && (
+                  <div className="adm-kv">
+                    <span className="adm-kv__k">Actual cost</span>
+                    <span className="adm-kv__v">{formatThb(ticket.actualCost)}</span>
+                  </div>
+                )}
+                {ticket.dueDate && (
+                  <div className="adm-kv">
+                    <span className="adm-kv__k">Due date</span>
+                    <span className="adm-kv__v">{formatDate(ticket.dueDate)}</span>
+                  </div>
+                )}
+                {ticket.scheduledFor && (
+                  <div className="adm-kv">
+                    <span className="adm-kv__k">Scheduled</span>
+                    <span className="adm-kv__v">{formatDateTime(ticket.scheduledFor)}</span>
+                  </div>
+                )}
+                <div className="adm-kv">
+                  <span className="adm-kv__k">Created</span>
+                  <span className="adm-kv__v">{formatDate(ticket.createdAt)}</span>
+                </div>
+                {ticket.bookingId && (
+                  <div className="adm-kv">
+                    <span className="adm-kv__k">Booking</span>
+                    <Link to={`/manager/bookings/${ticket.bookingId}`} style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-2)" }}>
+                      View →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-tickets */}
           {ticket.children.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Sub-tickets</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-2">
+            <div className="adm-card">
+              <div className="adm-card__head">
+                <div className="adm-card__title">Sub-tickets</div>
+              </div>
+              <div style={{ padding: "0 0 8px" }}>
                 {ticket.children.map((c) => (
-                  <Link key={c.id} to={`/manager/tickets/${c.id}`} className="flex items-center gap-2 text-sm hover:underline">
-                    <span className="text-xs">{ticketKindIcon(c.kind)}</span>
-                    <span className="flex-1 truncate">{c.title}</span>
-                    <Badge className={`text-xs border-0 ${ticketStatusColor(c.status)}`}>{c.status}</Badge>
+                  <Link key={c.id} to={`/manager/tickets/${c.id}`} style={{ textDecoration: "none" }}>
+                    <div style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ink-6)" }}>
+                      <span style={{ fontSize: 14 }}>{ticketKindIcon(c.kind)}</span>
+                      <span style={{ flex: 1, fontFamily: "var(--sans)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</span>
+                      <span className={ticketStatusBm(c.status)}>{c.status}</span>
+                    </div>
                   </Link>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
           {/* Media */}
           {ticket.mediaUrls.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Media</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="grid grid-cols-3 gap-2">
-                  {ticket.mediaUrls.map((url, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="relative group rounded-md overflow-hidden aspect-square focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => openMedia(i)}
-                    >
-                      <img src={url} alt="" className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                        <ZoomIn className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="adm-card">
+              <div className="adm-card__head">
+                <div className="adm-card__title">Media</div>
+              </div>
+              <div style={{ padding: "8px 16px 16px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                {ticket.mediaUrls.map((url, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    style={{ border: "1px solid var(--ink-5)", overflow: "hidden", cursor: "pointer" }}
+                    onClick={() => openMedia(i)}
+                  >
+                    <img src={url} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {mediaLightbox}
         </div>
 
-        {/* Right: thread + checklist */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* ── RIGHT: thread + checklist ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {ticket.kind === TicketKind.Checklist && (
-            <Card>
-              <CardContent className="p-5">
-                <ChecklistPanel ticketId={id!} />
-              </CardContent>
-            </Card>
+            <div className="adm-card">
+              <ChecklistPanel ticketId={id!} />
+            </div>
           )}
-          <Card>
-            <CardContent className="p-5">
-              <TicketThread ticketId={id!} />
-            </CardContent>
-          </Card>
+          <div className="adm-card">
+            <TicketThread ticketId={id!} />
+          </div>
         </div>
       </div>
     </div>

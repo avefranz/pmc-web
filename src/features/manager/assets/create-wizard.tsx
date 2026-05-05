@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAmenities, useAmenityCategories } from "@/lib/hooks/use-references";
 import { AmenityToggleGrid } from "@/components/shared/amenity-toggle-grid";
 import { ArrowLeft, ArrowRight, Check, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +13,6 @@ import { useCreateListing } from "@/lib/hooks/use-listings";
 import { listingsApi } from "@/lib/api/listings.api";
 import { RentalType } from "@/lib/types/enums";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils/cn";
 
 interface Props {
   open: boolean;
@@ -37,23 +35,35 @@ const PROPERTY_TYPES: PropertyType[] = [
   { id: 6, icon: "🏗️", label: "Other", description: "Commercial or other type" },
 ];
 
+const fieldLabelStyle: React.CSSProperties = {
+  fontFamily: "var(--mono)",
+  fontSize: 10,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  color: "var(--ink-4)",
+  display: "block",
+  marginBottom: 6,
+};
+
 function Counter({
   label, value, min = 0,
   onChange,
 }: { label: string; value: number; min?: number; onChange: (v: number) => void }) {
   return (
-    <div className="flex items-center justify-between py-3 border-b last:border-0">
-      <span className="text-sm font-medium">{label}</span>
-      <div className="flex items-center gap-4">
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: "1px solid var(--ink-5)" }}>
+      <span style={{ fontFamily: "var(--sans)", fontSize: 13, fontWeight: 500 }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <button
           onClick={() => onChange(Math.max(min, value - 1))}
-          className="w-8 h-8 rounded-full border-2 border-muted-foreground/30 flex items-center justify-center text-lg leading-none hover:border-primary hover:text-primary transition-colors disabled:opacity-30"
+          className="adm-btn adm-btn--ghost adm-btn--icon"
           disabled={value <= min}
+          style={{ width: 28, height: 28, fontSize: 16 }}
         >−</button>
-        <span className="w-5 text-center font-semibold text-base">{value}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: "center" }}>{value}</span>
         <button
           onClick={() => onChange(value + 1)}
-          className="w-8 h-8 rounded-full border-2 border-muted-foreground/30 flex items-center justify-center text-lg leading-none hover:border-primary hover:text-primary transition-colors"
+          className="adm-btn adm-btn--ghost adm-btn--icon"
+          style={{ width: 28, height: 28, fontSize: 16 }}
         >+</button>
       </div>
     </div>
@@ -93,14 +103,14 @@ function WizardAmenities({ listingId }: { listingId: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-32">
-        <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent" />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 128 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>Loading amenities…</span>
       </div>
     );
   }
 
   if (!amenityDefs?.length) {
-    return <p className="text-sm text-muted-foreground">No amenities configured in the system.</p>;
+    return <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>No amenities configured in the system.</p>;
   }
 
   return (
@@ -124,28 +134,21 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
   const [createdAssetId, setCreatedAssetId] = useState<string | null>(null);
   const [createdListingId, setCreatedListingId] = useState<string | null>(null);
 
-  // Step 0: type
   const [propertyType, setPropertyType] = useState<PropertyType | null>(null);
-
-  // Step 1: rooms
   const [bedrooms, setBedrooms] = useState(1);
   const [beds, setBeds] = useState(1);
   const [bathrooms, setBathrooms] = useState(1);
   const [maxOccupancy, setMaxOccupancy] = useState(2);
-
-  // Step 2: listing info (title is used as internal name too)
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [rentalType, setRentalType] = useState<RentalType>(RentalType.LongTerm);
-  const [basePrice, setBasePrice] = useState(0);       // nightly (ShortTerm)
-  const [baseMonthlyRate, setBaseMonthlyRate] = useState(15000); // monthly (LongTerm)
+  const [basePrice, setBasePrice] = useState(0);
+  const [baseMonthlyRate, setBaseMonthlyRate] = useState(15000);
   const [wifiName, setWifiName] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
   const [houseRules, setHouseRules] = useState("");
 
-  // 4 real steps (0-3), step 4 = done
   const totalSteps = 4;
-
   const priceValid = rentalType === RentalType.ShortTerm ? basePrice > 0 : baseMonthlyRate > 0;
 
   function canProceed(): boolean {
@@ -192,10 +195,7 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
       return;
     }
 
-    // Step 3 → 4 (done)
-    if (step === 3) {
-      setStep(4);
-    }
+    if (step === 3) setStep(4);
   }
 
   function reset() {
@@ -205,79 +205,86 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
     setTitle(""); setDescription("");
     setRentalType(RentalType.LongTerm); setBasePrice(0); setBaseMonthlyRate(15000);
     setWifiName(""); setWifiPassword(""); setHouseRules("");
-    setCreatedAssetId(null);
-    setCreatedListingId(null);
+    setCreatedAssetId(null); setCreatedListingId(null);
   }
 
   function handleClose() { reset(); onClose(); }
-
-  function handleViewProperty() {
-    const id = createdAssetId;
-    handleClose();
-    if (id) navigate(`/manager/assets/${id}`);
-  }
+  function handleViewProperty() { const id = createdAssetId; handleClose(); if (id) navigate(`/manager/assets/${id}`); }
 
   const isSubmitting = createAsset.isPending || createListing.isPending;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden [&>button]:hidden max-h-[90vh] flex flex-col">
+      {/* adm scope wrapper — Dialog portals outside .adm, so CSS vars would be undefined without this */}
+      <div className="adm" style={{ display: "contents" }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div className="flex items-center gap-4">
-            {/* Back button only for steps 1-2 (before creation) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "2px solid var(--ink)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {step > 0 && step <= 2 && (
               <button
                 onClick={() => setStep((s) => s - 1)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="adm-btn adm-btn--ghost adm-btn--icon"
+                style={{ width: 28, height: 28 }}
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft size={14} />
               </button>
             )}
-            {/* Progress dots */}
-            <div className="flex items-center gap-1.5">
+            {/* Step indicator */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {Array.from({ length: totalSteps }).map((_, i) => (
                 <div
                   key={i}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all duration-300",
-                    i < step ? "bg-primary w-5" : i === step ? "bg-primary w-8" : "bg-muted w-5"
-                  )}
+                  style={{
+                    height: 3,
+                    width: i === step ? 28 : 16,
+                    background: i <= step ? "var(--ink)" : "var(--ink-5)",
+                    transition: "width 0.2s, background 0.2s",
+                  }}
                 />
               ))}
             </div>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {step < totalSteps ? `Step ${step + 1} of ${totalSteps}` : "Done"}
+          <span style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--ink-4)" }}>
+            {step < totalSteps ? `STEP ${step + 1} / ${totalSteps}` : "DONE"}
           </span>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-8 flex-1 min-h-0 flex flex-col overflow-y-auto">
+        <div style={{ padding: "28px 28px 24px", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
 
           {/* Step 0: property type */}
           {step === 0 && (
             <div>
-              <h2 className="text-2xl font-bold mb-1">What kind of property is it?</h2>
-              <p className="text-muted-foreground mb-6">
+              <h2 style={{ fontFamily: "var(--sans)", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+                What kind of property is it?
+              </h2>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginBottom: 20 }}>
                 This helps categorize it in your portfolio.
               </p>
-              <div className="grid grid-cols-3 gap-3">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                 {PROPERTY_TYPES.map((pt) => (
                   <button
                     key={pt.id}
                     onClick={() => setPropertyType(pt)}
-                    className={cn(
-                      "flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all hover:shadow-sm",
-                      propertyType?.id === pt.id
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border hover:border-primary/40"
-                    )}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      padding: "14px 12px",
+                      border: propertyType?.id === pt.id ? "2px solid var(--ink)" : "1px solid var(--ink-5)",
+                      background: propertyType?.id === pt.id ? "var(--surface-muted)" : "transparent",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "border-color 0.1s",
+                    }}
                   >
-                    <span className="text-3xl">{pt.icon}</span>
+                    <span style={{ fontSize: 28 }}>{pt.icon}</span>
                     <div>
-                      <p className="font-semibold text-sm">{pt.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{pt.description}</p>
+                      <p style={{ fontFamily: "var(--sans)", fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{pt.label}</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)" }}>{pt.description}</p>
                     </div>
                   </button>
                 ))}
@@ -288,15 +295,19 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
           {/* Step 1: rooms & capacity */}
           {step === 1 && (
             <div>
-              <h2 className="text-2xl font-bold mb-1">Share the basics about the place</h2>
-              <p className="text-muted-foreground mb-8">
+              <h2 style={{ fontFamily: "var(--sans)", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+                Share the basics about the place
+              </h2>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginBottom: 24 }}>
                 You can update this later from the property page.
               </p>
-              <div className="divide-y border rounded-xl px-4">
+              <div style={{ border: "1px solid var(--ink-5)", padding: "0 16px" }}>
                 <Counter label="Bedrooms" value={bedrooms} min={0} onChange={setBedrooms} />
                 <Counter label="Beds" value={beds} min={1} onChange={setBeds} />
                 <Counter label="Bathrooms" value={bathrooms} min={1} onChange={setBathrooms} />
-                <Counter label="Max guests" value={maxOccupancy} min={1} onChange={setMaxOccupancy} />
+                <div style={{ borderBottom: "none" }}>
+                  <Counter label="Max guests" value={maxOccupancy} min={1} onChange={setMaxOccupancy} />
+                </div>
               </div>
             </div>
           )}
@@ -304,13 +315,15 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
           {/* Step 2: title, price, wifi */}
           {step === 2 && (
             <div>
-              <h2 className="text-2xl font-bold mb-1">Now, let's give it a title</h2>
-              <p className="text-muted-foreground mb-6">
+              <h2 style={{ fontFamily: "var(--sans)", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+                Now, let's give it a title
+              </h2>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginBottom: 20 }}>
                 A short title helps identify this property across your portfolio.
               </p>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Property name *</Label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <Label style={fieldLabelStyle}>Property name *</Label>
                   <Input
                     placeholder="e.g. Baan Rim Nam Villa, Unit 4A"
                     value={title}
@@ -318,8 +331,8 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
                     autoFocus
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Description</Label>
+                <div>
+                  <Label style={fieldLabelStyle}>Description</Label>
                   <Textarea
                     placeholder="Describe the property, its surroundings, what makes it special..."
                     value={description}
@@ -327,80 +340,79 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
                     className="min-h-[80px] resize-none"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Rental type *</Label>
-                    <div className="flex rounded-lg border overflow-hidden">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <Label style={fieldLabelStyle}>Rental type *</Label>
+                    <div style={{ display: "flex", border: "1px solid var(--ink-5)" }}>
                       {([RentalType.LongTerm, RentalType.ShortTerm] as const).map((rt) => (
                         <button
                           key={rt}
                           type="button"
                           onClick={() => setRentalType(rt)}
-                          className={cn(
-                            "flex-1 py-2 text-sm font-medium transition-colors",
-                            rentalType === rt
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-background text-muted-foreground hover:bg-muted"
-                          )}
+                          style={{
+                            flex: 1,
+                            padding: "8px 6px",
+                            fontFamily: "var(--mono)",
+                            fontSize: 10,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                            border: "none",
+                            borderRight: rt === RentalType.LongTerm ? "1px solid var(--ink-5)" : "none",
+                            background: rentalType === rt ? "var(--ink)" : "transparent",
+                            color: rentalType === rt ? "var(--paper)" : "var(--ink-3)",
+                            cursor: "pointer",
+                          }}
                         >
                           {rt === RentalType.LongTerm ? "Long term" : "Short term"}
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--ink-4)", marginTop: 4, lineHeight: 1.5 }}>
                       {rentalType === RentalType.LongTerm
-                        ? "Monthly rent — tenants stay 1+ months on a contract. Billed daily (monthly ÷ 30)."
-                        : "Nightly rate — tenants stay days to weeks. Total = nightly rate × nights."}
+                        ? "Monthly rent — tenants stay 1+ months. Billed daily (monthly ÷ 30)."
+                        : "Nightly rate — tenants stay days to weeks. Total = nightly × nights."}
                     </p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div>
                     {rentalType === RentalType.LongTerm ? (
                       <>
-                        <Label>Monthly rent (฿) *</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">฿</span>
-                          <Input
-                            type="number"
-                            className="pl-7"
-                            value={baseMonthlyRate || ""}
-                            onChange={(e) => setBaseMonthlyRate(Number(e.target.value))}
-                            placeholder="e.g. 25000"
-                            min={1}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground">Per month — divided by 30 for daily billing</p>
+                        <Label style={fieldLabelStyle}>Monthly rent (฿) *</Label>
+                        <Input
+                          type="number"
+                          value={baseMonthlyRate || ""}
+                          onChange={(e) => setBaseMonthlyRate(Number(e.target.value))}
+                          placeholder="e.g. 25000"
+                          min={1}
+                        />
+                        <p style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--ink-4)", marginTop: 4 }}>Per month — divided by 30 for daily billing</p>
                       </>
                     ) : (
                       <>
-                        <Label>Nightly rate (฿) *</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">฿</span>
-                          <Input
-                            type="number"
-                            className="pl-7"
-                            value={basePrice || ""}
-                            onChange={(e) => setBasePrice(Number(e.target.value))}
-                            placeholder="e.g. 2500"
-                            min={1}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground">Per night × number of nights = total rent</p>
+                        <Label style={fieldLabelStyle}>Nightly rate (฿) *</Label>
+                        <Input
+                          type="number"
+                          value={basePrice || ""}
+                          onChange={(e) => setBasePrice(Number(e.target.value))}
+                          placeholder="e.g. 2500"
+                          min={1}
+                        />
+                        <p style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--ink-4)", marginTop: 4 }}>Per night × number of nights = total rent</p>
                       </>
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>WiFi name</Label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <Label style={fieldLabelStyle}>WiFi name</Label>
                     <Input placeholder="Network name" value={wifiName} onChange={(e) => setWifiName(e.target.value)} />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>WiFi password</Label>
+                  <div>
+                    <Label style={fieldLabelStyle}>WiFi password</Label>
                     <Input placeholder="Password" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} />
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>House rules</Label>
+                <div>
+                  <Label style={fieldLabelStyle}>House rules</Label>
                   <Textarea
                     placeholder="No smoking indoors, quiet hours after 10 pm..."
                     value={houseRules}
@@ -412,11 +424,13 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 3: Amenities — no back button, asset+listing already created */}
+          {/* Step 3: Amenities */}
           {step === 3 && createdListingId && (
             <div>
-              <h2 className="text-2xl font-bold mb-1">What does this place offer?</h2>
-              <p className="text-muted-foreground mb-6">
+              <h2 style={{ fontFamily: "var(--sans)", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+                What does this place offer?
+              </h2>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginBottom: 20 }}>
                 Select all amenities available at the property. You can update these later.
               </p>
               <WizardAmenities listingId={createdListingId} />
@@ -425,50 +439,55 @@ export function CreatePropertyWizard({ open, onClose }: Props) {
 
           {/* Done — step 4 */}
           {step === 4 && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                <Check className="h-8 w-8 text-green-600" />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 32px" }}>
+              <div style={{ width: 56, height: 56, border: "2px solid var(--ink)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+                <Check size={24} />
               </div>
-              <h2 className="text-2xl font-bold mb-2">Property created!</h2>
-              <p className="text-muted-foreground mb-1">
-                <span className="font-semibold text-foreground">{title}</span> is ready.
+              <h2 style={{ fontFamily: "var(--sans)", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Property created!</h2>
+              <p style={{ fontFamily: "var(--mono)", fontSize: 12, marginBottom: 4 }}>
+                <strong>{title}</strong> is ready.
               </p>
-              <p className="text-sm text-muted-foreground mb-2">
+              <p style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)", marginBottom: 8 }}>
                 Open the property page to add photos, invite a landlord, and create bookings.
               </p>
-              <div className="flex items-center gap-1.5 text-xs text-primary mb-8">
-                <Sparkles className="h-3.5 w-3.5" />
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--mono)", color: "var(--ink-3)", marginBottom: 28 }}>
+                <Sparkles size={12} />
                 Tip: upload photos next — they're the first thing tenants notice
               </div>
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={handleClose}>Later</Button>
-                <Button onClick={handleViewProperty}>Open property →</Button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="adm-btn adm-btn--ghost" onClick={handleClose}>Later</button>
+                <button className="adm-btn adm-btn--ink" onClick={handleViewProperty}>Open property →</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer — only for steps 0-3 */}
+        {/* Footer */}
         {step <= 3 && (
-          <div className="px-6 py-4 border-t flex justify-end bg-muted/20">
+          <div style={{ padding: "14px 24px", borderTop: "1px solid var(--ink-5)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
             {step < 3 ? (
-              <Button onClick={handleNext} disabled={!canProceed() || isSubmitting} size="lg">
+              <button
+                className="adm-btn adm-btn--ink"
+                onClick={handleNext}
+                disabled={!canProceed() || isSubmitting}
+              >
                 {step === 2
-                  ? isSubmitting ? "Creating..." : "Create property"
-                  : <>Next <ArrowRight className="h-4 w-4 ml-1.5" /></>}
-              </Button>
+                  ? isSubmitting ? "Creating…" : "Create property"
+                  : <><span>Next</span> <ArrowRight size={13} /></>}
+              </button>
             ) : (
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => { handleClose(); if (createdAssetId) navigate(`/manager/assets/${createdAssetId}`); }}>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="adm-btn adm-btn--ghost" onClick={() => { handleClose(); if (createdAssetId) navigate(`/manager/assets/${createdAssetId}`); }}>
                   Open property →
-                </Button>
-                <Button onClick={() => setStep(4)} size="lg">
-                  Done <Check className="h-4 w-4 ml-1.5" />
-                </Button>
+                </button>
+                <button className="adm-btn adm-btn--ink" onClick={() => setStep(4)}>
+                  Done <Check size={13} style={{ display: "inline", marginLeft: 4 }} />
+                </button>
               </div>
             )}
           </div>
         )}
+      </div>{/* end .adm scope */}
       </DialogContent>
     </Dialog>
   );

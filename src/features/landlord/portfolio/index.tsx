@@ -1,70 +1,126 @@
 import { Link } from "react-router-dom";
 import { Building2, TrendingUp, TrendingDown } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatCard } from "@/components/shared/stat-card";
-import { EmptyState } from "@/components/shared/empty-state";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useFinanceOverview } from "@/lib/hooks/use-finance";
-import { formatThb, changePercentColor } from "@/lib/utils/format";
+import { formatThb } from "@/lib/utils/format";
+import { useAuthStore } from "@/lib/stores/auth.store";
+
+function occupancyTag(status: string) {
+  if (status === "Occupied")       return "adm-tag adm-tag--success";
+  if (status === "ActionRequired") return "adm-tag adm-tag--danger";
+  return "adm-tag adm-tag--neutral";
+}
 
 export default function LandlordPortfolio() {
+  const { user } = useAuthStore();
   const { data: assets, isLoading: assetsLoading } = useAssets();
   const { data: overview, isLoading: ovLoading } = useFinanceOverview();
 
-  return (
-    <div className="p-4 pb-6">
-      <h1 className="text-xl font-bold mb-4">My Properties</h1>
+  const pct = overview?.changePercent ?? 0;
+  const pctUp = pct > 0;
+  const occupied = assets?.filter((a) => a.occupancyStatus === "Occupied").length ?? 0;
 
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <StatCard
-          label="This month"
-          value={ovLoading ? "—" : formatThb(overview?.currentMonthIncome ?? 0)}
-          sub={overview ? `${(overview.changePercent >= 0 ? "+" : "")}${overview.changePercent.toFixed(1)}%` : undefined}
-          subColor={changePercentColor(overview?.changePercent ?? 0)}
-          icon={(overview?.changePercent ?? 0) >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          loading={ovLoading}
-        />
-        <StatCard
-          label="Properties"
-          value={assetsLoading ? "—" : String(assets?.length ?? 0)}
-          sub={assets ? `${assets.filter((a) => a.occupancyStatus === "Occupied").length} occupied` : undefined}
-          icon={<Building2 className="h-4 w-4" />}
-          loading={assetsLoading}
-        />
+  return (
+    <div className="adm-page" style={{ paddingBottom: 100 }}>
+      {/* ── PAGE HEAD ──────────────────────────────────────────────────────── */}
+      <div className="adm-pagehead">
+        <div>
+          <div className="adm-pagehead__eyebrow">Landlord · Portfolio</div>
+          <h1 className="adm-pagehead__title">
+            {user?.firstName ? <>Hello, <em>{user.firstName}</em></> : "My Properties"}
+          </h1>
+        </div>
       </div>
 
-      {assetsLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20" />)}
+      {/* ── KPI ROW ────────────────────────────────────────────────────────── */}
+      <div className="adm-kpi-row" style={{ marginBottom: 24 }}>
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">This month</div>
+          {ovLoading
+            ? <Skeleton className="h-7 w-32 mt-1" />
+            : <div className="adm-kpi__value">{formatThb(overview?.currentMonthIncome ?? 0)}</div>
+          }
+          {!ovLoading && (
+            <div className={`adm-kpi__delta ${pct === 0 ? "adm-kpi__delta--flat" : pctUp ? "adm-kpi__delta--up" : "adm-kpi__delta--down"}`}>
+              {pctUp ? <TrendingUp size={11} /> : pct < 0 ? <TrendingDown size={11} /> : null}
+              {pct > 0 ? "+" : ""}{pct.toFixed(1)}% vs last month
+            </div>
+          )}
         </div>
-      ) : !assets?.length ? (
-        <EmptyState icon={<Building2 className="h-8 w-8" />} title="No properties" description="Contact your manager to get access." />
-      ) : (
-        <div className="space-y-3">
-          {assets.map((a) => (
-            <Link key={a.id} to={`/landlord/assets/${a.id}`}>
-              <Card className="hover:shadow-sm transition-shadow">
-                <CardContent className="p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">{a.internalName}</p>
-                    {a.currentTenantName && <p className="text-xs text-muted-foreground">{a.currentTenantName}</p>}
-                  </div>
-                  <Badge className={`text-xs border-0 shrink-0 ${
-                    a.occupancyStatus === "Occupied" ? "bg-green-100 text-green-700"
-                    : a.occupancyStatus === "ActionRequired" ? "bg-red-100 text-red-700"
-                    : "bg-gray-100 text-gray-500"
-                  }`}>{a.occupancyStatus}</Badge>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">Projected (EOM)</div>
+          {ovLoading
+            ? <Skeleton className="h-7 w-32 mt-1" />
+            : <div className="adm-kpi__value">{formatThb(overview?.projectedEndOfMonth ?? 0)}</div>
+          }
         </div>
-      )}
+
+        <div className="adm-kpi">
+          <div className="adm-kpi__label">Properties</div>
+          {assetsLoading
+            ? <Skeleton className="h-7 w-16 mt-1" />
+            : <div className="adm-kpi__value">{assets?.length ?? 0}</div>
+          }
+          {!assetsLoading && (
+            <div className="adm-kpi__delta adm-kpi__delta--flat">
+              {occupied} occupied
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── PROPERTIES LIST ────────────────────────────────────────────────── */}
+      <div className="adm-card">
+        <div className="adm-card__head">
+          <div className="adm-card__title">Properties</div>
+        </div>
+
+        {assetsLoading ? (
+          <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+            {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : !assets?.length ? (
+          <div className="adm-empty">
+            <Building2 size={24} style={{ opacity: 0.4 }} />
+            <div style={{ fontWeight: 500, fontSize: 14 }}>No properties</div>
+            <div style={{ fontSize: 12 }}>Contact your manager to get access.</div>
+          </div>
+        ) : (
+          <table className="adm-table">
+            <tbody>
+              {assets.map((a) => (
+                <tr key={a.id}>
+                  <td style={{ paddingLeft: 20, width: 36 }}>
+                    <div style={{
+                      width: 32, height: 32,
+                      background: "rgba(224,148,92,0.12)",
+                      border: "1px solid rgba(224,148,92,0.2)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Building2 size={14} style={{ color: "#E0945C" }} />
+                    </div>
+                  </td>
+                  <td>
+                    <Link to={`/landlord/assets/${a.id}`} style={{ textDecoration: "none", display: "block" }}>
+                      <div className="adm-table__title">{a.internalName}</div>
+                      {a.currentTenantName && (
+                        <div className="adm-table__sub">{a.currentTenantName}</div>
+                      )}
+                    </Link>
+                  </td>
+                  <td style={{ textAlign: "right", paddingRight: 20 }}>
+                    <span className={occupancyTag(a.occupancyStatus)}>
+                      {a.occupancyStatus === "ActionRequired" ? "Action needed" : a.occupancyStatus}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,12 +1,5 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
@@ -25,6 +18,16 @@ export default function CreateTicketPage() {
   const [kind, setKind] = useState<TicketKind>(TicketKind.Incident);
   const [priority, setPriority] = useState<TicketPriority>(TicketPriority.Normal);
   const [estimatedCost, setEstimatedCost] = useState(0);
+
+  const labelStyle: React.CSSProperties = {
+    fontFamily: "var(--bm-mono)",
+    fontSize: 10,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase" as const,
+    color: "var(--bm-ink-4)",
+    display: "block",
+    marginBottom: 6,
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,110 +50,142 @@ export default function CreateTicketPage() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex items-center gap-2 mb-6">
-        <Link to="/manager/tickets">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" />Back
-          </Button>
-        </Link>
+    <div style={{ maxWidth: 600 }}>
+      {/* Back */}
+      <div style={{ marginBottom: 20 }}>
+        <Link to="/manager/tickets" className="bm-pagehead__back">← Tickets</Link>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>New Ticket</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <Label>Property *</Label>
-              <Select value={assetId} onValueChange={setAssetId} required>
-                <SelectTrigger><SelectValue placeholder="Select property..." /></SelectTrigger>
-                <SelectContent>
-                  {assets?.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.internalName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="adm-pagehead" style={{ marginBottom: 24 }}>
+        <div>
+          <div className="adm-pagehead__eyebrow">Workspace · Tickets</div>
+          <h1 className="adm-pagehead__title">New Ticket</h1>
+        </div>
+      </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Kind</Label>
-                <Select value={kind} onValueChange={(v) => setKind(v as TicketKind)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.values(TicketKind).map((k) => (
-                      <SelectItem key={k} value={k}>{k}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Type</Label>
-                <Select value={type} onValueChange={(v) => setType(v as TicketType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.values(TicketType).map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+      <form onSubmit={handleSubmit}>
+        <div className="adm-card" style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Priority</Label>
-                <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.values(TicketPriority).map((p) => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Est. cost (THB)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={estimatedCost}
-                  onChange={(e) => setEstimatedCost(Number(e.target.value))}
-                />
-              </div>
-            </div>
+          {/* Property */}
+          <div>
+            <label style={labelStyle}>Property *</label>
+            <select
+              className="bm-input"
+              value={assetId}
+              onChange={(e) => setAssetId(e.target.value)}
+              required
+              style={{ width: "100%" }}
+            >
+              <option value="">Select property…</option>
+              {assets?.map((a) => (
+                <option key={a.id} value={a.id}>{a.internalName}</option>
+              ))}
+            </select>
+          </div>
 
-            <div className="space-y-1">
-              <Label>Title *</Label>
-              <Input
-                placeholder="Brief description of the issue"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
+          {/* Kind / Type row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Kind</label>
+              <select
+                className="bm-input"
+                value={kind}
+                onChange={(e) => setKind(e.target.value as TicketKind)}
+                style={{ width: "100%" }}
+              >
+                {Object.values(TicketKind).map((k) => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Type</label>
+              <select
+                className="bm-input"
+                value={type}
+                onChange={(e) => setType(e.target.value as TicketType)}
+                style={{ width: "100%" }}
+              >
+                {Object.values(TicketType).map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Priority / Est. cost row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Priority</label>
+              <select
+                className="bm-input"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TicketPriority)}
+                style={{ width: "100%" }}
+              >
+                {Object.values(TicketPriority).map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Est. cost (THB)</label>
+              <input
+                type="number"
+                min={0}
+                className="bm-input"
+                value={estimatedCost}
+                onChange={(e) => setEstimatedCost(Number(e.target.value))}
+                style={{ width: "100%" }}
               />
             </div>
+          </div>
 
-            <div className="space-y-1">
-              <Label>Description</Label>
-              <Textarea
-                placeholder="Additional details..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-              />
-            </div>
+          {/* Title */}
+          <div>
+            <label style={labelStyle}>Title *</label>
+            <input
+              className="bm-input"
+              placeholder="Brief description of the issue"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              style={{ width: "100%" }}
+            />
+          </div>
 
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-              <Button type="submit" disabled={createTicket.isPending || !assetId || !title.trim()}>
-                {createTicket.isPending ? "Creating..." : "Create ticket"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          {/* Description */}
+          <div>
+            <label style={labelStyle}>Description</label>
+            <textarea
+              className="bm-input"
+              placeholder="Additional details…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              style={{ width: "100%", resize: "vertical" }}
+            />
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+            <button
+              type="button"
+              className="adm-btn adm-btn--ghost"
+              onClick={() => navigate(-1)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="adm-btn adm-btn--ink"
+              disabled={createTicket.isPending || !assetId || !title.trim()}
+            >
+              {createTicket.isPending ? "Creating…" : "Create ticket"}
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

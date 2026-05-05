@@ -1,23 +1,21 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Link, useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmptyState } from "@/components/shared/empty-state";
 import { useTickets, useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useMyBookings } from "@/lib/hooks/use-bookings";
-import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { ticketKindIcon } from "@/lib/utils/ticket-status";
 import { formatRelative } from "@/lib/utils/format";
 import { TicketType, BookingStatus } from "@/lib/types/enums";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+
+function ticketStatusBm(s: string) {
+  if (["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(s)) return "bm-status bm-status--neutral";
+  if (["Blocked", "Rejected"].includes(s)) return "bm-status bm-status--live";
+  if (["InProgress", "Approved"].includes(s)) return "bm-status bm-status--ok";
+  if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(s)) return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
 
 export default function TenantTickets() {
   const { data: tickets, isLoading } = useTickets();
@@ -56,77 +54,113 @@ export default function TenantTickets() {
   }
 
   return (
-    <div className="p-4 pb-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold">My Tickets</h1>
+    <div className="bm-page">
+      {/* Page head */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h1 className="bm-display" style={{ marginBottom: 0 }}>My <em className="acc">Tickets</em></h1>
         {activeBooking && (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" />New
-          </Button>
+          <button className="bm-btn bm-btn--sm" onClick={() => setCreateOpen(true)}>
+            [Report issue]
+          </button>
         )}
       </div>
 
+      <div className="bm-divider">— Open &amp; Recent</div>
+
       {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16" />)}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14" />)}
         </div>
       ) : !tickets?.length ? (
-        <EmptyState
-          icon="🎫"
-          title="No tickets"
-          description="Submit a request if you need help or have found an issue."
-          action={activeBooking ? <Button onClick={() => setCreateOpen(true)}>Report issue</Button> : undefined}
-        />
+        <div className="bm-cell bm-cell--first" style={{ textAlign: "center" }}>
+          <p className="bm-meta" style={{ padding: "20px 0" }}>No tickets yet.</p>
+          {activeBooking && (
+            <button className="bm-btn" onClick={() => setCreateOpen(true)} style={{ marginBottom: 16 }}>
+              [Report an issue]
+            </button>
+          )}
+        </div>
       ) : (
-        <div className="space-y-2">
-          {tickets.map((t) => (
-            <Link key={t.id} to={`/tenant/tickets/${t.id}`}>
-              <div className="bg-white border rounded-xl p-4 flex items-center gap-3 shadow-sm">
-                <span className="text-2xl shrink-0">{ticketKindIcon(t.kind)}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm truncate">{t.title}</p>
-                  <p className="text-xs text-muted-foreground">{formatRelative(t.createdAt)}</p>
+        <div>
+          {tickets.map((t, i) => (
+            <Link key={t.id} to={`/tenant/tickets/${t.id}`} style={{ textDecoration: "none" }}>
+              <div className={`bm-cell${i === 0 ? " bm-cell--first" : ""}`}>
+                <div className="bm-cell__head">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{ticketKindIcon(t.kind)}</span>
+                    <span className={ticketStatusBm(t.status)}>{t.status}</span>
+                  </div>
+                  <span className="bm-meta">{formatRelative(t.createdAt)}</span>
                 </div>
-                <Badge className={`text-xs border-0 shrink-0 ${ticketStatusColor(t.status)}`}>{t.status}</Badge>
+                <div className="bm-cell__title">{t.title}</div>
+                <span className="bm-cell__arrow">›</span>
               </div>
             </Link>
           ))}
         </div>
       )}
 
+      {/* Create ticket dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Report an issue</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Category</Label>
-              <Select value={type} onValueChange={(v) => setType(v as TicketType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TicketType.Maintenance}>Maintenance</SelectItem>
-                  <SelectItem value={TicketType.Cleaning}>Cleaning</SelectItem>
-                  <SelectItem value={TicketType.Utilities}>Utilities</SelectItem>
-                  <SelectItem value={TicketType.Complaint}>Complaint</SelectItem>
-                  <SelectItem value={TicketType.Request}>Request</SelectItem>
-                  <SelectItem value={TicketType.Other}>Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Title *</Label>
-              <Input placeholder="Brief description" value={title} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>Details</Label>
-              <Textarea placeholder="What happened? When? Where?" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+        <DialogContent className="adm-modal max-w-md p-0 gap-0 overflow-hidden [&>button]:hidden">
+          <div className="adm-modal__head">
+            <div>
+              <div className="adm-modal__title">Report an issue</div>
+              <div className="adm-modal__sub">Describe what you need help with.</div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={createTicket.isPending || !title.trim()}>
-              {createTicket.isPending ? "Submitting..." : "Submit"}
-            </Button>
-          </DialogFooter>
+          <div className="adm-modal__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label style={{ fontFamily: "var(--bm-mono)", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bm-ink-4)", display: "block", marginBottom: 6 }}>
+                Category
+              </label>
+              <select
+                className="bm-input"
+                value={type}
+                onChange={(e) => setType(e.target.value as TicketType)}
+                style={{ width: "100%" }}
+              >
+                {Object.values(TicketType).map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontFamily: "var(--bm-mono)", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bm-ink-4)", display: "block", marginBottom: 6 }}>
+                Title *
+              </label>
+              <input
+                className="bm-input"
+                placeholder="Brief description of the issue"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontFamily: "var(--bm-mono)", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bm-ink-4)", display: "block", marginBottom: 6 }}>
+                Details
+              </label>
+              <textarea
+                className="bm-input"
+                placeholder="What happened? When? Where?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                style={{ width: "100%", resize: "vertical" }}
+              />
+            </div>
+          </div>
+          <div className="adm-modal__foot">
+            <button className="adm-btn adm-btn--ghost" onClick={() => setCreateOpen(false)}>Cancel</button>
+            <button
+              className="adm-btn adm-btn--ink"
+              onClick={handleCreate}
+              disabled={createTicket.isPending || !title.trim()}
+            >
+              {createTicket.isPending ? "Submitting…" : "Submit"}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

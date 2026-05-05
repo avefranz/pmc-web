@@ -1,62 +1,67 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/shared/empty-state";
 import { useMyBookings, useBookingInvoices } from "@/lib/hooks/use-bookings";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { InvoiceStatus, BookingStatus } from "@/lib/types/enums";
 import type { BookingDto } from "@/lib/types";
 
+function invoiceStatusBm(s: string) {
+  if (s === InvoiceStatus.Paid)          return "bm-status bm-status--ok";
+  if (s === InvoiceStatus.Overdue)       return "bm-status bm-status--live";
+  if (s === InvoiceStatus.Pending)       return "bm-status bm-status--warn";
+  if (s === InvoiceStatus.PartiallyPaid) return "bm-status bm-status--warn";
+  return "bm-status bm-status--neutral";
+}
+
 function InvoiceList({ booking }: { booking: BookingDto }) {
   const { data: invoices, isLoading } = useBookingInvoices(booking.id);
 
   if (isLoading) return <Skeleton className="h-20" />;
-  if (!invoices?.length) return <p className="text-sm text-muted-foreground">No invoices yet.</p>;
+  if (!invoices?.length) {
+    return (
+      <div className="bm-cell bm-cell--first">
+        <p className="bm-meta" style={{ padding: "12px 0" }}>No invoices yet.</p>
+      </div>
+    );
+  }
 
-  const total = invoices.reduce((s, inv) => s + (inv.amount ?? 0), 0);
-  const pending = invoices.filter((i) => i.status === InvoiceStatus.Pending || i.status === InvoiceStatus.Overdue)
+  const total   = invoices.reduce((s, inv) => s + (inv.amount ?? 0), 0);
+  const pending = invoices
+    .filter((i) => i.status === InvoiceStatus.Pending || i.status === InvoiceStatus.Overdue)
     .reduce((s, inv) => s + (inv.amount ?? 0), 0);
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <Card className="bg-amber-50 border-amber-200">
-          <CardContent className="p-4">
-            <p className="text-xs text-amber-700 mb-1">Pending</p>
-            <p className="font-bold text-amber-800">{formatThb(pending)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-gray-50">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total</p>
-            <p className="font-bold">{formatThb(total)}</p>
-          </CardContent>
-        </Card>
+      {/* Summary KPI */}
+      <div className="bm-kpi-row" style={{ marginBottom: 20 }}>
+        <div className="bm-kpi">
+          <div className="bm-kpi__label">Pending</div>
+          <div className="bm-kpi__value" style={{
+            fontSize: 22,
+            color: pending > 0 ? "var(--bm-accent)" : "var(--bm-ink)",
+          }}>{formatThb(pending)}</div>
+        </div>
+        <div className="bm-kpi">
+          <div className="bm-kpi__label">Total</div>
+          <div className="bm-kpi__value" style={{ fontSize: 22 }}>{formatThb(total)}</div>
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {invoices.map((inv) => (
-          <Card key={inv.id}>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="font-medium text-sm">{inv.type}</p>
-                {inv.dueDate && (
-                  <p className="text-xs text-muted-foreground">Due {formatDate(inv.dueDate)}</p>
-                )}
-              </div>
-              <div className="text-right">
-                {inv.amount != null && <p className="font-semibold text-sm">{formatThb(inv.amount)}</p>}
-                <Badge className={`text-xs border-0 mt-1 ${
-                  inv.status === InvoiceStatus.Paid ? "bg-green-100 text-green-700"
-                  : inv.status === InvoiceStatus.Overdue ? "bg-red-100 text-red-700"
-                  : inv.status === InvoiceStatus.Pending ? "bg-amber-100 text-amber-700"
-                  : "bg-gray-100 text-gray-500"
-                }`}>{inv.status}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Invoice list */}
+      <div className="bm-divider">— Invoices</div>
+      {invoices.map((inv, i) => (
+        <div key={inv.id} className={`bm-cell${i === 0 ? " bm-cell--first" : ""}`}>
+          <div className="bm-cell__head">
+            <span className={invoiceStatusBm(inv.status)}>{inv.status}</span>
+            {inv.amount != null && (
+              <span style={{ fontFamily: "var(--bm-mono)", fontSize: 13, fontWeight: 700 }}>
+                {formatThb(inv.amount)}
+              </span>
+            )}
+          </div>
+          <div className="bm-cell__title">{inv.type}</div>
+          {inv.dueDate && <div className="bm-cell__sub">Due {formatDate(inv.dueDate)}</div>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -67,20 +72,23 @@ export default function TenantInvoices() {
     (b) => b.status !== BookingStatus.Completed && b.status !== BookingStatus.Cancelled,
   );
 
-  if (isLoading) return (
-    <div className="p-4 space-y-3">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-20" />
-      <Skeleton className="h-16" />
-    </div>
-  );
-
   return (
-    <div className="p-4 pb-6">
-      <h1 className="text-xl font-bold mb-4">Invoices & Payments</h1>
+    <div className="bm-page">
+      <div className="bm-display" style={{ marginBottom: 20 }}>
+        Invoices <em className="acc">&amp;</em> Payments
+      </div>
 
-      {!activeBooking ? (
-        <EmptyState icon="📄" title="No booking" description="You'll see your invoices here once you have an active lease." />
+      {isLoading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Skeleton className="h-16" />
+          <Skeleton className="h-14" />
+          <Skeleton className="h-14" />
+        </div>
+      ) : !activeBooking ? (
+        <div className="bm-cell bm-cell--first">
+          <div className="bm-cell__title">No active booking</div>
+          <div className="bm-cell__sub">Your invoices will appear here once you have an active lease.</div>
+        </div>
       ) : (
         <InvoiceList booking={activeBooking} />
       )}
