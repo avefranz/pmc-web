@@ -14,6 +14,10 @@ import { TripsPage } from "@/features/me/trips/trips-page";
 import { TripDetailPage } from "@/features/me/trips/trip-detail-page";
 import ProfilePage from "@/pages/profile";
 
+// Host managed
+import { ManagedListPage } from "@/features/me/host/managed/list-page";
+import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
+
 // Host
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
@@ -62,8 +66,8 @@ export default function App() {
         <Route path="/me/host/tickets" element={<ComingSoon label="Tickets" />} />
         <Route path="/me/host/finance" element={<ComingSoon label="Finance" />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
-          <Route path="/me/host/managed" element={<ComingSoon label="Managed properties" />} />
-          <Route path="/me/host/managed/invite" element={<ComingSoon label="Invite landlord" />} />
+          <Route path="/me/host/managed" element={<ManagedListPage />} />
+          <Route path="/me/host/managed/invite" element={<InviteLandlordPage />} />
         </Route>
       </Route>
 
