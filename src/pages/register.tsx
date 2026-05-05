@@ -1,35 +1,32 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useLogin } from "@/lib/hooks/use-auth";
+import { useRegister } from "@/lib/hooks/use-auth";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
-const LINE_CLIENT_ID = import.meta.env.VITE_LINE_CLIENT_ID;
-const LINE_REDIRECT_URI = import.meta.env.VITE_LINE_REDIRECT_URI ?? `${window.location.origin}/line-callback`;
-
-export default function LoginPage() {
+export default function RegisterPage() {
+  const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ firstName?: string; email?: string; password?: string }>({});
   const [serverError, setServerError] = useState("");
-  const login = useLogin();
+  const register = useRegister();
   const token = useAuthStore((s) => s.token);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/me/trips";
 
   if (token) {
-    navigate(redirectTo, { replace: true });
+    navigate("/me/trips", { replace: true });
     return null;
   }
 
   function validate() {
     const e: typeof errors = {};
+    if (!firstName.trim()) e.firstName = "First name is required.";
     if (!email.trim()) e.email = "Email is required.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = "Enter a valid email.";
-    if (!password) e.password = "Password is required.";
+    if (!password || password.length < 8) e.password = "Password must be at least 8 characters.";
     return e;
   }
 
@@ -40,22 +37,11 @@ export default function LoginPage() {
     if (Object.keys(v).length) { setErrors(v); return; }
     setErrors({});
     try {
-      await login.mutateAsync({ email: email.trim(), password });
-      navigate(redirectTo, { replace: true });
+      await register.mutateAsync({ email: email.trim(), password, firstName: firstName.trim() });
+      navigate("/me/trips", { replace: true });
     } catch {
-      setServerError("Invalid email or password.");
+      setServerError("Registration failed. This email may already be in use.");
     }
-  }
-
-  function handleLine() {
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: LINE_CLIENT_ID ?? "",
-      redirect_uri: LINE_REDIRECT_URI,
-      state: crypto.randomUUID(),
-      scope: "profile openid email",
-    });
-    window.location.href = `https://access.line.me/oauth2/v2.1/authorize?${params}`;
   }
 
   return (
@@ -70,10 +56,23 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-bg-card rounded-xl shadow-pop p-8">
-          <h1 className="text-2xl font-semibold text-fg mb-1">Welcome back</h1>
-          <p className="text-sm text-fg-muted mb-6">Sign in to your account</p>
+          <h1 className="text-2xl font-semibold text-fg mb-1">Create an account</h1>
+          <p className="text-sm text-fg-muted mb-6">Start planning your stay in Thailand</p>
 
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="firstName" className="text-sm font-medium text-fg">First name</Label>
+              <Input
+                id="firstName"
+                type="text"
+                placeholder="Alex"
+                value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: undefined })); }}
+                className={errors.firstName ? "border-destructive" : ""}
+              />
+              {errors.firstName && <p className="text-xs text-destructive">{errors.firstName}</p>}
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="email" className="text-sm font-medium text-fg">Email</Label>
               <Input
@@ -92,9 +91,9 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="At least 8 characters"
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })); setServerError(""); }}
+                onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })); }}
                 className={errors.password ? "border-destructive" : ""}
               />
               {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
@@ -105,33 +104,16 @@ export default function LoginPage() {
             <Button
               className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white font-medium"
               type="submit"
-              disabled={login.isPending}
+              disabled={register.isPending}
             >
-              {login.isPending ? "Signing in…" : "Sign in"}
+              {register.isPending ? "Creating account…" : "Create account"}
             </Button>
           </form>
 
-          {LINE_CLIENT_ID && (
-            <>
-              <div className="relative my-5">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="bg-bg-card px-2 text-fg-muted">or</span>
-                </div>
-              </div>
-              <Button variant="outline" className="w-full" onClick={handleLine}>
-                <span className="mr-2 text-[#06C755] font-bold">L</span>
-                Continue with LINE
-              </Button>
-            </>
-          )}
-
           <p className="text-center text-sm text-fg-muted mt-6">
-            Don't have an account?{" "}
-            <Link to="/register" className="text-brand hover:underline font-medium">
-              Register
+            Already have an account?{" "}
+            <Link to="/login" className="text-brand hover:underline font-medium">
+              Sign in
             </Link>
           </p>
         </div>
