@@ -12,6 +12,8 @@ import InviteAcceptPage from "@/pages/invite-accept";
 // Host
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
+import { PropertyCreateWizard } from "@/features/me/host/properties/create-wizard";
+import { PropertyDetailPage } from "@/features/me/host/properties/detail-page";
 
 // Placeholder — replaced in subsequent commits
 function ComingSoon({ label }: { label: string }) {
@@ -49,8 +51,8 @@ export default function App() {
         <Route path="/me/profile" element={<ComingSoon label="Profile" />} />
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
-        <Route path="/me/host/properties/new" element={<ComingSoon label="New property" />} />
-        <Route path="/me/host/properties/:id" element={<ComingSoon label="Property detail" />} />
+        <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
+        <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
         <Route path="/me/host/bookings/:id" element={<ComingSoon label="Booking detail" />} />
         <Route path="/me/host/tickets" element={<ComingSoon label="Tickets" />} />
         <Route path="/me/host/finance" element={<ComingSoon label="Finance" />} />
