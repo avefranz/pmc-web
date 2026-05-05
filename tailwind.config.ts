@@ -6,6 +6,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // shadcn tokens (kept for component compatibility)
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -39,21 +40,38 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
+        // design-system tokens
+        bg: "var(--color-bg)",
+        "bg-card": "var(--color-bg-card)",
+        "bg-subtle": "var(--color-bg-subtle)",
+        fg: "var(--color-fg)",
+        "fg-muted": "var(--color-fg-muted)",
+        "fg-subtle": "var(--color-fg-subtle)",
+        brand: {
+          DEFAULT: "var(--color-primary)",
+          hover: "var(--color-primary-hover)",
+          fg: "var(--color-primary-fg)",
         },
+        success: "var(--color-success)",
+        warning: "var(--color-warning)",
+        danger: "var(--color-danger)",
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
       },
       borderRadius: {
+        // shadcn (kept)
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        // design-system
+        pill: "var(--radius-pill)",
+        xl: "var(--radius-xl)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        hover: "var(--shadow-hover)",
+        pop: "var(--shadow-pop)",
       },
     },
   },
