@@ -9,6 +9,11 @@ import LineCallbackPage from "@/pages/line-callback";
 import RoleRouterPage from "@/pages/role-router";
 import InviteAcceptPage from "@/pages/invite-accept";
 
+// Trips
+import { TripsPage } from "@/features/me/trips/trips-page";
+import { TripDetailPage } from "@/features/me/trips/trip-detail-page";
+import ProfilePage from "@/pages/profile";
+
 // Host
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
@@ -45,10 +50,10 @@ export default function App() {
       {/* /me — unified cabinet */}
       <Route element={<AuthGuard><AppShell /></AuthGuard>}>
         <Route path="/me" element={<Navigate to="/me/trips" replace />} />
-        <Route path="/me/trips" element={<ComingSoon label="My trips" />} />
-        <Route path="/me/trips/:id" element={<ComingSoon label="Trip detail" />} />
+        <Route path="/me/trips" element={<TripsPage />} />
+        <Route path="/me/trips/:id" element={<TripDetailPage />} />
         <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
-        <Route path="/me/profile" element={<ComingSoon label="Profile" />} />
+        <Route path="/me/profile" element={<ProfilePage />} />
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
         <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
