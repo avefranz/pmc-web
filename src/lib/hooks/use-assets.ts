@@ -33,7 +33,10 @@ export const useCreateAsset = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateAssetRequest) => assetsApi.create(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
+    },
   });
 };
 

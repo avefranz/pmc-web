@@ -11,7 +11,7 @@ export const useMe = () =>
   });
 
 export const useLogin = () => {
-  const { setToken, setUser } = useAuthStore();
+  const { setToken } = useAuthStore();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
@@ -19,31 +19,29 @@ export const useLogin = () => {
     onSuccess: async (data) => {
       setToken(data.token);
       localStorage.setItem("pmc_token", data.token);
-      const user = await authApi.me();
-      setUser(user);
-      qc.setQueryData(["me"], user);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
     },
   });
 };
 
 export const useRegister = () => {
-  const { setToken, setUser } = useAuthStore();
+  const { setToken } = useAuthStore();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      authApi.register(email, password),
+    mutationFn: ({ email, password, firstName }: { email: string; password: string; firstName?: string }) =>
+      authApi.register(email, password, firstName),
     onSuccess: async (data) => {
       setToken(data.token);
       localStorage.setItem("pmc_token", data.token);
-      const user = await authApi.me();
-      setUser(user);
-      qc.setQueryData(["me"], user);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
     },
   });
 };
 
 export const useLineLogin = () => {
-  const { setToken, setUser } = useAuthStore();
+  const { setToken } = useAuthStore();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ code, redirectUri }: { code: string; redirectUri: string }) =>
@@ -51,9 +49,8 @@ export const useLineLogin = () => {
     onSuccess: async (data) => {
       setToken(data.token);
       localStorage.setItem("pmc_token", data.token);
-      const user = await authApi.me();
-      setUser(user);
-      qc.setQueryData(["me"], user);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
     },
   });
 };

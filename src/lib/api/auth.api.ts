@@ -3,9 +3,9 @@ import type { UserDto } from "../types";
 
 // Auth endpoints wrap responses in ApiResponse<T> — need .data.data double-unwrap
 export const authApi = {
-  register: (email: string, password: string) =>
+  register: (email: string, password: string, firstName?: string) =>
     apiClient
-      .post<{ data: { token: string } }>("/api/auth/register", { email, password })
+      .post<{ data: { token: string } }>("/api/auth/register", { email, password, firstName })
       .then((r) => r.data.data),
 
   login: (email: string, password: string) =>
