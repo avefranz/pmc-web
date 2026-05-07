@@ -3,14 +3,43 @@ export type LocationAccuracy = "Exact" | "Approximate" | "Neighborhood";
 export type CalendarStatus = "Available" | "Booked" | "Blocked";
 export type MarketplaceSortOrder = "Newest" | "PriceAsc" | "PriceDesc";
 
+// ─── Discount tiers ───────────────────────────────────────────────────────────
+export interface DiscountTier {
+  minMonths: number;
+  discountPercent: number;
+}
+
+// ─── Availability (new medium-term format) ────────────────────────────────────
+export interface OccupiedRange {
+  from: string; // ISO date (first day of booking)
+  to: string;   // ISO date (first day after booking ends)
+}
+
+export interface ListingAvailabilityDto {
+  availableFrom: string;
+  availableTo: string | null;      // backend field name
+  availableUntil?: string | null;  // alias kept for compat
+  minMonths: number;
+  maxMonths: number;
+  occupiedRanges: OccupiedRange[];
+  nextAvailableDate: string;
+}
+
+// ─── Listing preview ──────────────────────────────────────────────────────────
 export interface MarketplaceListingPreviewDto {
   id: string;
   title: string;
   slug: string;
-  rentalType: MarketplaceRentalType;
-  instantBookEnabled: boolean;
-  basePrice: number;
-  baseMonthlyRate: number | null;
+  // new primary pricing
+  monthlyRate: number;
+  discountTiers: DiscountTier[];
+  effectiveMonthlyRate?: number; // set by backend when durationMonths supplied
+  // deprecated (kept for backward compat while backend migrates)
+  rentalType?: MarketplaceRentalType;
+  instantBookEnabled?: boolean;
+  basePrice?: number;
+  baseMonthlyRate?: number | null;
+  // specs
   bedrooms: number;
   bathrooms: number;
   beds: number;
@@ -58,12 +87,14 @@ export interface MarketplaceCityDto {
   activeListingsCount: number;
 }
 
+// ─── Legacy (kept for manager calendar, not used in public marketplace) ────────
 export interface CalendarDayDto {
   date: string;
   price: number;
   status: CalendarStatus;
 }
 
+// ─── Queries ──────────────────────────────────────────────────────────────────
 export interface PagedResult<T> {
   items: T[];
   totalCount: number;
@@ -76,16 +107,44 @@ export interface PagedResult<T> {
 
 export interface MarketplaceListingsQuery {
   cityId?: number;
-  checkIn?: string;
-  checkOut?: string;
-  rentalType?: MarketplaceRentalType;
+  // medium-term filters
+  moveInFrom?: string;     // ISO date — earliest acceptable move-in
+  durationMonths?: number; // how many months needed
+  // price
   priceMin?: number;
   priceMax?: number;
+  // specs
   bedrooms?: number;
   maxOccupancy?: number;
   propertyCategoryId?: number;
   amenityIds?: number[];
+  // pagination + sort
   page?: number;
   pageSize?: number;
   sort?: MarketplaceSortOrder;
+}
+
+// ─── Booking request ──────────────────────────────────────────────────────────
+export interface BookingRequestData {
+  listingId: string;
+  moveInDate: string;      // ISO date
+  durationMonths: number;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  message?: string;
+}
+
+export interface BookingRequestResult {
+  id: string;
+  secureToken: string;
+  status: "Pending" | "Approved" | string;
+  checkInDate: string;
+  checkOutDate: string;
+  durationMonths: number;
+  totalRent: number;
+  effectiveMonthlyRate: number;
+  discountPercent: number;
+  bookingId?: string | null;    // only when isInstantBook = true
+  isInstantBook: boolean;
 }

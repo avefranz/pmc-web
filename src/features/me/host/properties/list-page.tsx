@@ -81,9 +81,61 @@ export function PropertiesListPage() {
   const { data: me } = useMe();
 
   const addBtn = (
-    <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
-      <Link to="/me/host/properties/new"><Plus size={16} className="mr-1.5" />Add property</Link>
-    </Button>
+    <>
+      <style>{`
+        @keyframes crystalFlow {
+          0%   { background-position: 0% 50%; }
+          50%  { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes diamondGlint {
+          0%, 70%, 100% { opacity: 0; transform: scale(0) rotate(20deg); }
+          25%, 50%      { opacity: 0.55; transform: scale(1) rotate(20deg); }
+        }
+        .add-prop-btn {
+          position: relative;
+          overflow: hidden;
+          background: linear-gradient(
+            110deg,
+            #111118 0%, #1a1635 22%, #2e2060 38%,
+            #3a1f72 50%, #2e2060 62%, #1a1635 78%, #111118 100%
+          ) !important;
+          background-size: 250% 100% !important;
+          animation: crystalFlow 6s ease-in-out infinite !important;
+          transition: opacity 0.2s !important;
+        }
+        .add-prop-btn:hover { opacity: 0.85; }
+        .add-prop-sparkle {
+          position: absolute;
+          pointer-events: none;
+          color: rgba(220,230,255,0.7);
+          line-height: 1;
+          text-shadow: 0 0 2px rgba(255,255,255,0.6), 0 0 6px rgba(180,210,255,0.4);
+        }
+      `}</style>
+      <Button asChild className="add-prop-btn text-white">
+        <Link to="/me/host/properties/new">
+          {[
+            { top: "20%", left: "10%", fs: 7,  dur: "5.5s", delay: "0s"   },
+            { top: "55%", left: "72%", fs: 5,  dur: "6.2s", delay: "1.8s" },
+            { top: "18%", left: "82%", fs: 8,  dur: "7.0s", delay: "3.2s" },
+            { top: "70%", left: "25%", fs: 5,  dur: "5.8s", delay: "0.9s" },
+          ].map((s, i) => (
+            <span
+              key={i}
+              className="add-prop-sparkle"
+              style={{
+                top: s.top, left: s.left,
+                fontSize: s.fs,
+                animation: `diamondGlint ${s.dur} ${s.delay} infinite`,
+              }}
+            >✦</span>
+          ))}
+          <Plus size={16} className="mr-1.5 relative z-10" />
+          <span className="relative z-10">Add property</span>
+        </Link>
+      </Button>
+    </>
   );
 
   if (isLoading) {

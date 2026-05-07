@@ -9,5 +9,7 @@ export interface CapabilitiesDto {
     managedAssetsCount: number;
     activeBookingsCount: number;
     pastBookingsCount: number;
+    pendingApplicationsCount: number;
+    pendingRequestsCount?: number; // pending booking requests waiting for host action
   };
 }

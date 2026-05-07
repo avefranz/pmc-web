@@ -2,11 +2,12 @@ import {
   Wifi, ChefHat, Car, Waves, Snowflake, Tv, Dumbbell, Bath,
   TreePine, Flame, Laptop, Camera, Zap, Shirt, Coffee,
   Utensils, BedDouble, Thermometer, Lock, Sun, Wind,
-  Droplets, Package, Shield, type LucideIcon,
+  Droplets, Package, Shield, PawPrint, type LucideIcon,
 } from "lucide-react";
 
 // keyword arrays mapped to lucide icons — order matters (first match wins)
 const MAP: [string[], LucideIcon][] = [
+  [["pet", "dog", "cat", "animal"],                               PawPrint],
   [["wifi", "wi-fi", "internet", "wireless"],                     Wifi],
   [["air con", "aircon", "a/c", "air conditioning", "hvac"],      Snowflake],
   [["pool", "swimming"],                                           Waves],

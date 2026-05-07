@@ -9,32 +9,53 @@ import RegisterPage from "@/pages/register";
 import LineCallbackPage from "@/pages/line-callback";
 import RoleRouterPage from "@/pages/role-router";
 import InviteAcceptPage from "@/pages/invite-accept";
+import ProfilePage from "@/pages/profile";
 
-// Trips
+// Legacy trips (kept for any internal links still referencing them)
 import { TripsPage } from "@/features/me/trips/trips-page";
 import { TripDetailPage } from "@/features/me/trips/trip-detail-page";
-import ProfilePage from "@/pages/profile";
+
+// /me — unified dashboard
+import { MeDashboard } from "@/features/me/me-dashboard";
+
+// Guest context
+import { GuestHome } from "@/features/me/guest/guest-home";
+import { GuestBookingsPage } from "@/features/me/guest/bookings/list-page";
+import { GuestBookingDetailPage } from "@/features/me/guest/bookings/detail-page";
+import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
+import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
 
 // Host managed
 import { ManagedListPage } from "@/features/me/host/managed/list-page";
 import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
 
-// Host deep features
-import { TicketsListPage } from "@/features/me/host/tickets/list-page";
-import { TicketDetailPage } from "@/features/me/host/tickets/detail-page";
-import { FinancePage } from "@/features/me/host/finance/page";
-import { BookingDetailPage } from "@/features/me/host/bookings/detail-page";
-import { CreateBookingPage } from "@/features/me/host/bookings/create-page";
-
-// Marketplace
-import { ListingsPage } from "@/features/marketplace/listings-page";
-import { ListingDetailPage } from "@/features/marketplace/listing-detail-page";
-
-// Host
+// Host properties
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
 import { PropertyCreateWizard } from "@/features/me/host/properties/create-wizard";
 import { PropertyDetailPage } from "@/features/me/host/properties/detail-page";
+
+// Host requests
+import { HostRequestsPage } from "@/features/me/host/requests/list-page";
+import { HostRequestDetailPage } from "@/features/me/host/requests/detail-page";
+
+// Host bookings
+import { HostBookingsPage } from "@/features/me/host/bookings/list-page";
+import { BookingDetailPage } from "@/features/me/host/bookings/detail-page";
+import { CreateBookingPage } from "@/features/me/host/bookings/create-page";
+
+// Host tickets & finance
+import { TicketsListPage } from "@/features/me/host/tickets/list-page";
+import { TicketDetailPage } from "@/features/me/host/tickets/detail-page";
+import { FinancePage } from "@/features/me/host/finance/page";
+
+// Guest TM30 & onboarding
+import { GuestTm30Page } from "@/features/me/guest/tm30/page";
+import { PassportOnboardingStep } from "@/features/me/onboarding/passport-step";
+
+// Marketplace
+import { ListingsPage } from "@/features/marketplace/listings-page";
+import { ListingDetailPage } from "@/features/marketplace/listing-detail-page";
 
 function ComingSoon({ label }: { label: string }) {
   return (
@@ -67,19 +88,41 @@ export default function App() {
 
       {/* /me — unified cabinet */}
       <Route element={<AuthGuard><AppShell /></AuthGuard>}>
-        <Route path="/me" element={<Navigate to="/me/trips" replace />} />
-        <Route path="/me/trips" element={<TripsPage />} />
-        <Route path="/me/trips/:id" element={<TripDetailPage />} />
-        <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
+        {/* Smart entry: redirects based on capabilities */}
+        <Route path="/me" element={<MeDashboard />} />
+
+        {/* Profile */}
         <Route path="/me/profile" element={<ProfilePage />} />
+
+        {/* Guest context */}
+        <Route path="/me/guest" element={<GuestHome />} />
+        <Route path="/me/guest/bookings" element={<GuestBookingsPage />} />
+        <Route path="/me/guest/bookings/:id" element={<GuestBookingDetailPage />} />
+        <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
+        <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
+        <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
+
+        {/* Onboarding */}
+        <Route path="/me/onboarding/passport" element={<PassportOnboardingStep />} />
+
+        {/* Legacy trips — redirect to new paths */}
+        <Route path="/me/trips" element={<Navigate to="/me/guest/bookings" replace />} />
+        <Route path="/me/trips/:id" element={<TripDetailPage />} />
+
+        {/* Host context */}
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
+        <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
         <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
+        <Route path="/me/host/requests" element={<HostRequestsPage />} />
+        <Route path="/me/host/requests/:id" element={<HostRequestDetailPage />} />
+        <Route path="/me/host/bookings" element={<HostBookingsPage />} />
         <Route path="/me/host/bookings/new" element={<CreateBookingPage />} />
         <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
         <Route path="/me/host/tickets" element={<TicketsListPage />} />
         <Route path="/me/host/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/me/host/finance" element={<FinancePage />} />
+        <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
           <Route path="/me/host/managed" element={<ManagedListPage />} />
           <Route path="/me/host/managed/invite" element={<InviteLandlordPage />} />

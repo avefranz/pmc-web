@@ -12,6 +12,9 @@ export const bookingsApi = {
 
   getMy: () => apiClient.get<BookingDto[]>("/api/bookings/my").then((r) => r.data),
 
+  getHostBookings: () =>
+    apiClient.get<{ data: BookingDto[] }>("/api/me/host/bookings").then((r) => r.data.data),
+
   getById: (id: string) => apiClient.get<BookingDto>(`/api/bookings/${id}`).then((r) => r.data),
 
   getByAsset: (assetId: string) =>

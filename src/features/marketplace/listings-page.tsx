@@ -1,15 +1,24 @@
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { BedDouble, Zap, ChevronLeft, ChevronRight, Heart, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMarketplaceListings, useMarketplaceCities } from "@/lib/hooks/use-marketplace";
+import { useAmenities } from "@/lib/hooks/use-references";
+import { amenityIcon } from "@/lib/utils/amenity-icons";
 import { formatThb } from "@/lib/utils/format";
-import type { MarketplaceListingPreviewDto, MarketplaceRentalType, MarketplaceSortOrder } from "@/lib/types/marketplace";
+import type { MarketplaceListingPreviewDto, MarketplaceSortOrder } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils/cn";
 
 const PAGE_SIZE = 12;
+
+// Property category labels from /api/references/property-categories
+const CATEGORY_LABEL: Record<number, string> = {
+  1: "Apartment", 2: "House",    3: "Villa",     4: "Townhouse",
+  5: "Loft",      6: "Condo",    7: "Cabin",      8: "Bungalow",
+  9: "Cottage",  10: "Farm stay",11: "Dome",      12: "Tiny home",
+  13: "Treehouse",14: "Boat",   15: "Yurt",
+};
 
 const FALLBACKS = [
   "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&h=600&q=80",
@@ -28,164 +37,440 @@ function WishHeart({ id }: { id: string }) {
   const [on, setOn] = useState(() => saved().includes(id));
   function toggle(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
-    const list = saved();
-    localStorage.setItem(KEY, JSON.stringify(on ? list.filter((x) => x !== id) : [...list, id]));
+    localStorage.setItem(KEY, JSON.stringify(on ? saved().filter((x) => x !== id) : [...saved(), id]));
     setOn(!on);
   }
   return (
     <button
       onClick={toggle}
-      className="hover:scale-110 transition-transform p-0.5"
-      style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.45))" }}
+      className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-full active:scale-90 transition-transform"
     >
-      <Heart
-        size={20}
-        fill={on ? "white" : "rgba(0,0,0,0.35)"}
-        stroke="white"
-        strokeWidth={2}
-      />
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"
+        style={{ display: "block", height: 26, width: 26, overflow: "visible",
+          fill: on ? "#ff385c" : "rgba(0,0,0,0.5)",
+          stroke: on ? "#ff385c" : "white",
+          strokeWidth: 2,
+        }}>
+        <path d="m15.9998 28.6668c7.1667-4.8847 14.3334-10.8844 14.3334-18.1088 0-1.84951-.6993-3.69794-2.0988-5.10877-1.3996-1.4098-3.2332-2.11573-5.0679-2.11573-1.8336 0-3.6683.70593-5.0668 2.11573l-2.0999 2.11677-2.0988-2.11677c-1.3995-1.4098-3.2332-2.11573-5.06783-2.11573-1.83364 0-3.66831.70593-5.06683 2.11573-1.39955 1.41083-2.09984 3.25926-2.09984 5.10877 0 7.2244 7.16667 13.2241 14.3333 18.1088z" />
+      </svg>
     </button>
   );
 }
 
-// ─── Card ─────────────────────────────────────────────────────────────────────
 
-function ListingCard({ listing, idx }: { listing: MarketplaceListingPreviewDto; idx: number }) {
-  const isLT = listing.rentalType === "LongTerm";
-  const price = isLT ? (listing.baseMonthlyRate ?? listing.basePrice * 30) : listing.basePrice;
+
+// ─── Listing card ─────────────────────────────────────────────────────────────
+
+function ListingCard({
+  listing,
+  idx,
+  durationMonths,
+  style,
+}: {
+  listing: MarketplaceListingPreviewDto;
+  idx: number;
+  durationMonths?: number;
+  style?: React.CSSProperties;
+}) {
+  const baseRate = listing.monthlyRate || listing.baseMonthlyRate || listing.basePrice || 0;
+
+  const effectiveRate = (() => {
+    if (!durationMonths || !listing.discountTiers?.length) return baseRate;
+    const sorted = [...listing.discountTiers].sort((a, b) => b.minMonths - a.minMonths);
+    const tier = sorted.find((t) => durationMonths >= t.minMonths);
+    return tier ? Math.round(baseRate * (1 - tier.discountPercent / 100)) : baseRate;
+  })();
+
+  const hasDiscount = effectiveRate < baseRate;
+  const discountPct = hasDiscount
+    ? (listing.discountTiers?.find((t) => durationMonths && durationMonths >= t.minMonths)?.discountPercent ?? 0)
+    : 0;
+  const bestTier = listing.discountTiers?.length
+    ? [...listing.discountTiers].sort((a, b) => b.discountPercent - a.discountPercent)[0]
+    : null;
+
+  // Title: "[type] in [city]" — Airbnb style
+  const city = listing.cityName || "Thailand";
+  const typeLabel = listing.bedrooms === 0
+    ? "Studio"
+    : CATEGORY_LABEL[listing.propertyCategoryId] ?? "Home";
+  const cardTitle = `${typeLabel} in ${city}`;
+
+  // Price line: "฿12,300 for month · ★ New"  or  "฿10,000 for month  (was ฿12,300)"
+  const priceLabel = hasDiscount
+    ? `${formatThb(effectiveRate)} for month`
+    : `${formatThb(effectiveRate)} for month`;
+
+  // Badge — white pill, like Airbnb's "Guest favorite"
+  const badge = hasDiscount
+    ? `-${discountPct}% off`
+    : bestTier
+    ? `Save up to ${bestTier.discountPercent}%`
+    : null;
+
   const photo = listing.coverImageUrl ?? FALLBACKS[idx % FALLBACKS.length];
 
-  const specs = [
-    listing.bedrooms ? `${listing.bedrooms} bed` : null,
-    listing.bathrooms ? `${listing.bathrooms} bath` : null,
-    listing.maxOccupancy ? `${listing.maxOccupancy} guests` : null,
-  ].filter(Boolean).join(" · ");
-
   return (
-    <Link to={`/listings/${listing.id}`} className="group block">
-      {/* Photo */}
-      <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle mb-3">
+    <Link to={`/listings/${listing.id}`} className="group block" style={style}>
+
+      {/* Photo — no zoom, exact Airbnb style */}
+      <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle">
         <img
           src={photo}
           alt={listing.title}
-          className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
+          className="w-full h-full object-cover"
           loading="lazy"
         />
-        {/* Instant badge */}
-        {listing.instantBookEnabled && (
-          <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 backdrop-blur-sm text-fg text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
-            <Zap size={10} className="text-brand" />Instant
+
+        {/* White pill badge — top left */}
+        {badge && (
+          <div className="absolute top-3 left-3 bg-white text-fg text-[12px] font-semibold px-3 py-1.5 rounded-full shadow-sm leading-none">
+            {badge}
           </div>
         )}
-        <div className="absolute top-3 right-3">
-          <WishHeart id={listing.id} />
-        </div>
+
+        <WishHeart id={listing.id} />
       </div>
 
-      {/* Info stack */}
-      <div className="space-y-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-fg line-clamp-1 leading-snug">{listing.cityName}</p>
-          {listing.instantBookEnabled && (
-            <Zap size={11} className="text-brand shrink-0" />
+      {/* Info — exact Airbnb layout */}
+      <div className="mt-2 px-0.5">
+        {/* Line 1: regular weight, dark gray — NOT bold */}
+        <p className="text-[12px] font-semibold text-black leading-snug line-clamp-1">
+          {cardTitle}
+        </p>
+
+        {/* Line 2: slightly smaller, muted gray */}
+        <p className="text-[11px] text-fg-muted leading-snug mt-0.5">
+          {hasDiscount ? (
+            <>
+              <span className="line-through">{formatThb(baseRate)}</span>
+              {" "}{formatThb(effectiveRate)}{" for month"}
+            </>
+          ) : (
+            <>{priceLabel}</>
           )}
-        </div>
-        <p className="text-sm text-fg-muted line-clamp-1 leading-snug">{listing.title}</p>
-        {specs && (
-          <p className="text-sm text-fg-muted">{specs}</p>
-        )}
-        <p className="text-sm text-fg pt-0.5">
-          <span className="font-semibold">{formatThb(price)}</span>
-          <span className="text-fg-muted font-normal"> / {isLT ? "month" : "night"}</span>
+          {" · ★ New"}
         </p>
       </div>
     </Link>
   );
 }
 
-function CardSkeleton() {
+// ─── Filter bar ───────────────────────────────────────────────────────────────
+
+// Top 3 pinned by amenity id (pool=23, parking=26, gym=30)
+// When pet-friendly is added to DB, prepend its id here
+const PINNED_IDS = [31, 23, 26]; // Pet-friendly, Pool, Parking
+
+// Full priority order — amenity IDs sorted by how commonly users search for them
+// Pet-friendly (missing in DB) goes first once added
+const AMENITY_PRIORITY: number[] = [
+  31, // Pet-friendly
+  23, // Pool
+  26, // Free parking
+  30, // Gym
+   9, // Air conditioning
+   2, // Wi-Fi
+  11, // Washer
+   4, // Kitchen
+  24, // Patio or balcony
+   3, // Dedicated workspace
+  27, // EV charger
+  25, // BBQ grill
+  18, // TV
+   8, // Coffee maker
+   5, // Refrigerator
+  12, // Dryer
+  13, // Iron
+  15, // Hair dryer
+   6, // Microwave
+   7, // Dishwasher
+  28, // Oven
+  29, // Stove
+  10, // Heating
+  17, // Hot water
+   1, // Essentials
+  14, // Hangers
+  16, // Shampoo
+  19, // Smoke alarm
+  20, // Carbon monoxide alarm
+  21, // Fire extinguisher
+  22, // First aid kit
+];
+
+const BEDROOM_OPTIONS = [
+  { label: "Any",    value: undefined as number | undefined },
+  { label: "Studio", value: 0 },
+  { label: "1",      value: 1 },
+  { label: "2",      value: 2 },
+  { label: "3+",     value: 3 },
+];
+
+function FilterBar({
+  activeAmenityIds,
+  onToggleAmenity,
+  activeBedrooms,
+  onSetBedrooms,
+}: {
+  activeAmenityIds: number[];
+  onToggleAmenity: (id: number) => void;
+  activeBedrooms?: number;
+  onSetBedrooms: (v: number | undefined) => void;
+}) {
+  const { data: allAmenities } = useAmenities();
+  const [panelOpen, setPanelOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!panelOpen) return;
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setPanelOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [panelOpen]);
+
+  const pinned = useMemo(() => {
+    if (!allAmenities?.length) return [];
+    return PINNED_IDS.flatMap((id) => {
+      const a = allAmenities.find((x) => x.id === id);
+      return a ? [a] : [];
+    });
+  }, [allAmenities]);
+
+  const panelAmenities = useMemo(() => {
+    if (!allAmenities?.length) return [];
+    const byId = new Map(allAmenities.map((a) => [a.id as number, a]));
+    // Prioritised first
+    const result = AMENITY_PRIORITY.flatMap((id) => {
+      const a = byId.get(id);
+      return a ? [a] : [];
+    });
+    // Any unknown/new amenities from DB appended at the end
+    const seen = new Set(AMENITY_PRIORITY);
+    for (const a of allAmenities) {
+      if (!seen.has(a.id as number)) result.push(a);
+    }
+    return result;
+  }, [allAmenities]);
+
+  // Count of "extra" active filters (amenities not pinned + non-default bedrooms)
+  const extraActive =
+    activeAmenityIds.filter((id) => !pinned.some((p) => p.id === id)).length +
+    (activeBedrooms !== undefined ? 1 : 0);
+
+  const pillBase =
+    "shrink-0 whitespace-nowrap text-[12px] font-medium transition-colors duration-150 cursor-pointer";
+
   return (
-    <div>
-      <Skeleton className="aspect-square rounded-2xl mb-3" />
-      <Skeleton className="h-4 w-2/3 mb-1.5" />
-      <Skeleton className="h-3.5 w-3/4 mb-1" />
-      <Skeleton className="h-3.5 w-1/2 mb-1" />
-      <Skeleton className="h-4 w-1/3 mt-1" />
+    <div ref={wrapRef} className="relative">
+      {/* ── Main bar ── */}
+      <div className="overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        <style>{`.filter-bar::-webkit-scrollbar{display:none}`}</style>
+        <div className="filter-bar flex items-center gap-1.5 w-max">
+
+          {/* Pinned amenities */}
+          {pinned.map((amenity) => {
+            const Icon = amenityIcon(amenity.name);
+            const active = activeAmenityIds.includes(amenity.id as number);
+            return (
+              <button
+                key={amenity.id as number}
+                onClick={() => onToggleAmenity(amenity.id as number)}
+                className={cn(
+                  pillBase,
+                  "px-3 py-1.5 rounded-full border flex items-center gap-1.5",
+                  active
+                    ? "border-fg bg-fg text-white"
+                    : "border-transparent bg-bg-subtle text-fg-muted hover:text-fg hover:border-fg/20",
+                )}
+              >
+                {Icon && <Icon size={11} className="shrink-0" strokeWidth={2} />}
+                {amenity.name}
+              </button>
+            );
+          })}
+
+          {pinned.length > 0 && <span className="mx-1 h-4 w-px bg-border shrink-0" />}
+
+          {/* More filters button */}
+          <button
+            onClick={() => setPanelOpen((v) => !v)}
+            className={cn(
+              pillBase,
+              "px-3 py-1.5 rounded-full border flex items-center gap-1.5",
+              panelOpen || extraActive > 0
+                ? "border-fg bg-fg text-white"
+                : "border-border bg-bg-card text-fg-muted hover:text-fg hover:border-fg/30",
+            )}
+          >
+            <SlidersHorizontal size={11} strokeWidth={2.2} />
+            Filters
+            {extraActive > 0 && (
+              <span className={cn(
+                "inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold leading-none",
+                panelOpen ? "bg-white text-fg" : "bg-brand text-white",
+              )}>
+                {extraActive}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Expanded panel ── */}
+      {panelOpen && (
+        <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(520px,calc(100vw-2rem))] bg-bg-card rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.14)] border border-border overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <span className="text-sm font-semibold text-fg">Filters</span>
+            <button
+              onClick={() => setPanelOpen(false)}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted hover:bg-bg-subtle transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+            {/* Bedrooms */}
+            <div>
+              <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-2.5">Bedrooms</p>
+              <div className="flex flex-wrap gap-2">
+                {BEDROOM_OPTIONS.map(({ label, value }, i) => {
+                  const active = activeBedrooms === value;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => onSetBedrooms(active ? undefined : value)}
+                      className={cn(
+                        "px-4 py-1.5 rounded-full border text-[12px] font-medium transition-colors",
+                        active
+                          ? "border-fg bg-fg text-white"
+                          : "border-border text-fg-muted hover:text-fg hover:border-fg/30",
+                      )}
+                    >
+                      {label === "Any" ? "Any" : label === "Studio" ? "Studio" : `${label} BR`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Amenities */}
+            <div>
+              <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-2.5">Amenities</p>
+              <div className="flex flex-wrap gap-2">
+                {panelAmenities.map((amenity) => {
+                  const Icon = amenityIcon(amenity.name);
+                  const active = activeAmenityIds.includes(amenity.id as number);
+                  return (
+                    <button
+                      key={amenity.id as number}
+                      onClick={() => onToggleAmenity(amenity.id as number)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full border text-[12px] font-medium flex items-center gap-1.5 transition-colors",
+                        active
+                          ? "border-fg bg-fg text-white"
+                          : "border-border text-fg-muted hover:text-fg hover:border-fg/30",
+                      )}
+                    >
+                      {Icon && <Icon size={11} className="shrink-0" strokeWidth={2} />}
+                      {amenity.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          {(activeAmenityIds.length > 0 || activeBedrooms !== undefined) && (
+            <div className="px-5 py-3 border-t border-border flex justify-end">
+              <button
+                onClick={() => {
+                  activeAmenityIds.forEach((id) => onToggleAmenity(id));
+                  onSetBedrooms(undefined);
+                }}
+                className="text-xs font-medium text-fg-muted hover:text-fg underline underline-offset-2 transition-colors"
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Category filter bar ──────────────────────────────────────────────────────
+const SHIMMER_CSS = `
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-subtle) 0%,
+    var(--color-bg-subtle) 35%,
+    color-mix(in srgb, var(--color-fg) 7%, var(--color-bg-subtle)) 50%,
+    var(--color-bg-subtle) 65%,
+    var(--color-bg-subtle) 100%
+  );
+  background-size: 600px 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+`;
 
-const TYPE_FILTERS: { val: MarketplaceRentalType | ""; label: string; icon: string }[] = [
-  { val: "",          label: "All homes",   icon: "🏠" },
-  { val: "LongTerm",  label: "Long-term",   icon: "🏢" },
-  { val: "ShortTerm", label: "Short-term",  icon: "🌴" },
-];
-
-const BED_FILTERS: { val: string; label: string }[] = [
-  { val: "",  label: "Any" },
-  { val: "1", label: "1+" },
-  { val: "2", label: "2+" },
-  { val: "3", label: "3+" },
-  { val: "4", label: "4+" },
-];
-
-function CategoryBar({
-  rentalType,
-  bedrooms,
-  onType,
-  onBeds,
-}: {
-  rentalType: string;
-  bedrooms: string;
-  onType: (v: string) => void;
-  onBeds: (v: string) => void;
-}) {
+function ShimmerCard() {
   return (
-    <div className="sticky top-20 z-30 bg-white border-b border-border">
-      <div className="w-full px-4 md:px-8 lg:px-12">
-        <div className="flex items-center gap-1.5 overflow-x-auto py-2.5 scrollbar-hide">
-          {/* Type filters — single-line, compact */}
-          {TYPE_FILTERS.map((f) => (
-            <button
-              key={f.val}
-              onClick={() => onType(f.val)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all shrink-0 whitespace-nowrap",
-                rentalType === f.val
-                  ? "border-fg bg-fg text-white"
-                  : "border-transparent text-fg-muted hover:text-fg hover:bg-bg-subtle",
-              )}
-            >
-              <span className="text-sm leading-none">{f.icon}</span>
-              {f.label}
-            </button>
-          ))}
+    <div>
+      <div className="shimmer aspect-square rounded-2xl mb-3" />
+      <div className="space-y-2">
+        <div className="shimmer h-[13px] w-3/5 rounded-full" />
+        <div className="shimmer h-[12px] w-4/5 rounded-full" />
+        <div className="shimmer h-[12px] w-2/5 rounded-full" />
+      </div>
+    </div>
+  );
+}
 
-          <div className="w-px h-5 bg-border mx-1 shrink-0" />
+function ScrollSentinel({ onVisible }: { onVisible: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const fired = useRef(false);
 
-          {/* Beds */}
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-xs text-fg-muted font-medium px-1 flex items-center gap-1">
-              <BedDouble size={12} /> Beds:
-            </span>
-            {BED_FILTERS.map((f) => (
-              <button
-                key={f.val}
-                onClick={() => onBeds(f.val)}
-                className={cn(
-                  "px-2.5 py-1 rounded-full border text-xs font-semibold transition-all shrink-0",
-                  bedrooms === f.val
-                    ? "border-fg bg-fg text-white"
-                    : "border-border text-fg-muted hover:border-fg hover:text-fg",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
+  useEffect(() => {
+    fired.current = false;
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !fired.current) {
+          fired.current = true;
+          onVisible();
+        }
+      },
+      { rootMargin: "150px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onVisible]);
+
+  return <div ref={ref} className="h-px" />;
+}
+
+function CardSkeleton() {
+  return (
+    <div>
+      <Skeleton className="aspect-square rounded-2xl mb-3" />
+      <div className="space-y-1.5">
+        <Skeleton className="h-[14px] w-2/3 rounded-full" />
+        <Skeleton className="h-[13px] w-3/4 rounded-full" />
+        <Skeleton className="h-[13px] w-1/3 rounded-full" />
       </div>
     </div>
   );
@@ -196,161 +481,189 @@ function CategoryBar({
 export function ListingsPage() {
   const [params, setParams] = useSearchParams();
 
-  const cityId     = params.get("cityId")     ? Number(params.get("cityId"))   : undefined;
-  const rentalType = (params.get("rentalType") as MarketplaceRentalType | null) ?? undefined;
-  const sort       = (params.get("sort")       as MarketplaceSortOrder | null)  ?? undefined;
-  const bedrooms   = params.get("bedrooms")    ? Number(params.get("bedrooms")) : undefined;
-  const page       = params.get("page")        ? Number(params.get("page"))     : 1;
+  const cityId         = params.get("cityId")         ? Number(params.get("cityId"))         : undefined;
+  const moveInFrom     = params.get("moveInFrom")     ?? undefined;
+  const durationMonths = params.get("durationMonths") ? Number(params.get("durationMonths")) : undefined;
+  const sort           = (params.get("sort") as MarketplaceSortOrder | null) ?? undefined;
+  const amenityIds     = params.getAll("amenity").map(Number).filter(Boolean);
+  const bedrooms       = params.get("bedrooms") !== null ? Number(params.get("bedrooms")) : undefined;
 
-  const { data, isLoading } = useMarketplaceListings({ cityId, rentalType, sort, bedrooms, page, pageSize: PAGE_SIZE });
+  // Internal page counter — not in URL, resets when filters change
+  const [page, setPage] = useState(1);
+  const [allItems, setAllItems] = useState<MarketplaceListingPreviewDto[]>([]);
+
+  // Reset accumulated items + page whenever filters/sort change
+  const filterKey = JSON.stringify({ cityId, moveInFrom, durationMonths, amenityIds, bedrooms, sort });
+  const prevFilterKey = useRef(filterKey);
+  if (prevFilterKey.current !== filterKey) {
+    prevFilterKey.current = filterKey;
+    if (page !== 1) setPage(1);
+    setAllItems([]);
+  }
+
+  const { data, isLoading, isFetching } = useMarketplaceListings({
+    cityId, moveInFrom, durationMonths, sort, page, pageSize: PAGE_SIZE,
+    amenityIds: amenityIds.length ? amenityIds : undefined,
+    bedrooms,
+  });
   const { data: cities } = useMarketplaceCities();
+
+  // Accumulate items as pages load
+  useEffect(() => {
+    if (!data?.items.length) return;
+    if (page === 1) {
+      setAllItems(data.items);
+    } else {
+      setAllItems((prev) => {
+        const ids = new Set(prev.map((x) => x.id));
+        return [...prev, ...data.items.filter((x) => !ids.has(x.id))];
+      });
+    }
+  }, [data]);
+
+  const hasMore = data ? page < data.totalPages : false;
+  const total   = data?.totalCount ?? 0;
 
   function set(key: string, val: string) {
     const next = new URLSearchParams(params);
-    if (!val) next.delete(key);
-    else next.set(key, val);
-    next.delete("page");
+    if (!val) next.delete(key); else next.set(key, val);
     setParams(next);
   }
 
-  function setSort(v: string) {
-    set("sort", v === "Newest" ? "" : v);
-  }
-
-  function setPage(p: number) {
+  function toggleAmenity(id: number) {
     const next = new URLSearchParams(params);
-    next.set("page", String(p));
+    const current = next.getAll("amenity").map(Number);
+    next.delete("amenity");
+    const updated = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    updated.forEach((v) => next.append("amenity", String(v)));
     setParams(next);
   }
 
-  function clearFilters() { setParams({}); }
+  function setSort(v: string) { set("sort", v); }
+  function clearFilters() { setParams(new URLSearchParams()); }
+  const hasFilters = !!(cityId || moveInFrom || durationMonths || amenityIds.length || bedrooms !== undefined);
 
-  const total = data?.totalCount ?? 0;
-  const totalPages = data?.totalPages ?? 1;
-  const hasActiveFilters = !!(cityId || rentalType || bedrooms);
-  const rentalTypeStr = params.get("rentalType") ?? "";
-  const bedroomsStr = params.get("bedrooms") ?? "";
+  function setBedrooms(v: number | undefined) {
+    const next = new URLSearchParams(params);
+    next.delete("page");
+    if (v === undefined) next.delete("bedrooms"); else next.set("bedrooms", String(v));
+    setParams(next);
+  }
 
   return (
-    <>
-      <CategoryBar
-        rentalType={rentalTypeStr}
-        bedrooms={bedroomsStr}
-        onType={(v) => set("rentalType", v)}
-        onBeds={(v) => set("bedrooms", v)}
-      />
+    <div className="w-full px-4 md:px-8 lg:px-12 py-6">
 
-      <div className="w-full px-4 md:px-8 lg:px-12 py-5">
-        {/* Toolbar: active city chip + result count + sort */}
-        {(hasActiveFilters || !isLoading) && (
-          <div className="flex items-center gap-3 mb-4 flex-wrap">
-            {cityId && (
-              <span className="flex items-center gap-1.5 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
-                {cities?.find((c) => c.id === cityId)?.name.en ?? `City ${cityId}`}
-                <button
-                  onClick={() => set("cityId", "")}
-                  className="hover:opacity-70 transition-opacity ml-0.5"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-            {hasActiveFilters && (
-              <button
-                onClick={clearFilters}
-                className="text-xs text-fg-muted underline underline-offset-2 hover:text-fg transition-colors"
-              >
-                Clear all
-              </button>
-            )}
+      {/* ─── Filter bar ─── */}
+      <div className="mb-5">
+        <FilterBar
+          activeAmenityIds={amenityIds}
+          onToggleAmenity={toggleAmenity}
+          activeBedrooms={bedrooms}
+          onSetBedrooms={setBedrooms}
+        />
+      </div>
 
-            <div className="ml-auto flex items-center gap-3">
-              {!isLoading && (
-                <span className="text-sm text-fg-muted">
-                  {total.toLocaleString()} {total === 1 ? "place" : "places"}
-                </span>
-              )}
-              <Select value={sort ?? "Newest"} onValueChange={setSort}>
-                <SelectTrigger className="w-44 h-9 rounded-full text-sm border-border bg-white shadow-sm">
-                  <SlidersHorizontal size={13} className="mr-1.5 text-fg-muted" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Newest">Newest</SelectItem>
-                  <SelectItem value="PriceAsc">Price: low → high</SelectItem>
-                  <SelectItem value="PriceDesc">Price: high → low</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* ─── Toolbar ─── */}
+      {(hasFilters || (!isLoading && !!data)) && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {!isLoading && !!data?.items.length && (
+            <h2 style={{ fontSize: "21px", fontWeight: 600, letterSpacing: "-0.025rem", lineHeight: "25px" }} className="text-fg mr-2">
+              Stay in {cities?.find((c) => c.id === cityId)?.name.en ?? "Thailand"}
+            </h2>
+          )}
+          {cityId && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+              {cities?.find((c) => c.id === cityId)?.name.en ?? `City ${cityId}`}
+              <button onClick={() => set("cityId", "")} className="hover:opacity-70 ml-0.5">×</button>
+            </span>
+          )}
+          {durationMonths && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+              {durationMonths} month{durationMonths !== 1 ? "s" : ""}
+              <button onClick={() => set("durationMonths", "")} className="hover:opacity-70 ml-0.5">×</button>
+            </span>
+          )}
+          {moveInFrom && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+              From {new Date(moveInFrom + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              <button onClick={() => set("moveInFrom", "")} className="hover:opacity-70 ml-0.5">×</button>
+            </span>
+          )}
+          {hasFilters && (
+            <button onClick={clearFilters} className="text-xs text-fg-muted underline underline-offset-2 hover:text-fg transition-colors">
+              Clear all
+            </button>
+          )}
+          <div className="ml-auto flex items-center gap-5">
+            <div className="flex items-center gap-4">
+              {([
+                { label: "Recommended", value: "" },
+                { label: "Price ↑", value: "PriceAsc" },
+                { label: "Price ↓", value: "PriceDesc" },
+              ] as const).map(({ label, value }) => {
+                const active = (sort ?? "") === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setSort(value === "" ? "Newest" : value)}
+                    className={cn(
+                      "text-xs transition-colors duration-150 pb-0.5",
+                      active
+                        ? "text-fg font-semibold border-b-2 border-fg"
+                        : "text-fg-muted hover:text-fg border-b-2 border-transparent",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Grid */}
-        {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-6">
-            {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
-          </div>
-        ) : !data?.items.length ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <div className="text-5xl mb-4">🏠</div>
-            <p className="text-xl font-semibold text-fg mb-1">No places found</p>
-            <p className="text-sm text-fg-muted mb-4">Try adjusting your filters</p>
-            {hasActiveFilters && (
-              <button
-                onClick={clearFilters}
-                className="text-sm font-semibold text-fg underline underline-offset-2 hover:text-fg-muted transition-colors"
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-6">
-            {data.items.map((listing, idx) => (
-              <ListingCard key={listing.id} listing={listing} idx={(page - 1) * PAGE_SIZE + idx} />
+      {/* ─── Grid ─── */}
+      {isLoading && page === 1 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
+          {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      ) : !allItems.length ? (
+        <div className="flex flex-col items-center justify-center py-32 text-center">
+          <p className="text-6xl mb-5">🏠</p>
+          <p className="text-xl font-semibold text-fg mb-2">No places found</p>
+          <p className="text-sm text-fg-muted mb-5">Try adjusting your filters or move-in date</p>
+          {hasFilters && (
+            <Button variant="outline" onClick={clearFilters} className="rounded-full">
+              Clear filters
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          <style>{`
+            @keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+            ${SHIMMER_CSS}
+          `}</style>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
+            {allItems.map((listing, idx) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                idx={idx}
+                durationMonths={durationMonths}
+                style={{ animation: "cardIn 0.3s ease both", animationDelay: `${Math.min(idx, 11) * 35}ms` }}
+              />
+            ))}
+            {isFetching && page > 1 && Array.from({ length: PAGE_SIZE }).map((_, i) => (
+              <ShimmerCard key={`shim-${i}`} />
             ))}
           </div>
-        )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-1.5 mt-12">
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full w-9 h-9 p-0"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              <ChevronLeft size={14} />
-            </Button>
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-              const p = i + 1;
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={cn(
-                    "w-9 h-9 rounded-full text-sm font-medium transition-colors",
-                    p === page ? "bg-fg text-white" : "text-fg-muted hover:bg-bg hover:text-fg",
-                  )}
-                >
-                  {p}
-                </button>
-              );
-            })}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full w-9 h-9 p-0"
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
-            >
-              <ChevronRight size={14} />
-            </Button>
-          </div>
-        )}
-      </div>
-    </>
+          {/* Infinite scroll sentinel — sits below visible cards */}
+          {hasMore && !isFetching && <ScrollSentinel onVisible={() => setPage((p) => p + 1)} />}
+        </>
+      )}
+
+    </div>
   );
 }

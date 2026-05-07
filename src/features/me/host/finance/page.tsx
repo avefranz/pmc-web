@@ -47,12 +47,13 @@ export function FinancePage() {
 
   const [remittanceBatchId, setRemittanceBatchId] = useState<string | null>(null);
   const [remittanceOpen, setRemittanceOpen] = useState(false);
-  const [slipUrl, setSlipUrl] = useState("");
+  const [slipFile, setSlipFile] = useState<File | null>(null);
 
   async function handleCreateRemittance() {
     try {
       const result = await createRemittance.mutateAsync(undefined);
       setRemittanceBatchId(result.batchId);
+      setSlipFile(null);
       setRemittanceOpen(true);
     } catch {
       toast.error("Failed to create remittance batch");
@@ -60,13 +61,13 @@ export function FinancePage() {
   }
 
   async function handleConfirmRemittance() {
-    if (!remittanceBatchId || !slipUrl) return;
+    if (!remittanceBatchId || !slipFile) return;
     try {
-      await confirmRemittance.mutateAsync({ batchId: remittanceBatchId, slipUrl });
+      await confirmRemittance.mutateAsync({ batchId: remittanceBatchId, slip: slipFile });
       toast.success("Remittance confirmed");
       setRemittanceOpen(false);
       setRemittanceBatchId(null);
-      setSlipUrl("");
+      setSlipFile(null);
     } catch {
       toast.error("Failed to confirm remittance");
     }
@@ -204,25 +205,25 @@ export function FinancePage() {
             Upload a payment slip to complete the transfer.
           </p>
           <label className="flex items-center gap-2 cursor-pointer w-fit text-sm text-fg-muted hover:text-fg transition-colors border border-border rounded-lg px-3 py-2">
-            <Upload size={14} />Upload slip
+            <Upload size={14} />{slipFile ? "Change slip" : "Upload slip"}
             <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              const url = URL.createObjectURL(file);
-              setSlipUrl(url);
-              toast.success("Slip ready");
+              setSlipFile(file);
               e.target.value = "";
             }} />
           </label>
-          {slipUrl && (
-            <p className="text-xs text-success">✓ Slip uploaded</p>
+          {slipFile && (
+            <p className="text-xs text-success flex items-center gap-1">
+              ✓ {slipFile.name} ({(slipFile.size / 1024).toFixed(0)} KB) — ready to upload
+            </p>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemittanceOpen(false)}>Cancel</Button>
             <Button
               className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
               onClick={handleConfirmRemittance}
-              disabled={!slipUrl || confirmRemittance.isPending}
+              disabled={!slipFile || confirmRemittance.isPending}
             >
               {confirmRemittance.isPending ? "Confirming…" : "Confirm transfer"}
             </Button>

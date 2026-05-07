@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRegister } from "@/lib/hooks/use-auth";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { SiamoLogo } from "@/components/layout/siamo-logo";
 
 export default function RegisterPage() {
   const [firstName, setFirstName] = useState("");
@@ -38,7 +39,7 @@ export default function RegisterPage() {
     setErrors({});
     try {
       await register.mutateAsync({ email: email.trim(), password, firstName: firstName.trim() });
-      navigate("/me/trips", { replace: true });
+      navigate("/me/onboarding/passport", { replace: true });
     } catch {
       setServerError("Registration failed. This email may already be in use.");
     }
@@ -48,11 +49,10 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-bg px-4">
       <div className="w-full max-w-[420px]">
         {/* Logo */}
-        <div className="flex items-center justify-center mb-8">
-          <div className="w-9 h-9 rounded-lg bg-brand flex items-center justify-center mr-2.5">
-            <span className="text-white font-bold text-lg leading-none">S</span>
-          </div>
-          <span className="font-semibold text-xl text-fg">Siamo</span>
+        <div className="flex justify-center mb-8">
+          <Link to="/listings">
+            <SiamoLogo className="h-11" />
+          </Link>
         </div>
 
         <div className="bg-bg-card rounded-xl shadow-pop p-8">

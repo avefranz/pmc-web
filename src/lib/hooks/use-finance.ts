@@ -68,6 +68,6 @@ export const useCreateRemittance = () =>
 
 export const useConfirmRemittance = () =>
   useMutation({
-    mutationFn: ({ batchId, slipUrl }: { batchId: string; slipUrl: string }) =>
-      financeApi.confirmRemittance(batchId, slipUrl),
+    mutationFn: ({ batchId, slip }: { batchId: string; slip: File }) =>
+      financeApi.confirmRemittance(batchId, slip),
   });

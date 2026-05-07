@@ -5,6 +5,7 @@ import type { BookingStatus } from "../types/enums";
 
 const keys = {
   all: ["bookings"] as const,
+  host: () => ["bookings", "host"] as const,
   my: () => ["bookings", "my"] as const,
   detail: (id: string) => ["bookings", id] as const,
   byAsset: (assetId: string) => ["bookings", "asset", assetId] as const,
@@ -17,6 +18,9 @@ const keys = {
 
 export const useBookings = () =>
   useQuery({ queryKey: keys.all, queryFn: bookingsApi.getAll, staleTime: 30_000 });
+
+export const useHostBookings = () =>
+  useQuery({ queryKey: keys.host(), queryFn: bookingsApi.getHostBookings, staleTime: 30_000 });
 
 export const useMyBookings = () =>
   useQuery({ queryKey: keys.my(), queryFn: bookingsApi.getMy, staleTime: 30_000 });

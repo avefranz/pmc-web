@@ -4,7 +4,8 @@ import {
   ArrowLeft, Plus, Trash2, Pencil, ImagePlus, X,
   BedDouble, Bath, Users, Wifi, Zap, AlertTriangle,
   LayoutGrid, FileText, CalendarDays, Wrench, Settings,
-  BarChart2, Home, ChevronRight,
+  BarChart2, Home, ChevronRight, CheckCircle2, Circle,
+  ImageIcon, Megaphone, TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -346,13 +347,15 @@ export function PropertyDetailPage() {
     return d.toISOString().slice(0, 10);
   }
 
-  const computedEndDate = isLongTerm && publishStartDate && publishDurationMonths
+  const computedEndDate: string | null = isLongTerm && publishStartDate && publishDurationMonths
     ? addMonthsFn(publishStartDate, parseInt(publishDurationMonths))
-    : publishEndDate;
+    : (publishEndDate || null);
+
+  // open-ended = no duration required for long-term
+  const canPublish = isLongTerm ? !!publishStartDate : !!publishStartDate && !!publishEndDate;
 
   async function handlePublish() {
     if (!listing) return;
-    const canPublish = isLongTerm ? !!publishStartDate && !!publishDurationMonths : !!publishStartDate && !!publishEndDate;
     if (!canPublish) return;
     try {
       await listingsApi.update(listing.id, { startDate: publishStartDate, endDate: computedEndDate });
@@ -395,10 +398,12 @@ export function PropertyDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [editPrice, setEditPrice] = useState(0);
   const [editMonthlyPrice, setEditMonthlyPrice] = useState(0);
+  const [editDepositAmount, setEditDepositAmount] = useState(0);
   const [editWifiName, setEditWifiName] = useState("");
   const [editWifiPwd, setEditWifiPwd] = useState("");
   const [editRules, setEditRules] = useState("");
   const [editRentalType, setEditRentalType] = useState<RentalType>(RentalType.LongTerm);
+  const [editDiscountTiers, setEditDiscountTiers] = useState<{ minMonths: number; discountPercent: number }[]>([]);
   const [saving, setSaving] = useState(false);
 
   function openEditSettings() {
@@ -407,10 +412,12 @@ export function PropertyDetailPage() {
     setEditDesc(listing.description ?? "");
     setEditPrice(listing.basePrice);
     setEditMonthlyPrice(listing.baseMonthlyRate ?? 0);
+    setEditDepositAmount(listing.depositAmount ?? 0);
     setEditWifiName(listing.wifiName ?? "");
     setEditWifiPwd(listing.wifiPassword ?? "");
     setEditRules(listing.houseRules ?? "");
     setEditRentalType((listing.rentalType as RentalType) ?? RentalType.LongTerm);
+    setEditDiscountTiers(listing.discountTiers ?? []);
     setEditOpen(true);
   }
 
@@ -423,6 +430,8 @@ export function PropertyDetailPage() {
         description: editDesc,
         basePrice: editRentalType === RentalType.ShortTerm ? editPrice : Math.round(editMonthlyPrice / 30),
         baseMonthlyRate: editRentalType === RentalType.LongTerm ? editMonthlyPrice : undefined,
+        depositAmount: editDepositAmount,
+        discountTiers: editDiscountTiers,
         wifiName: editWifiName,
         wifiPassword: editWifiPwd,
         houseRules: editRules,
@@ -593,70 +602,357 @@ export function PropertyDetailPage() {
         <div className="flex-1 min-w-0 bg-bg-card rounded-2xl border border-border shadow-card p-6">
 
           {/* OVERVIEW */}
-          {section === "overview" && (
-            <div className="space-y-6">
-              <SectionHeading
-                title="Overview"
-                subtitle="Your property at a glance"
-              />
+          {section === "overview" && (() => {
+            const hasPhotos = (listing?.media?.length ?? 0) > 0;
+            const isPublished = listing?.status === ListingStatus.Active;
+            const hasListingDetails = !!listing?.title;
+            const hasBookings = (bookings?.length ?? 0) > 0;
+            const isNewProperty = !hasBookings && !isPublished;
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <div className="bg-bg-subtle rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-fg">{bookings?.length ?? 0}</p>
-                  <p className="text-xs text-fg-muted mt-1">Total bookings</p>
-                </div>
-                <div className="bg-bg-subtle rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-fg">{openTickets.length}</p>
-                  <p className="text-xs text-fg-muted mt-1">Open tickets</p>
-                </div>
-                {summary && (
-                  <div className={cn("bg-bg-subtle rounded-xl p-4 text-center", "sm:col-span-1 col-span-2")}>
-                    <p className={cn("text-2xl font-bold", summary.netProfit >= 0 ? "text-success" : "text-danger")}>
-                      {formatThb(summary.netProfit)}
-                    </p>
-                    <p className="text-xs text-fg-muted mt-1">Net profit</p>
+            const setupSteps = [
+              {
+                id: "created",
+                label: "Property created",
+                desc: `${asset.internalName} — ${[asset.bedrooms && `${asset.bedrooms} bed`, asset.bathrooms && `${asset.bathrooms} bath`].filter(Boolean).join(", ")}`,
+                done: true,
+                action: null as null | (() => void),
+              },
+              {
+                id: "listing",
+                label: "Listing details set",
+                desc: hasListingDetails
+                  ? listing!.baseMonthlyRate
+                    ? `฿${listing!.baseMonthlyRate.toLocaleString()} / month · ${listing!.title}`
+                    : listing!.title
+                  : "Add title, price, and description",
+                done: hasListingDetails,
+                action: () => setSection("listing"),
+              },
+              {
+                id: "photos",
+                label: "Add photos",
+                desc: hasPhotos
+                  ? `${listing!.media.length} photo${listing!.media.length !== 1 ? "s" : ""} added`
+                  : "High-quality photos get 3× more inquiries",
+                done: hasPhotos,
+                action: () => setSection("photos"),
+              },
+              {
+                id: "publish",
+                label: "Publish your listing",
+                desc: isPublished
+                  ? `Live since ${listing?.publishedAt ? formatDate(listing.publishedAt) : "recently"}`
+                  : "Go live and start receiving booking requests",
+                done: isPublished,
+                action: () => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); },
+              },
+            ];
+
+            const doneCount = setupSteps.filter((s) => s.done).length;
+            const nextStep = setupSteps.find((s) => !s.done);
+            const allDone = doneCount === setupSteps.length;
+
+            const pct = Math.round((doneCount / setupSteps.length) * 100);
+            const motivationalCopy = allDone
+              ? { headline: "You're live.", sub: "Sit back and wait for your first booking request." }
+              : doneCount === 0
+              ? { headline: "Let's get this ready.", sub: "A few steps stand between you and your first booking." }
+              : doneCount === 1
+              ? { headline: "Good start. Keep going.", sub: `${setupSteps.length - doneCount} steps until you're live.` }
+              : doneCount === setupSteps.length - 1
+              ? { headline: "Almost there. One step left.", sub: "You're this close to your first booking request." }
+              : { headline: "Good progress.", sub: `${setupSteps.length - doneCount} more steps until launch.` };
+
+            return (
+              <div className="space-y-6">
+                {isNewProperty ? (
+                  /* ── Getting-started checklist ── */
+                  <div>
+                    <style>{`
+                      @keyframes bar-shine {
+                        0% { background-position: -200% center; }
+                        100% { background-position: 200% center; }
+                      }
+                      @keyframes step-done-pop {
+                        0% { transform: scale(1); }
+                        40% { transform: scale(1.03); }
+                        100% { transform: scale(1); }
+                      }
+                      @keyframes next-pulse {
+                        0%,100% { box-shadow: 0 0 0 0 rgba(99,102,241,.3); }
+                        50% { box-shadow: 0 0 0 6px rgba(99,102,241,0); }
+                      }
+                    `}</style>
+
+                    {/* ── Header card ── */}
+                    <div className="rounded-2xl overflow-hidden mb-5" style={{ background: "linear-gradient(160deg,#0f172a 0%,#1e293b 100%)" }}>
+                      {/* Subtle brand accent — single radial glow, no particles */}
+                      <div style={{ position:"absolute", left:0, right:0, top:0, height:120, background:"radial-gradient(ellipse at 20% 0%,rgba(99,102,241,.18) 0%,transparent 70%)", pointerEvents:"none" }} />
+                      <div className="relative px-6 pt-6 pb-5">
+                        <div className="flex items-center justify-between gap-4 mb-5">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color:"rgba(255,255,255,.35)" }}>
+                              Setup checklist
+                            </p>
+                            <h2 className="text-lg font-bold text-white leading-snug">
+                              {motivationalCopy.headline}
+                            </h2>
+                            <p className="text-sm mt-1" style={{ color:"rgba(255,255,255,.45)" }}>
+                              {motivationalCopy.sub}
+                            </p>
+                          </div>
+                          {/* Percentage — clean, typographic */}
+                          <div className="shrink-0 text-right">
+                            <span className="text-4xl font-black leading-none" style={{
+                              background:"linear-gradient(135deg,#fff 40%,rgba(255,255,255,.5))",
+                              WebkitBackgroundClip:"text",
+                              WebkitTextFillColor:"transparent",
+                            }}>{pct}</span>
+                            <span className="text-lg font-bold text-white/50 ml-0.5">%</span>
+                            <p className="text-[10px] font-semibold mt-0.5" style={{ color:"rgba(255,255,255,.3)" }}>
+                              {doneCount} of {setupSteps.length}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Progress bar — clean single color, no rainbow */}
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,.1)" }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-700"
+                            style={{
+                              width:`${pct}%`,
+                              background:"linear-gradient(90deg,#6366f1,#818cf8)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Steps ── */}
+                    <div className="space-y-2">
+                      {setupSteps.map((step, i) => {
+                        const isNext = step.id === nextStep?.id;
+                        return (
+                          <div
+                            key={step.id}
+                            className="flex items-center gap-4 rounded-xl border transition-all duration-200"
+                            style={step.done ? {
+                              background: "#f8fdf9",
+                              border: "1px solid #d1fae5",
+                              padding: "13px 16px",
+                            } : isNext ? {
+                              background: "white",
+                              border: "1px solid #c4b5fd",
+                              padding: "13px 16px",
+                              boxShadow: "0 2px 12px rgba(99,102,241,.08)",
+                            } : {
+                              background: "#fafafa",
+                              border: "1px solid #e4e4e7",
+                              padding: "13px 16px",
+                              opacity: 0.5,
+                            }}
+                          >
+                            {/* Icon */}
+                            <div className="shrink-0">
+                              {step.done ? (
+                                <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center">
+                                  <CheckCircle2 size={16} className="text-white" strokeWidth={2.5} />
+                                </div>
+                              ) : isNext ? (
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-white bg-indigo-500">
+                                  {i + 1}
+                                </div>
+                              ) : (
+                                <div className="w-7 h-7 rounded-full border-2 border-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-400">
+                                  {i + 1}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Text */}
+                            <div className="flex-1 min-w-0">
+                              <p className={cn(
+                                "text-sm font-semibold leading-snug",
+                                step.done ? "text-emerald-800" : isNext ? "text-fg" : "text-fg-muted",
+                              )}>
+                                {step.label}
+                              </p>
+                              <p className="text-xs text-fg-muted mt-0.5 truncate">{step.desc}</p>
+                            </div>
+
+                            {/* CTA */}
+                            {step.done ? (
+                              <span className="shrink-0 text-xs font-semibold text-emerald-600">Done</span>
+                            ) : isNext && step.action ? (
+                              <button
+                                onClick={step.action}
+                                className="shrink-0 flex items-center gap-1 text-sm font-semibold text-white px-3.5 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors active:scale-95"
+                              >
+                                Go <ChevronRight size={13} strokeWidth={2.5} />
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* ── Tips ── */}
+                    {!allDone && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
+                        {[
+                          { icon: ImageIcon,  color: "text-blue-500",   bg: "bg-blue-50",   title: "Photos matter most",        body: "Listings with 5+ photos get significantly more inquiries. Use natural light." },
+                          { icon: FileText,   color: "text-indigo-500", bg: "bg-indigo-50", title: "Write a great description",  body: "Describe the neighbourhood, nearby transport, and what makes the place special." },
+                          { icon: TrendingUp, color: "text-emerald-500",bg: "bg-emerald-50",title: "Price it right",             body: "Check nearby listings to set a competitive monthly rate for your area." },
+                        ].map((tip) => (
+                          <div key={tip.title} className="rounded-xl border border-border p-4 bg-white hover:border-zinc-300 transition-colors">
+                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-3", tip.bg)}>
+                              <tip.icon size={15} className={tip.color} />
+                            </div>
+                            <p className="text-xs font-semibold text-fg mb-1">{tip.title}</p>
+                            <p className="text-xs text-fg-muted leading-relaxed">{tip.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : isPublished && !hasBookings ? (
+                  /* ── Just launched — waiting for first booking ── */
+                  <div>
+                    <style>{`
+                      @keyframes live-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.5)} }
+                      @keyframes spark-fly {
+                        0%   { transform: translate(0,0) scale(1); opacity:1; }
+                        100% { transform: translate(var(--sx),var(--sy)) scale(0); opacity:0; }
+                      }
+                      @keyframes live-pop { 0%{transform:scale(0);opacity:0} 65%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
+                    `}</style>
+
+                    {/* ── Celebration hero ── */}
+                    <div className="rounded-2xl overflow-hidden mb-5 relative" style={{ background:"linear-gradient(160deg,#052e16 0%,#14532d 55%,#0d2818 100%)" }}>
+                      {/* Spark particles — fly outward from center */}
+                      {[
+                        { sx:"-60px", sy:"-50px", c:"#4ade80", d:0 },
+                        { sx:"60px",  sy:"-60px", c:"#fbbf24", d:.15 },
+                        { sx:"70px",  sy:"30px",  c:"#818cf8", d:.05 },
+                        { sx:"-70px", sy:"35px",  c:"#f472b6", d:.2 },
+                        { sx:"0px",   sy:"-70px", c:"#34d399", d:.1 },
+                        { sx:"-40px", sy:"65px",  c:"#a78bfa", d:.25 },
+                        { sx:"45px",  sy:"60px",  c:"#fb923c", d:.08 },
+                        { sx:"-80px", sy:"-10px", c:"#67e8f9", d:.18 },
+                      ].map((s,i) => (
+                        <div key={i} style={{
+                          position:"absolute", top:"50%", left:"50%",
+                          width:6, height:6, borderRadius:"50%", background:s.c,
+                          "--sx":s.sx, "--sy":s.sy,
+                          animation:`spark-fly .8s cubic-bezier(.2,.8,.4,1) ${s.d}s both`,
+                        } as React.CSSProperties} />
+                      ))}
+                      <div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at 50% 0%,rgba(74,222,128,.12) 0%,transparent 70%)", pointerEvents:"none" }} />
+
+                      <div className="relative px-6 py-7 flex items-center gap-5">
+                        <div className="shrink-0 text-5xl" style={{ animation:"live-pop .5s cubic-bezier(.34,1.56,.64,1) .1s both" }}>🏡</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color:"rgba(74,222,128,.6)" }}>Live</span>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" style={{ animation:"live-pulse 1.8s ease-in-out infinite" }} />
+                          </div>
+                          <h2 className="text-xl font-extrabold text-white leading-snug">Your listing is live.</h2>
+                          <p className="text-sm mt-0.5" style={{ color:"rgba(255,255,255,.45)" }}>
+                            Tenants searching in{" "}
+                            <span className="text-white/70 font-medium">{asset.address?.city ?? "your area"}</span>{" "}
+                            can now find and book your place.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Full green bar */}
+                      <div className="mx-6 mb-5 h-1 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,.1)" }}>
+                        <div className="h-full rounded-full bg-emerald-400 w-full" />
+                      </div>
+                    </div>
+
+                    {/* ── What happens next ── */}
+                    <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-3">What happens next</p>
+                    <div className="space-y-2 mb-5">
+                      {[
+                        { n:1, title:"Tenants discover your listing", desc:"Your property appears in search results for people looking in your area and price range." },
+                        { n:2, title:"A tenant sends a booking request", desc:"You'll get notified and can review their details before accepting or declining." },
+                        { n:3, title:"Sign the contract & confirm", desc:"Upload the signed lease and your booking is officially confirmed — money incoming." },
+                      ].map((item) => (
+                        <div key={item.n} className="flex items-start gap-3.5 p-4 rounded-xl border border-border bg-bg-subtle">
+                          <div className="w-6 h-6 rounded-full bg-fg flex items-center justify-center shrink-0 mt-0.5">
+                            <span className="text-[10px] font-black text-white">{item.n}</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-fg">{item.title}</p>
+                            <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{item.desc}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Active property stats (has bookings) ── */
+                  <div className="space-y-4">
+                    <SectionHeading title="Overview" subtitle="Your property at a glance" />
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <div className="bg-bg-subtle rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-fg">{bookings?.length ?? 0}</p>
+                        <p className="text-xs text-fg-muted mt-1">Total bookings</p>
+                      </div>
+                      <div className="bg-bg-subtle rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-fg">{openTickets.length}</p>
+                        <p className="text-xs text-fg-muted mt-1">Open tickets</p>
+                      </div>
+                      {summary && (
+                        <div className={cn("bg-bg-subtle rounded-xl p-4 text-center", "sm:col-span-1 col-span-2")}>
+                          <p className={cn("text-2xl font-bold", summary.netProfit >= 0 ? "text-success" : "text-danger")}>
+                            {formatThb(summary.netProfit)}
+                          </p>
+                          <p className="text-xs text-fg-muted mt-1">Net profit</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {activeBooking && (
+                      <div className="rounded-xl border border-border p-4">
+                        <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Current tenant</p>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold text-fg">{activeBooking.tenantName ?? "Guest"}</p>
+                            <p className="text-sm text-fg-muted">{formatDate(activeBooking.checkInDate)} – {formatDate(activeBooking.checkOutDate)}</p>
+                          </div>
+                          <Link to={`/me/host/bookings/${activeBooking.id}`} className="text-sm font-semibold text-brand hover:underline flex items-center gap-1">
+                            View <ChevronRight size={14} />
+                          </Link>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Active booking */}
-              {activeBooking && (
-                <div className="rounded-xl border border-border p-4">
-                  <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-3">Current tenant</p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-fg">{activeBooking.tenantName ?? "Guest"}</p>
-                      <p className="text-sm text-fg-muted">{formatDate(activeBooking.checkInDate)} – {formatDate(activeBooking.checkOutDate)}</p>
-                    </div>
-                    <Link to={`/me/host/bookings/${activeBooking.id}`} className="text-sm font-semibold text-brand hover:underline flex items-center gap-1">
-                      View <ChevronRight size={14} />
-                    </Link>
-                  </div>
+                {/* Quick actions — always visible */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { icon: LayoutGrid, label: "Manage photos", onClick: () => setSection("photos") },
+                    { icon: FileText,   label: "Edit listing",  onClick: () => setSection("listing") },
+                    { icon: CalendarDays, label: "New booking", onClick: () => setBookingOpen(true) },
+                    { icon: Wrench,     label: "New ticket",   onClick: () => setTicketOpen(true) },
+                  ].map((a) => (
+                    <button
+                      key={a.label}
+                      onClick={a.onClick}
+                      className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border hover:border-fg-muted hover:bg-bg-subtle transition-all text-center group"
+                    >
+                      <a.icon size={20} className="text-fg-muted group-hover:text-fg" />
+                      <span className="text-xs font-medium text-fg-muted group-hover:text-fg">{a.label}</span>
+                    </button>
+                  ))}
                 </div>
-              )}
-
-              {/* Quick actions */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <button onClick={() => { setSection("photos"); }} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border hover:border-fg-muted hover:bg-bg-subtle transition-all text-center group">
-                  <LayoutGrid size={20} className="text-fg-muted group-hover:text-fg" />
-                  <span className="text-xs font-medium text-fg-muted group-hover:text-fg">Manage photos</span>
-                </button>
-                <button onClick={() => { setSection("listing"); }} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border hover:border-fg-muted hover:bg-bg-subtle transition-all text-center group">
-                  <FileText size={20} className="text-fg-muted group-hover:text-fg" />
-                  <span className="text-xs font-medium text-fg-muted group-hover:text-fg">Edit listing</span>
-                </button>
-                <button onClick={() => setBookingOpen(true)} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border hover:border-fg-muted hover:bg-bg-subtle transition-all text-center group">
-                  <CalendarDays size={20} className="text-fg-muted group-hover:text-fg" />
-                  <span className="text-xs font-medium text-fg-muted group-hover:text-fg">New booking</span>
-                </button>
-                <button onClick={() => setTicketOpen(true)} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border hover:border-fg-muted hover:bg-bg-subtle transition-all text-center group">
-                  <Wrench size={20} className="text-fg-muted group-hover:text-fg" />
-                  <span className="text-xs font-medium text-fg-muted group-hover:text-fg">New ticket</span>
-                </button>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* PHOTOS */}
           {section === "photos" && (
@@ -700,6 +996,15 @@ export function PropertyDetailPage() {
                       ? `${formatThb(listing.baseMonthlyRate ?? listing.basePrice * 30)} / month`
                       : `${formatThb(listing.basePrice)} / night`
                   } />
+                  {listing.depositAmount > 0 && (
+                    <Row label="Security deposit" value={formatThb(listing.depositAmount)} />
+                  )}
+                  {listing.discountTiers && listing.discountTiers.length > 0 && (
+                    <Row label="Long-stay discounts" value={listing.discountTiers
+                      .sort((a, b) => a.minMonths - b.minMonths)
+                      .map((t) => `${t.minMonths}mo → ${t.discountPercent}% off`)
+                      .join(" · ")} />
+                  )}
                   {listing.wifiName && <Row label="WiFi" value={`${listing.wifiName}${listing.wifiPassword ? ` · ${listing.wifiPassword}` : ""}`} />}
                   {listing.description && <Row label="Description" value={listing.description} multiline />}
                   {listing.houseRules && <Row label="House rules" value={listing.houseRules} multiline />}
@@ -1010,10 +1315,66 @@ export function PropertyDetailPage() {
               <div className="space-y-1.5"><Label>WiFi name</Label><Input value={editWifiName} onChange={(e) => setEditWifiName(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>WiFi password</Label><Input value={editWifiPwd} onChange={(e) => setEditWifiPwd(e.target.value)} /></div>
             </div>
-            <div className="space-y-1.5">
-              <Label>{editRentalType === RentalType.LongTerm ? "Monthly rate (฿)" : "Nightly rate (฿)"}</Label>
-              <Input type="number" value={editRentalType === RentalType.LongTerm ? editMonthlyPrice || "" : editPrice || ""} onChange={(e) => editRentalType === RentalType.LongTerm ? setEditMonthlyPrice(Number(e.target.value)) : setEditPrice(Number(e.target.value))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{editRentalType === RentalType.LongTerm ? "Monthly rate (฿)" : "Nightly rate (฿)"}</Label>
+                <Input type="number" value={editRentalType === RentalType.LongTerm ? editMonthlyPrice || "" : editPrice || ""} onChange={(e) => editRentalType === RentalType.LongTerm ? setEditMonthlyPrice(Number(e.target.value)) : setEditPrice(Number(e.target.value))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Security deposit (฿)</Label>
+                <Input type="number" value={editDepositAmount || ""} onChange={(e) => setEditDepositAmount(Number(e.target.value))} placeholder="0" min={0} />
+              </div>
             </div>
+            {editRentalType === RentalType.LongTerm && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Long-stay discounts</Label>
+                  <button
+                    type="button"
+                    onClick={() => setEditDiscountTiers((prev) => [...prev, { minMonths: 3, discountPercent: 5 }])}
+                    className="text-xs font-semibold text-brand hover:underline flex items-center gap-1"
+                  >
+                    <Plus size={12} />Add tier
+                  </button>
+                </div>
+                {editDiscountTiers.length === 0 && (
+                  <p className="text-xs text-fg-muted">No discounts set — guests pay the full monthly rate.</p>
+                )}
+                {editDiscountTiers
+                  .sort((a, b) => a.minMonths - b.minMonths)
+                  .map((tier, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="flex-1 flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={tier.minMonths}
+                          onChange={(e) => setEditDiscountTiers((prev) => prev.map((t, j) => j === i ? { ...t, minMonths: Number(e.target.value) } : t))}
+                          className="w-20 text-center"
+                        />
+                        <span className="text-xs text-fg-muted whitespace-nowrap">months →</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={tier.discountPercent}
+                          onChange={(e) => setEditDiscountTiers((prev) => prev.map((t, j) => j === i ? { ...t, discountPercent: Number(e.target.value) } : t))}
+                          className="w-20 text-center"
+                        />
+                        <span className="text-xs text-fg-muted">% off</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditDiscountTiers((prev) => prev.filter((_, j) => j !== i))}
+                        className="w-7 h-7 rounded-lg hover:bg-danger/10 flex items-center justify-center text-fg-subtle hover:text-danger transition-colors shrink-0"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
             <div className="space-y-1.5"><Label>House rules</Label><Textarea value={editRules} onChange={(e) => setEditRules(e.target.value)} className="min-h-[60px] resize-none" /></div>
           </div>
           <DialogFooter>
@@ -1026,28 +1387,183 @@ export function PropertyDetailPage() {
       </Dialog>
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Publish listing</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5"><Label>Start date *</Label><DatePicker value={publishStartDate} onChange={setPublishStartDate} /></div>
-            {isLongTerm ? (
-              <div className="space-y-1.5">
-                <Label>Duration (months) *</Label>
-                <Input type="number" min={1} value={publishDurationMonths} onChange={(e) => setPublishDurationMonths(e.target.value)} />
-                {publishStartDate && publishDurationMonths && (
-                  <p className="text-xs text-fg-muted">Ends: {formatDate(computedEndDate)}</p>
-                )}
+        <DialogContent className="max-w-[460px] overflow-hidden p-0 gap-0 border-0 rounded-2xl shadow-2xl">
+          <style>{`
+            @keyframes pub-float {
+              0%,100% { transform: translateY(0) scale(1); opacity:.8; }
+              50% { transform: translateY(-18px) scale(.85); opacity:.35; }
+            }
+            @keyframes pub-rocket {
+              0% { transform: scale(0) rotate(-20deg); opacity:0; }
+              60% { transform: scale(1.18) rotate(5deg); opacity:1; }
+              80% { transform: scale(.95) rotate(-3deg); }
+              100% { transform: scale(1) rotate(0deg); opacity:1; }
+            }
+            @keyframes pub-shimmer {
+              0% { background-position: -300% center; }
+              100% { background-position: 300% center; }
+            }
+            @keyframes pub-pulse {
+              0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,.55); }
+              50% { box-shadow: 0 0 0 14px rgba(139,92,246,0); }
+            }
+          `}</style>
+
+          {/* ── Dark hero ── */}
+          <div className="relative overflow-hidden px-8 pt-10 pb-8 text-center" style={{ background: "linear-gradient(145deg,#0f0c29 0%,#302b63 55%,#24243e 100%)" }}>
+            {/* Floating colour particles */}
+            {[
+              { c:"#f59e0b", l:"10%", t:"20%", d:2.8 }, { c:"#10b981", l:"25%", t:"65%", d:3.5 },
+              { c:"#6366f1", l:"52%", t:"12%", d:2.2 }, { c:"#f43f5e", l:"70%", t:"58%", d:3.1 },
+              { c:"#06b6d4", l:"83%", t:"22%", d:2.6 }, { c:"#a78bfa", l:"40%", t:"75%", d:4.0 },
+              { c:"#fb923c", l:"88%", t:"70%", d:3.3 }, { c:"#34d399", l:"6%",  t:"52%", d:2.9 },
+            ].map((p,i) => (
+              <div key={i} style={{ position:"absolute", width:7, height:7, borderRadius:"50%", background:p.c, left:p.l, top:p.t, animation:`pub-float ${p.d}s ease-in-out infinite`, animationDelay:`${i*.35}s`, filter:"blur(.5px)" }} />
+            ))}
+            <div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at 50% 0%,rgba(99,102,241,.35) 0%,transparent 70%)", pointerEvents:"none" }} />
+
+            <div style={{ fontSize:52, animation:"pub-rocket .55s cubic-bezier(.34,1.56,.64,1) .1s both", position:"relative", display:"inline-block" }}>🚀</div>
+            <DialogTitle className="text-[22px] font-extrabold text-white mt-3 mb-1.5 relative">
+              Time to launch!
+            </DialogTitle>
+            <p className="text-sm leading-relaxed relative" style={{ color:"rgba(255,255,255,.55)" }}>
+              Thousands of tenants are searching right now.<br />Let your place shine.
+            </p>
+          </div>
+
+          {/* ── Content ── */}
+          <div className="bg-white px-6 pt-5 pb-4 space-y-5">
+
+            {/* No-photos blocker */}
+            {!(listing?.media?.length) && (
+              <div className="flex items-start gap-3 bg-amber-50 rounded-xl p-3.5 border border-amber-200">
+                <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-700">Photos required to publish</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Go to the{" "}
+                    <button onClick={() => { setPublishOpen(false); setSection("photos"); }} className="underline font-semibold">
+                      Photos tab
+                    </button>{" "}
+                    and add at least one photo. Listings with photos get 3× more views.
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-1.5"><Label>End date *</Label><DatePicker value={publishEndDate} onChange={setPublishEndDate} /></div>
+            )}
+
+            {/* Available from */}
+            <div>
+              <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-1.5">Available from</p>
+              <DatePicker value={publishStartDate} onChange={setPublishStartDate} />
+            </div>
+
+            {/* Duration */}
+            {isLongTerm ? (() => {
+              // Ordered values: 1..24 then open-ended (∞ = "")
+              const STEPS = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,"∞"] as const;
+              const curIdx = publishDurationMonths === "" ? STEPS.length - 1 : STEPS.indexOf(parseInt(publishDurationMonths) as typeof STEPS[number]);
+              const dec = () => {
+                const prev = STEPS[(curIdx - 1 + STEPS.length) % STEPS.length];
+                setPublishDurationMonths(prev === "∞" ? "" : String(prev));
+              };
+              const inc = () => {
+                const next = STEPS[(curIdx + 1) % STEPS.length];
+                setPublishDurationMonths(next === "∞" ? "" : String(next));
+              };
+              const isInfinity = !publishDurationMonths;
+              const PRESETS: Array<number | "∞"> = [1, 3, 6, 12, "∞"];
+              return (
+                <div>
+                  <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-3">How long?</p>
+
+                  {/* Stepper */}
+                  <div className="flex items-stretch rounded-2xl overflow-hidden mb-2.5" style={{ border: "2px solid #ececf0", background: "#fafafa" }}>
+                    <button type="button" onClick={dec}
+                      className="flex-none w-14 flex items-center justify-center text-2xl font-black transition-colors active:scale-95 select-none"
+                      style={{ color: "#a1a1aa" }}
+                      onMouseEnter={e => (e.currentTarget.style.background="#f0f0f3")}
+                      onMouseLeave={e => (e.currentTarget.style.background="transparent")}
+                    >−</button>
+
+                    <div className="flex-1 flex flex-col items-center justify-center py-4">
+                      {isInfinity ? (
+                        <>
+                          <span className="text-4xl font-black leading-none" style={{ color:"#8b5cf6" }}>∞</span>
+                          <span className="text-xs font-semibold text-zinc-400 mt-1">open-ended</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-4xl font-black text-fg leading-none">{publishDurationMonths}</span>
+                          <span className="text-xs font-semibold text-zinc-400 mt-1">
+                            {parseInt(publishDurationMonths) === 1 ? "month" : "months"}
+                            {publishStartDate ? ` · ends ${formatDate(computedEndDate)}` : ""}
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    <button type="button" onClick={inc}
+                      className="flex-none w-14 flex items-center justify-center text-2xl font-black transition-colors active:scale-95 select-none"
+                      style={{ color: "#a1a1aa" }}
+                      onMouseEnter={e => (e.currentTarget.style.background="#f0f0f3")}
+                      onMouseLeave={e => (e.currentTarget.style.background="transparent")}
+                    >+</button>
+                  </div>
+
+                  {/* Quick presets */}
+                  <div className="flex gap-1.5">
+                    {PRESETS.map((v) => {
+                      const val = v === "∞" ? "" : String(v);
+                      const active = publishDurationMonths === val;
+                      return (
+                        <button key={String(v)} type="button" onClick={() => setPublishDurationMonths(val)}
+                          className="flex-1 py-2 rounded-xl text-sm font-bold transition-all duration-150 active:scale-95"
+                          style={active ? {
+                            background:"linear-gradient(135deg,#6366f1,#8b5cf6)",
+                            color:"white",
+                            boxShadow:"0 3px 10px rgba(139,92,246,.4)",
+                          } : { background:"#f0f0f3", color:"#71717a" }}
+                        >
+                          {v === "∞" ? "∞" : `${v}mo`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })() : (
+              <div>
+                <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-1.5">Available until</p>
+                <DatePicker value={publishEndDate} onChange={setPublishEndDate} />
+              </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPublishOpen(false)}>Cancel</Button>
-            <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" disabled={publishListing.isPending} onClick={handlePublish}>
-              {publishListing.isPending ? "Publishing…" : "Publish"}
-            </Button>
-          </DialogFooter>
+
+          {/* ── CTA ── */}
+          <div className="bg-white px-6 pb-6 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setPublishOpen(false)}
+              className="px-4 py-3 rounded-xl text-sm font-semibold text-fg-muted hover:text-fg hover:bg-bg-subtle transition-colors whitespace-nowrap"
+            >
+              Not yet
+            </button>
+            <button
+              type="button"
+              disabled={!canPublish || !(listing?.media?.length) || publishListing.isPending}
+              onClick={handlePublish}
+              className="flex-1 h-12 rounded-xl font-extrabold text-white text-base transition-all active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background:"linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a78bfa 100%)",
+                backgroundSize:"200% auto",
+                ...(canPublish && (listing?.media?.length ?? 0) > 0 && !publishListing.isPending
+                  ? { animation:"pub-pulse 2s ease-in-out infinite" }
+                  : {}),
+              }}
+            >
+              {publishListing.isPending ? "Launching…" : "🚀 Launch listing"}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
 

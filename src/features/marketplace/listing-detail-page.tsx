@@ -1,27 +1,27 @@
-import { useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, BedDouble, Bath, Users, Zap, LayoutGrid, X, ChevronLeft, ChevronRight, Home, Check } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useParams, Link } from "react-router-dom";
+import {
+  BedDouble, Bath, Users, LayoutGrid, X,
+  ChevronLeft, ChevronRight, Home, Check, BadgeCheck, Lock,
+  Trophy, Zap, Leaf, ShieldCheck, CalendarCheck,
+  FileText, RotateCcw, ClipboardList, Tag,
+} from "lucide-react";
 import { amenityIcon } from "@/lib/utils/amenity-icons";
-import { toast } from "sonner";
-import { differenceInCalendarDays, parseISO } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
-import { useMarketplaceListing } from "@/lib/hooks/use-marketplace";
-import { useCreateBooking } from "@/lib/hooks/use-bookings";
-import { useAuthStore } from "@/lib/stores/auth.store";
-import { formatThb, formatDate } from "@/lib/utils/format";
+import { useMarketplaceListing, useListingAvailability } from "@/lib/hooks/use-marketplace";
+import { formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
+import { AvailabilityTimeline } from "./components/availability-timeline";
+import { BookingWidget } from "./components/booking-widget";
+import { BookingRequestModal } from "./components/booking-request-modal";
+import type { ListingAvailabilityDto } from "@/lib/types/marketplace";
+
+// ─── Gallery modal ────────────────────────────────────────────────────────────
 
 type MediaItem = { id: string; url: string; caption: string | null };
 
-// ─── Fullscreen gallery modal ─────────────────────────────────────────────────
-
-function GalleryModal({
-  media,
-  startAt,
-  onClose,
-}: {
+function GalleryModal({ media, startAt, onClose }: {
   media: MediaItem[];
   startAt: number;
   onClose: () => void;
@@ -31,66 +31,28 @@ function GalleryModal({
   const next = () => setIdx((i) => (i + 1) % media.length);
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/95 flex flex-col"
-      onClick={onClose}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-6 py-4 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col" onClick={onClose}>
+      <div className="flex items-center justify-between px-6 py-4 shrink-0" onClick={(e) => e.stopPropagation()}>
         <span className="text-white/70 text-sm">{idx + 1} / {media.length}</span>
-        <button
-          onClick={onClose}
-          className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-        >
+        <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
           <X size={18} className="text-white" />
         </button>
       </div>
-
-      {/* Main image */}
-      <div
-        className="flex-1 flex items-center justify-center relative px-16 min-h-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={prev}
-          className="absolute left-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors"
-        >
+      <div className="flex-1 flex items-center justify-center relative px-16 min-h-0" onClick={(e) => e.stopPropagation()}>
+        <button onClick={prev} className="absolute left-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors">
           <ChevronLeft size={22} className="text-white" />
         </button>
-
-        <img
-          key={idx}
-          src={media[idx].url}
-          alt={media[idx].caption ?? ""}
-          className="max-h-full max-w-full object-contain rounded-lg"
-        />
-
-        <button
-          onClick={next}
-          className="absolute right-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors"
-        >
+        <img key={idx} src={media[idx].url} alt={media[idx].caption ?? ""} className="max-h-full max-w-full object-contain rounded-lg" />
+        <button onClick={next} className="absolute right-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors">
           <ChevronRight size={22} className="text-white" />
         </button>
       </div>
-
-      {/* Thumbnail strip */}
       {media.length > 1 && (
-        <div
-          className="flex gap-2 overflow-x-auto px-6 py-4 shrink-0 scrollbar-hide justify-center"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="flex gap-2 overflow-x-auto px-6 py-4 shrink-0 scrollbar-hide justify-center" onClick={(e) => e.stopPropagation()}>
           {media.map((m, i) => (
-            <button
-              key={m.id}
-              onClick={() => setIdx(i)}
-              className={cn(
-                "shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all",
-                i === idx ? "border-white opacity-100" : "border-transparent opacity-40 hover:opacity-70",
-              )}
-            >
+            <button key={m.id} onClick={() => setIdx(i)}
+              className={cn("shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all",
+                i === idx ? "border-white opacity-100" : "border-transparent opacity-40 hover:opacity-70")}>
               <img src={m.url} alt="" className="w-full h-full object-cover" />
             </button>
           ))}
@@ -100,24 +62,11 @@ function GalleryModal({
   );
 }
 
-// ─── Photo grid (Airbnb-style) ────────────────────────────────────────────────
-
-function ShowAllBtn({ onClick, count }: { onClick: () => void; count: number }) {
-  return (
-    <button
-      onClick={onClick}
-      className="absolute bottom-4 right-4 flex items-center gap-2 bg-white border border-border rounded-xl px-4 py-2.5 text-sm font-semibold text-fg shadow-sm hover:shadow-md transition-shadow"
-    >
-      <LayoutGrid size={15} />
-      {count === 1 ? "View photo" : `Show all ${count} photos`}
-    </button>
-  );
-}
+// ─── Photo grid ───────────────────────────────────────────────────────────────
 
 function PhotoGrid({ media }: { media: MediaItem[] }) {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryStart, setGalleryStart] = useState(0);
-
   function open(i: number) { setGalleryStart(i); setGalleryOpen(true); }
 
   if (!media.length) {
@@ -132,24 +81,15 @@ function PhotoGrid({ media }: { media: MediaItem[] }) {
 
   return (
     <>
-      {/* Desktop: always 5-slot Airbnb grid */}
       <div className="hidden md:block relative">
         <div className="grid grid-cols-[2fr_1fr_1fr] grid-rows-2 gap-2 rounded-2xl overflow-hidden h-[420px]">
-          {/* Main photo */}
           <button className="row-span-2 overflow-hidden group" onClick={() => open(0)}>
             <img src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
           </button>
-
-          {/* 4 side slots */}
           {[0, 1, 2, 3].map((i) => {
             const item = rest[i];
             return (
-              <button
-                key={i}
-                className="overflow-hidden group relative"
-                onClick={() => item && open(i + 1)}
-                disabled={!item}
-              >
+              <button key={i} className="overflow-hidden group relative" onClick={() => item && open(i + 1)} disabled={!item}>
                 {item ? (
                   <img src={item.url} alt={item.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
                 ) : (
@@ -164,176 +104,140 @@ function PhotoGrid({ media }: { media: MediaItem[] }) {
             );
           })}
         </div>
-
-        <ShowAllBtn onClick={() => open(0)} count={media.length} />
+        <button
+          onClick={() => open(0)}
+          className="absolute bottom-4 right-4 flex items-center gap-2 bg-white border border-border rounded-xl px-4 py-2.5 text-sm font-semibold text-fg shadow-sm hover:shadow-md transition-shadow"
+        >
+          <LayoutGrid size={15} />
+          {media.length === 1 ? "View photo" : `Show all ${media.length} photos`}
+        </button>
       </div>
 
-      {/* Mobile: single photo + counter */}
       <div className="md:hidden relative aspect-[4/3] rounded-2xl overflow-hidden bg-bg-subtle">
         <img src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover" onClick={() => open(0)} />
         {media.length > 1 && (
-          <button
-            onClick={() => open(0)}
-            className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm border border-border rounded-full px-3 py-1.5 text-xs font-semibold text-fg shadow-sm"
-          >
-            <LayoutGrid size={12} />
-            {media.length} photos
+          <button onClick={() => open(0)} className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm border border-border rounded-full px-3 py-1.5 text-xs font-semibold text-fg shadow-sm">
+            <LayoutGrid size={12} />{media.length} photos
           </button>
         )}
       </div>
 
-      {galleryOpen && (
-        <GalleryModal media={media} startAt={galleryStart} onClose={() => setGalleryOpen(false)} />
-      )}
+      {galleryOpen && <GalleryModal media={media} startAt={galleryStart} onClose={() => setGalleryOpen(false)} />}
     </>
   );
 }
 
-// ─── Booking panel ────────────────────────────────────────────────────────────
 
-function BookingPanel({
-  listing,
-}: {
-  listing: {
-    id: string;
-    assetId?: string;
-    basePrice: number;
-    baseMonthlyRate?: number | null;
-    rentalType: string;
-    instantBookEnabled: boolean;
-  };
-}) {
-  const { token } = useAuthStore();
-  const navigate = useNavigate();
-  const createBooking = useCreateBooking();
+// ─── AI Highlights ────────────────────────────────────────────────────────────
 
-  const isLT = listing.rentalType === "LongTerm";
-  const price = isLT ? (listing.baseMonthlyRate ?? listing.basePrice * 30) : listing.basePrice;
+type Highlight = { icon: React.ReactNode; title: string; body: string };
 
-  const [checkIn, setCheckIn] = useState<string>("");
-  const [checkOut, setCheckOut] = useState<string>("");
-  const [submitted, setSubmitted] = useState(false);
+function generateHighlights(listing: {
+  id: string;
+  amenities: { name: string; isPresent: boolean }[];
+  discountTiers?: { minMonths: number; discountPercent: number }[];
+  maxOccupancy?: number;
+  bedrooms?: number;
+  cityName?: string;
+}): Highlight[] {
+  const hits: Highlight[] = [];
+  const amenityNames = listing.amenities.filter(a => a.isPresent).map(a => a.name.toLowerCase());
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const has = (kw: string) => amenityNames.some(n => n.includes(kw));
 
-  const nights =
-    checkIn && checkOut
-      ? Math.max(0, differenceInCalendarDays(parseISO(checkOut), parseISO(checkIn)))
-      : 0;
+  if (has("pool"))
+    hits.push({ icon: <Zap size={22} strokeWidth={1.5} />, title: "Dive right in", body: `One of the few rentals in ${listing.cityName ?? "the area"} with a private pool.` });
 
-  async function handleBook() {
-    if (!token) { navigate("/login"); return; }
-    if (!checkIn || !checkOut) { toast.error("Please select check-in and check-out dates"); return; }
-    setSubmitted(true);
-    try {
-      const booking = await createBooking.mutateAsync({
-        assetId: listing.assetId,
-        listingId: listing.id,
-        checkInDate: checkIn,
-        checkOutDate: checkOut,
-        depositAmount: 0,
-      });
-      toast.success("Booking request sent!");
-      navigate(`/me/trips/${booking.id}`);
-    } catch {
-      toast.error("Failed to submit booking request. Please try again.");
-    } finally {
-      setSubmitted(false);
-    }
+  if (has("gym") || has("fitness"))
+    hits.push({ icon: <Trophy size={22} strokeWidth={1.5} />, title: "Stay fit", body: "On-site gym — no membership needed. Work out on your schedule." });
+
+  const bestTier = listing.discountTiers?.length
+    ? [...listing.discountTiers].sort((a, b) => b.discountPercent - a.discountPercent)[0]
+    : null;
+  if (bestTier && bestTier.discountPercent >= 5)
+    hits.push({ icon: <CalendarCheck size={22} strokeWidth={1.5} />, title: "Long-stay perks", body: `Save up to ${bestTier.discountPercent}% when you stay ${bestTier.minMonths}+ months — great for remote workers.` });
+
+  if (has("wifi") || has("desk") || has("work"))
+    hits.push({ icon: <ShieldCheck size={22} strokeWidth={1.5} />, title: "Remote-work ready", body: "Fast Wi-Fi and a dedicated workspace — everything you need to work from home." });
+
+  if (has("balcony") || has("terrace") || has("garden"))
+    hits.push({ icon: <Leaf size={22} strokeWidth={1.5} />, title: "Indoor-outdoor living", body: "Private outdoor space to unwind — rare in this price range." });
+
+  // Fallback: verified property badge (true for all published listings)
+  if (hits.length < 2) {
+    hits.push({ icon: <ShieldCheck size={22} strokeWidth={1.5} />, title: "Verified property", body: "Reviewed and published by the Siamo team — every listing meets our quality standard." });
   }
 
-  const canBook = !submitted && !createBooking.isPending;
+  return hits.slice(0, 3);
+}
+
+
+// ─── City map (Leaflet + OpenStreetMap tiles, no API key) ────────────────────
+
+const THAI_CITY_COORDS: Record<string, { lat: number; lon: number }> = {
+  "Bangkok":    { lat: 13.7563, lon: 100.5018 },
+  "Chiang Mai": { lat: 18.7883, lon:  98.9853 },
+  "Phuket":     { lat:  7.9519, lon:  98.3381 },
+  "Pattaya":    { lat: 12.9236, lon: 100.8825 },
+  "Hua Hin":    { lat: 12.5688, lon:  99.9580 },
+  "Koh Samui":  { lat:  9.5120, lon: 100.0136 },
+  "Samui":      { lat:  9.5120, lon: 100.0136 },
+  "Chiang Rai": { lat: 19.9105, lon:  99.8406 },
+  "Krabi":      { lat:  8.0863, lon:  98.9063 },
+  "Ayutthaya":  { lat: 14.3532, lon: 100.5677 },
+  "Nonthaburi": { lat: 13.8591, lon: 100.5159 },
+};
+
+function CityMap({ cityName }: { cityName: string }) {
+  const key = Object.keys(THAI_CITY_COORDS).find(
+    (k) => cityName.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(cityName.toLowerCase()),
+  );
+  const { lat, lon } = key ? THAI_CITY_COORDS[key] : { lat: 13.7563, lon: 100.5018 };
+  const d = 0.04;
+  const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
+  return (
+    <iframe
+      title="Property location"
+      src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`}
+      className="w-full h-full border-0"
+      loading="lazy"
+    />
+  );
+}
+
+// ─── Fallback booking panel (no availability data yet) ────────────────────────
+
+function BookingPanelFallback({
+  listing,
+  onRequestBook,
+}: {
+  listing: { id: string; monthlyRate?: number; baseMonthlyRate?: number | null };
+  onRequestBook: (moveIn: string, months: number) => void;
+}) {
+  // Build a minimal availability DTO from listing data so BookingWidget still works
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const fallbackAvailability: ListingAvailabilityDto = {
+    availableFrom: todayStr,
+    availableUntil: null,
+    minMonths: 1,
+    maxMonths: 12,
+    occupiedRanges: [],
+    nextAvailableDate: todayStr,
+  };
 
   return (
-    <div className="bg-white rounded-2xl border border-border shadow-pop p-6 space-y-4">
-      {/* Price */}
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-2xl font-bold text-fg">{formatThb(price)}</span>
-        <span className="text-sm text-fg-muted">/ {isLT ? "month" : "night"}</span>
-        {listing.instantBookEnabled && (
-          <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-brand">
-            <Zap size={11} />Instant
-          </span>
-        )}
-      </div>
-
-      {/* Date pickers */}
-      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-        <div className="grid grid-cols-2 divide-x divide-border">
-          <div className="p-3 space-y-1">
-            <p className="text-[11px] font-bold text-fg uppercase tracking-wide">Check-in</p>
-            <DatePicker
-              value={checkIn}
-              onChange={(v) => {
-                setCheckIn(v);
-                if (checkOut && v >= checkOut) setCheckOut("");
-              }}
-              placeholder="Add date"
-              isDisabled={(d) => d < today}
-              className="border-0 shadow-none h-8 px-0 text-sm bg-transparent hover:bg-transparent focus-visible:ring-0"
-            />
-          </div>
-          <div className="p-3 space-y-1">
-            <p className="text-[11px] font-bold text-fg uppercase tracking-wide">Check-out</p>
-            <DatePicker
-              value={checkOut}
-              onChange={setCheckOut}
-              placeholder="Add date"
-              isDisabled={(d) => {
-                if (d < today) return true;
-                if (checkIn) {
-                  const ci = parseISO(checkIn);
-                  return d <= ci;
-                }
-                return false;
-              }}
-              className="border-0 shadow-none h-8 px-0 text-sm bg-transparent hover:bg-transparent focus-visible:ring-0"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* CTA */}
-      <Button
-        className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-12 text-base font-semibold shadow-sm"
-        onClick={handleBook}
-        disabled={!canBook}
-      >
-        {!token
-          ? "Sign in to book"
-          : submitted || createBooking.isPending
-          ? "Sending…"
-          : listing.instantBookEnabled
-          ? "Book instantly"
-          : "Request to book"}
-      </Button>
-
-      {!token && (
-        <p className="text-xs text-center text-fg-muted">
-          <Link to="/register" className="text-brand hover:underline font-medium">Create an account</Link>
-          {" "}or{" "}
-          <Link to="/login" className="text-brand hover:underline font-medium">log in</Link>
-          {" "}to book
-        </p>
-      )}
-
-      {/* Price breakdown */}
-      {nights > 1 && !isLT && (
-        <div className="space-y-2 pt-2 border-t border-border text-sm">
-          <div className="flex justify-between text-fg-muted">
-            <span>{formatThb(price)} × {nights} nights</span>
-            <span>{formatThb(price * nights)}</span>
-          </div>
-          <div className="flex justify-between font-semibold text-fg pt-1 border-t border-border">
-            <span>Total before taxes</span>
-            <span>{formatThb(price * nights)}</span>
-          </div>
-        </div>
-      )}
-
-      <p className="text-xs text-center text-fg-muted">You won't be charged yet</p>
-    </div>
+    <BookingWidget
+      listing={{
+        id: listing.id,
+        monthlyRate: listing.monthlyRate || listing.baseMonthlyRate || 0,
+        discountTiers: [],
+      }}
+      availability={fallbackAvailability}
+      onRequestBook={onRequestBook}
+    />
   );
 }
 
@@ -342,6 +246,16 @@ function BookingPanel({
 export function ListingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: listing, isLoading } = useMarketplaceListing(id!);
+  const { data: availability } = useListingAvailability(id!, !!id);
+
+  const [bookingModal, setBookingModal] = useState<{
+    moveIn: string;
+    months: number;
+  } | null>(null);
+
+  // Derived fields — graceful fallback between old and new API shapes
+  const monthlyRate = listing?.monthlyRate || listing?.baseMonthlyRate || 0;
+  const discountTiers = listing?.discountTiers ?? [];
 
   if (isLoading) {
     return (
@@ -349,7 +263,6 @@ export function ListingDetailPage() {
         <Skeleton className="h-5 w-40 mb-5" />
         <Skeleton className="h-10 w-2/3 mb-2" />
         <Skeleton className="h-4 w-1/3 mb-6" />
-        {/* Photo grid skeleton — always 5-slot */}
         <div className="hidden md:grid grid-cols-[2fr_1fr_1fr] grid-rows-2 gap-2 rounded-2xl overflow-hidden h-[420px] mb-10">
           <Skeleton className="row-span-2 rounded-none" />
           <Skeleton className="rounded-none" />
@@ -383,42 +296,64 @@ export function ListingDetailPage() {
     );
   }
 
-  const isLT = listing.rentalType === "LongTerm";
   const presentAmenities = listing.amenities.filter((a) => a.isPresent);
+
+  const CATEGORY_LABEL: Record<number, string> = {
+    1: "Apartment", 2: "House", 3: "Villa", 4: "Condo",
+    5: "Studio", 6: "Townhouse", 7: "Penthouse", 8: "Room",
+  };
+  const catId = (listing as Record<string, unknown>).propertyCategoryId as number | undefined;
+  const typeLabel = listing.bedrooms === 0 ? "Studio" : (catId ? (CATEGORY_LABEL[catId] ?? "Home") : "Home");
+
+  function handleRequestBook(moveIn: string, months: number) {
+    setBookingModal({ moveIn, months });
+  }
+
+  const bookingPanel = availability ? (
+    <BookingWidget
+      listing={{ id: listing.id, monthlyRate, discountTiers }}
+      availability={availability}
+      onRequestBook={handleRequestBook}
+    />
+  ) : (
+    <BookingPanelFallback listing={listing} onRequestBook={handleRequestBook} />
+  );
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 md:px-10 py-8">
 
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-fg-muted mb-5">
-        <Link to="/listings" className="flex items-center gap-1.5 hover:text-fg transition-colors">
-          <ArrowLeft size={15} />
-          Listings
-        </Link>
-        <span>/</span>
-        <span className="text-fg font-medium line-clamp-1">{listing.title}</span>
-      </nav>
-
       {/* Title */}
       <div className="mb-6">
-        <h1 className="text-3xl md:text-4xl font-bold text-fg leading-snug mb-3">{listing.title}</h1>
-        <div className="flex items-center gap-2 flex-wrap text-sm text-fg-muted">
-          <span className="font-medium text-fg underline underline-offset-2">{listing.cityName}</span>
-          <span>·</span>
-          <span>{isLT ? "Long-term" : "Short-term"}</span>
-          {!!listing.bedrooms && <><span>·</span><span>{listing.bedrooms} bed{listing.bedrooms !== 1 ? "s" : ""}</span></>}
-          {!!listing.bathrooms && <><span>·</span><span>{listing.bathrooms} bath{listing.bathrooms !== 1 ? "s" : ""}</span></>}
-          {!!listing.maxOccupancy && <><span>·</span><span>{listing.maxOccupancy} guests</span></>}
-          {listing.instantBookEnabled && (
-            <><span>·</span>
-            <span className="flex items-center gap-1 font-semibold text-brand">
-              <Zap size={12} />Instant book
-            </span></>
-          )}
-        </div>
+        <h1 className="text-2xl md:text-[26px] font-semibold text-fg leading-snug mb-2">
+          {listing.title}
+          {/* Verified badge — inline, vertically centered via align-middle */}
+          <span
+            className={cn(
+              "group/badge inline-flex align-middle items-center ml-3",
+              "rounded-full cursor-default select-none overflow-hidden",
+              "bg-brand",
+              "shadow-[0_2px_8px_-1px_rgba(0,0,0,0.20)] hover:shadow-[0_3px_14px_-2px_rgba(0,0,0,0.28)]",
+              "h-[22px] w-[22px] hover:w-[138px]",
+              "pl-[4px] pr-[4px] hover:pl-[6px] hover:pr-[11px]",
+              "transition-[width,padding,box-shadow] duration-300 ease-out",
+            )}
+          >
+            <BadgeCheck size={12} strokeWidth={2.2} className="shrink-0 text-white" />
+            <span className="ml-[7px] flex items-center gap-1 opacity-0 group-hover/badge:opacity-100 transition-opacity duration-200 delay-100">
+              <span className="whitespace-nowrap text-[10px] font-medium text-white/75 leading-none">Verified by</span>
+              <span className="whitespace-nowrap text-[11px] font-black text-white leading-none tracking-[0.04em]">Siamo</span>
+            </span>
+          </span>
+        </h1>
+        {listing.cityName && (
+          <p className="text-sm text-fg-muted">
+            <span className="text-fg font-medium underline underline-offset-2">{listing.cityName}</span>
+            <span>, Thailand</span>
+          </p>
+        )}
       </div>
 
-      {/* Photo grid */}
+      {/* Photos */}
       <div className="mb-10">
         <PhotoGrid media={listing.media} />
       </div>
@@ -431,21 +366,40 @@ export function ListingDetailPage() {
 
           {/* Type & specs */}
           <div className="pb-6 border-b border-border">
-            <h2 className="text-xl font-semibold text-fg mb-2">
-              {isLT ? "Long-term rental" : "Short-term stay"}
+            <h2 className="text-xl font-semibold text-fg mb-1">
+              {typeLabel}{listing.cityName ? ` in ${listing.cityName}, Thailand` : " in Thailand"}
             </h2>
-            <div className="flex items-center gap-5 text-sm text-fg-muted flex-wrap">
-              {!!listing.bedrooms && (
-                <span className="flex items-center gap-1.5"><BedDouble size={16} />{listing.bedrooms} bedroom{listing.bedrooms !== 1 ? "s" : ""}</span>
-              )}
-              {!!listing.bathrooms && (
-                <span className="flex items-center gap-1.5"><Bath size={16} />{listing.bathrooms} bathroom{listing.bathrooms !== 1 ? "s" : ""}</span>
-              )}
-              {!!listing.maxOccupancy && (
-                <span className="flex items-center gap-1.5"><Users size={16} />{listing.maxOccupancy} guests max</span>
-              )}
+            <div className="flex items-center gap-3 text-sm text-fg-muted flex-wrap">
+              {!!listing.maxOccupancy && <span>{listing.maxOccupancy} guest{listing.maxOccupancy !== 1 ? "s" : ""}</span>}
+              {!!listing.bedrooms && <><span>·</span><span>{listing.bedrooms} bedroom{listing.bedrooms !== 1 ? "s" : ""}</span></>}
+              {!!listing.bathrooms && <><span>·</span><span>{listing.bathrooms} bathroom{listing.bathrooms !== 1 ? "s" : ""}</span></>}
             </div>
           </div>
+
+          {/* Highlights */}
+          {(() => {
+            const highlights = generateHighlights({
+              id: listing.id,
+              amenities: listing.amenities,
+              discountTiers: listing.discountTiers,
+              maxOccupancy: listing.maxOccupancy,
+              bedrooms: listing.bedrooms,
+              cityName: listing.cityName,
+            });
+            return (
+              <div className="pb-8 border-b border-border space-y-6">
+                {highlights.map((h, i) => (
+                  <div key={i} className="flex items-start gap-4">
+                    <div className="text-fg mt-0.5 shrink-0">{h.icon}</div>
+                    <div>
+                      <p className="text-[14px] font-semibold text-fg leading-snug">{h.title}</p>
+                      <p className="text-[13px] text-fg-muted mt-0.5 leading-relaxed">{h.body}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Description */}
           {listing.description && (
@@ -465,9 +419,7 @@ export function ListingDetailPage() {
                   return (
                     <div key={a.amenityId} className="flex items-center gap-3 text-sm text-fg">
                       <div className="w-6 h-6 shrink-0 flex items-center justify-center text-fg">
-                        {Icon
-                          ? <Icon size={20} strokeWidth={1.5} />
-                          : <Check size={16} strokeWidth={2} className="text-fg-muted" />}
+                        {Icon ? <Icon size={20} strokeWidth={1.5} /> : <Check size={16} strokeWidth={2} className="text-fg-muted" />}
                       </div>
                       {a.name}
                     </div>
@@ -477,6 +429,76 @@ export function ListingDetailPage() {
             </div>
           )}
 
+          {/* What Siamo provides */}
+          <div className="pb-8 border-b border-border">
+            <h2 className="text-lg font-semibold text-fg mb-5">What Siamo provides</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {([
+                {
+                  icon: <FileText size={18} strokeWidth={1.5} />,
+                  iconClass: "bg-blue-50 text-blue-600",
+                  title: "Rental contract",
+                  body: "Bilingual agreement (EN & TH) — prepared and signed before you move in.",
+                  accent: false,
+                },
+                {
+                  icon: <Lock size={18} strokeWidth={1.5} />,
+                  iconClass: "bg-emerald-50 text-emerald-600",
+                  title: "Deposit protection",
+                  body: "Your deposit is held by Siamo — not the landlord. Returned in full after checkout per your contract.",
+                  accent: true,
+                },
+                {
+                  icon: <ClipboardList size={18} strokeWidth={1.5} />,
+                  iconClass: "bg-amber-50 text-amber-600",
+                  title: "TM30 filing",
+                  body: "We handle the immigration notification required by Thai law — automatically.",
+                  accent: false,
+                },
+                {
+                  icon: <ShieldCheck size={18} strokeWidth={1.5} />,
+                  iconClass: "bg-violet-50 text-violet-600",
+                  title: "Dedicated support",
+                  body: "A real person on your side — from first message to move-out.",
+                  accent: false,
+                },
+              ] as const).map(({ icon, iconClass, title, body, accent }) => (
+                <div
+                  key={title}
+                  className={cn(
+                    "flex gap-3.5 p-4 rounded-2xl border transition-shadow hover:shadow-sm",
+                    accent
+                      ? "border-emerald-200 bg-emerald-50/40"
+                      : "border-border bg-bg-card",
+                  )}
+                >
+                  <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5", iconClass)}>
+                    {icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-fg leading-snug">{title}</p>
+                    <p className="text-xs text-fg-muted mt-1 leading-relaxed">{body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Availability timeline */}
+          <div className="pb-6 border-b border-border">
+            <h2 className="text-lg font-semibold text-fg mb-4">Availability</h2>
+            {availability ? (
+              <AvailabilityTimeline availability={availability} />
+            ) : listing.startDate ? (
+              <p className="text-sm text-fg-muted">
+                Available from <strong className="text-fg">{formatDate(listing.startDate)}</strong>
+                {listing.endDate && <> until <strong className="text-fg">{formatDate(listing.endDate)}</strong></>}
+              </p>
+            ) : (
+              <p className="text-sm text-fg-muted">Contact the manager for availability details.</p>
+            )}
+          </div>
+
           {/* House rules */}
           {listing.houseRules && (
             <div className="pb-6 border-b border-border">
@@ -485,30 +507,99 @@ export function ListingDetailPage() {
             </div>
           )}
 
-          {/* Availability */}
-          {(listing.startDate || listing.endDate) && (
-            <div className="pb-6 border-b border-border">
-              <h2 className="text-lg font-semibold text-fg mb-2">Availability</h2>
-              <p className="text-sm text-fg-muted">
-                {listing.startDate && <>From <strong className="text-fg">{formatDate(listing.startDate)}</strong></>}
-                {listing.endDate && <> until <strong className="text-fg">{formatDate(listing.endDate)}</strong></>}
-              </p>
-            </div>
-          )}
-
           {/* Mobile booking panel */}
-          <div className="lg:hidden">
-            <BookingPanel listing={listing} />
-          </div>
+          <div className="lg:hidden">{bookingPanel}</div>
         </div>
 
-        {/* RIGHT: sticky booking card */}
-        <div className="hidden lg:block lg:sticky lg:top-28">
-          <BookingPanel listing={listing} />
+        {/* RIGHT: sticky booking */}
+        <div className="hidden lg:block lg:sticky lg:top-28 space-y-3">
+          {/* All-fees badge — above widget, like Airbnb */}
+          <div className="flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3">
+            <Tag size={18} className="text-brand shrink-0" />
+            <div>
+              <p className="text-[13px] font-semibold text-fg">Prices include all fees</p>
+              <p className="text-[11px] text-fg-muted">No hidden charges — what you see is what you pay</p>
+            </div>
+          </div>
+          {bookingPanel}
+          {/* Free cancellation note */}
+          <p className="text-[12px] text-center text-fg-muted px-2">
+            <RotateCcw size={11} className="inline mr-1 -mt-0.5" />
+            Free cancellation before signing the contract
+          </p>
         </div>
       </div>
 
+      {/* Things to know */}
+      <div className="mt-12 pt-10 border-t border-border">
+        <h2 className="text-xl font-semibold text-fg mb-6">Things to know</h2>
+        <div className="border border-border rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border">
+            {/* Cancellation */}
+            <div className="p-6">
+              <RotateCcw size={20} strokeWidth={1.5} className="text-fg mb-4" />
+              <h3 className="font-semibold text-fg mb-3">Cancellation policy</h3>
+              <div className="text-sm text-fg-muted space-y-2">
+                <p>Free cancellation before the rental contract is signed.</p>
+                <p>After signing, cancellation terms are defined in the agreement.</p>
+              </div>
+            </div>
+            {/* Rental terms */}
+            <div className="p-6">
+              <FileText size={20} strokeWidth={1.5} className="text-fg mb-4" />
+              <h3 className="font-semibold text-fg mb-3">Rental terms</h3>
+              <div className="text-sm text-fg-muted space-y-2">
+                <p>Min stay: {availability?.minMonths ?? 1} month{(availability?.minMonths ?? 1) !== 1 ? "s" : ""}</p>
+                <p>Max stay: {availability?.maxMonths ?? 12} months</p>
+                <p>Deposit held securely by Siamo.</p>
+                <p>Contract in English &amp; Thai.</p>
+              </div>
+            </div>
+            {/* House rules */}
+            <div className="p-6">
+              <Home size={20} strokeWidth={1.5} className="text-fg mb-4" />
+              <h3 className="font-semibold text-fg mb-3">House rules</h3>
+              <div className="text-sm text-fg-muted space-y-2">
+                {listing.houseRules
+                  ? listing.houseRules.split("\n").slice(0, 4).map((r, i) => <p key={i}>{r}</p>)
+                  : (
+                    <>
+                      <p>No smoking inside the property.</p>
+                      <p>Quiet hours 22:00 – 08:00.</p>
+                      <p>Coordinate check-in with the manager.</p>
+                    </>
+                  )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Where you'll be */}
+      {listing.cityName && (
+        <div className="mt-12 pt-10 border-t border-border">
+          <h2 className="text-xl font-semibold text-fg mb-1">Where you'll be</h2>
+          <p className="text-sm text-fg-muted mb-5">{listing.cityName}, Thailand</p>
+          <div className="rounded-2xl overflow-hidden border border-border h-[420px]">
+            <CityMap cityName={listing.cityName} />
+          </div>
+        </div>
+      )}
+
       <div className="pb-16" />
+
+      {/* Booking request modal */}
+      {bookingModal && (
+        <BookingRequestModal
+          listingId={listing.id}
+          listingTitle={listing.title}
+          moveInDate={bookingModal.moveIn}
+          durationMonths={bookingModal.months}
+          monthlyRate={monthlyRate}
+          discountTiers={discountTiers}
+          onClose={() => setBookingModal(null)}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLogin } from "@/lib/hooks/use-auth";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { SiamoLogo } from "@/components/layout/siamo-logo";
 
 const LINE_CLIENT_ID = import.meta.env.VITE_LINE_CLIENT_ID;
 const LINE_REDIRECT_URI = import.meta.env.VITE_LINE_REDIRECT_URI ?? `${window.location.origin}/line-callback`;
@@ -62,11 +63,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-bg px-4">
       <div className="w-full max-w-[420px]">
         {/* Logo */}
-        <div className="flex items-center justify-center mb-8">
-          <div className="w-9 h-9 rounded-lg bg-brand flex items-center justify-center mr-2.5">
-            <span className="text-white font-bold text-lg leading-none">S</span>
-          </div>
-          <span className="font-semibold text-xl text-fg">Siamo</span>
+        <div className="flex justify-center mb-8">
+          <Link to="/listings">
+            <SiamoLogo className="h-11" />
+          </Link>
         </div>
 
         <div className="bg-bg-card rounded-xl shadow-pop p-8">

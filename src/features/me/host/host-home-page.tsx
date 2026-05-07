@@ -20,5 +20,10 @@ export function HostHomePage() {
     return <BecomeHostPage />;
   }
 
+  // Pending requests need immediate attention — go there first
+  if ((caps.stats.pendingRequestsCount ?? 0) > 0) {
+    return <Navigate to="/me/host/requests" replace />;
+  }
+
   return <Navigate to="/me/host/properties" replace />;
 }

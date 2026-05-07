@@ -21,10 +21,13 @@ export const financeApi = {
   createRemittance: () =>
     apiClient.post<{ batchId: string }>("/api/finance/remittance/create").then((r) => r.data),
 
-  confirmRemittance: (batchId: string, slipUrl: string) =>
-    apiClient
-      .post<{ message: string }>(`/api/finance/remittance/${batchId}/confirm`, { slipUrl })
-      .then((r) => r.data),
+  confirmRemittance: (batchId: string, slip: File) => {
+    const form = new FormData();
+    form.append("slip", slip);
+    return apiClient
+      .post<{ message: string }>(`/api/finance/remittance/${batchId}/confirm`, form)
+      .then((r) => r.data);
+  },
 
   createCustomInvoice: (data: CreateInvoiceRequest) =>
     apiClient

@@ -27,6 +27,7 @@ import {
 } from "@/lib/hooks/use-bookings";
 import { useGenerateInvite } from "@/lib/hooks/use-invites";
 import { buildInviteUrl } from "@/lib/api/invites.api";
+import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { usePayInvoice } from "@/lib/hooks/use-finance";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { formatDate, formatThb } from "@/lib/utils/format";
@@ -162,6 +163,7 @@ function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: st
   const updatePassport = useUpdatePassport(bookingId);
   const removeGuest = useRemoveGuest(bookingId);
   const generateInvite = useGenerateInvite();
+  const { data: caps } = useCapabilities();
 
   const [passportOpen, setPassportOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -282,8 +284,8 @@ function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: st
           </label>
         </div>
 
-        {/* Portal invite row */}
-        {!guest.userId && !inviteLink ? (
+        {/* Portal invite row — only managers can generate invites */}
+        {caps?.isManager && !guest.userId && !inviteLink ? (
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs text-fg-muted">Portal access</span>
             <button

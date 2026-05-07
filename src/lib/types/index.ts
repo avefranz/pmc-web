@@ -32,6 +32,49 @@ export interface UserDto {
   roles: string[];
 }
 
+export interface UserProfileDto {
+  id: string;
+  email?: string;
+  lineName?: string;
+  firstName?: string;
+  lastName?: string;
+  lineUserId?: string | null;
+  roles: string[];
+  phoneCountryCode?: string;
+  phone?: string;
+  nationality?: string;
+  dateOfBirth?: string;
+  passportNumber?: string;
+  passportExpiry?: string;
+  visaType?: VisaType | null;
+  lastEntryDate?: string;
+  lastEntryPort?: string;
+}
+
+export interface UpdateProfileRequest {
+  firstName?: string;
+  lastName?: string;
+  phoneCountryCode?: string;
+  phone?: string;
+  nationality?: string;
+  dateOfBirth?: string;
+  passportNumber?: string;
+  passportExpiry?: string;
+  visaType?: VisaType | null;
+  lastEntryDate?: string;
+  lastEntryPort?: string;
+}
+
+export interface Tm30TenantRecordDto {
+  bookingId: string;
+  listingTitle: string;
+  checkInDate: string;
+  checkOutDate: string;
+  status: "Pending" | "Filed";
+  filedAt: string | null;
+  documentUrl: string | null;
+}
+
 // ─── Assets ───────────────────────────────────────────────────────────────────
 
 export interface AssetDto {
@@ -95,6 +138,11 @@ export interface AmenityDto {
   isPresent: boolean;
 }
 
+export interface DiscountTier {
+  minMonths: number;
+  discountPercent: number;
+}
+
 export interface ListingDto {
   id: string;
   assetId: string;
@@ -102,6 +150,8 @@ export interface ListingDto {
   description: string;
   basePrice: number;        // nightly rate (ShortTerm) or legacy
   baseMonthlyRate?: number; // monthly rate (LongTerm)
+  depositAmount: number;    // security deposit, default 0
+  discountTiers?: DiscountTier[];
   wifiName?: string;
   wifiPassword?: string;
   houseRules?: string;
@@ -435,6 +485,7 @@ export interface CreateListingRequest {
   instantBookEnabled: boolean;
   basePrice: number;
   baseMonthlyRate?: number;
+  depositAmount?: number;
   rentalType?: string;
   startDate?: string;
   endDate?: string;

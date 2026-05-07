@@ -1,14 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { marketplaceApi } from "../api/marketplace.api";
-import type { MarketplaceListingsQuery } from "../types/marketplace";
+import type { MarketplaceListingsQuery, BookingRequestData, BookingRequestResult } from "../types/marketplace";
 
 const keys = {
   cities: ["marketplace", "cities"] as const,
   listings: (q: MarketplaceListingsQuery) =>
     ["marketplace", "listings", q] as const,
   listing: (id: string) => ["marketplace", "listing", id] as const,
-  availability: (id: string, from: string, to: string) =>
-    ["marketplace", "availability", id, from, to] as const,
+  availability: (id: string) => ["marketplace", "availability", id] as const,
 };
 
 export const useMarketplaceCities = () =>
@@ -33,15 +32,16 @@ export const useMarketplaceListing = (id: string) =>
     enabled: !!id,
   });
 
-export const useListingAvailability = (
-  id: string,
-  from: string,
-  to: string,
-  enabled = true
-) =>
+export const useListingAvailability = (id: string, enabled = true) =>
   useQuery({
-    queryKey: keys.availability(id, from, to),
-    queryFn: () => marketplaceApi.getAvailability(id, from, to),
+    queryKey: keys.availability(id),
+    queryFn: () => marketplaceApi.getAvailability(id),
     staleTime: 60_000,
-    enabled: enabled && !!id && !!from && !!to,
+    enabled: enabled && !!id,
+  });
+
+export const useSubmitBookingRequest = () =>
+  useMutation<BookingRequestResult, Error, BookingRequestData>({
+    mutationFn: (data: BookingRequestData) =>
+      marketplaceApi.submitBookingRequest(data),
   });

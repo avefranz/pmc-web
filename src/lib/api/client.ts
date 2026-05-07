@@ -23,7 +23,11 @@ let redirecting = false;
 apiClient.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && !redirecting) {
+    // Only redirect to /login when the user HAD a token (session expired).
+    // Anonymous users hitting a 401 (e.g. submitting a booking request before auth)
+    // should NOT be redirected — the UI handles that inline.
+    const hadToken = !!localStorage.getItem("pmc_token");
+    if (err.response?.status === 401 && !redirecting && hadToken) {
       localStorage.removeItem("pmc_token");
       if (!window.location.pathname.startsWith("/login")) {
         redirecting = true;

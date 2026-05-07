@@ -15,6 +15,8 @@ export interface UpdateListingRequest {
   wifiPassword?: string;
   basePrice?: number;
   baseMonthlyRate?: number;
+  depositAmount?: number;
+  discountTiers?: { minMonths: number; discountPercent: number }[];
   instantBookEnabled?: boolean;
   rentalType?: string;
   startDate?: string | null;
