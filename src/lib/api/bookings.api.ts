@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest } from "../types";
+import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, PaymentRecordDto, BookingCancellationDto } from "../types";
 import type { BookingStatus } from "../types/enums";
 
 export const bookingsApi = {
@@ -66,4 +66,36 @@ export const bookingsApi = {
       .post<Tm30FilingDto>(`/api/bookings/${bookingId}/guests/${guestId}/tm30`, form)
       .then((r) => r.data);
   },
+
+  // ─── Payment ──────────────────────────────────────────────────────────────
+
+  getPaymentInstructions: (bookingId: string) =>
+    apiClient.get<PaymentInstructionsDto>(`/api/bookings/${bookingId}/payment`).then((r) => r.data),
+
+  confirmTransfer: (bookingId: string, paymentId: string, note?: string) =>
+    apiClient
+      .post<PaymentRecordDto>(`/api/bookings/${bookingId}/payment/${paymentId}/transfer`, { note })
+      .then((r) => r.data),
+
+  confirmReceipt: (bookingId: string, paymentId: string) =>
+    apiClient
+      .post<PaymentInstructionsDto>(`/api/bookings/${bookingId}/payment/${paymentId}/receipt`, {})
+      .then((r) => r.data),
+
+  // ─── Cancellation ─────────────────────────────────────────────────────────
+
+  requestCancellation: (bookingId: string, note?: string) =>
+    apiClient
+      .post<BookingCancellationDto>(`/api/bookings/${bookingId}/cancellation`, { note })
+      .then((r) => r.data),
+
+  getCancellation: (bookingId: string) =>
+    apiClient
+      .get<BookingCancellationDto>(`/api/bookings/${bookingId}/cancellation`)
+      .then((r) => r.data),
+
+  confirmCancellation: (cancellationId: string) =>
+    apiClient
+      .post<BookingCancellationDto>(`/api/bookings/cancellations/${cancellationId}/confirm`, {})
+      .then((r) => r.data),
 };

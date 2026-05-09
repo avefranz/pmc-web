@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Home, Calendar } from "lucide-react";
+import { Home, Calendar, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/empty-state";
@@ -10,14 +10,14 @@ import { BookingStatus } from "@/lib/types/enums";
 import type { BookingDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
-const ACTIVE_STATUSES = [BookingStatus.Active, BookingStatus.Confirmed, BookingStatus.Pending];
+const ACTIVE_STATUSES = [BookingStatus.Active, BookingStatus.Confirmed, BookingStatus.PendingPayment];
 
 const STATUS_CLASS: Record<string, string> = {
-  [BookingStatus.Active]:    "bg-success/10 text-success",
-  [BookingStatus.Confirmed]: "bg-fg/10 text-fg",
-  [BookingStatus.Pending]:   "bg-warning/10 text-warning",
-  [BookingStatus.Completed]: "bg-bg-subtle text-fg-muted",
-  [BookingStatus.Cancelled]: "bg-danger/10 text-danger",
+  [BookingStatus.Active]:         "bg-success/10 text-success",
+  [BookingStatus.Confirmed]:      "bg-fg/10 text-fg",
+  [BookingStatus.PendingPayment]: "bg-warning/10 text-warning",
+  [BookingStatus.Completed]:      "bg-bg-subtle text-fg-muted",
+  [BookingStatus.Cancelled]:      "bg-danger/10 text-danger",
 };
 
 function BookingRow({ booking }: { booking: BookingDto }) {
@@ -94,6 +94,14 @@ export function HostBookingsPage() {
           icon={<Home size={40} />}
           title="No bookings yet"
           description="Once guests book your properties, their reservations will appear here."
+          action={
+            <Link
+              to="/me/host/bookings/new"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-fg text-bg text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              <Plus size={14} />Create a booking
+            </Link>
+          }
         />
       </div>
     );

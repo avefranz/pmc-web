@@ -85,7 +85,7 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-40 h-[var(--topbar-h)] bg-bg-card border-b border-border flex items-center">
       <div className="w-full px-4 md:px-8 lg:px-12 flex items-center gap-6">
-        <Logo to={isHost ? "/me/host/properties" : isGuest ? "/me/guest/applications" : "/me"} />
+        <Logo to={isHost ? "/me/host/properties" : isGuest ? "/me/guest/bookings" : "/me"} />
 
         {/* Desktop: sub-nav tabs */}
         <nav className="hidden md:flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">

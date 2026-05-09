@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useParams, useNavigate } from "react-router-dom";
 import { AuthGuard, PublicOnlyGuard } from "@/components/layout/auth-guard";
 import { AppShell } from "@/components/layout/app-shell";
 import { PublicShell } from "@/components/layout/public-shell";
@@ -11,9 +11,10 @@ import RoleRouterPage from "@/pages/role-router";
 import InviteAcceptPage from "@/pages/invite-accept";
 import ProfilePage from "@/pages/profile";
 
-// Legacy trips (kept for any internal links still referencing them)
-import { TripsPage } from "@/features/me/trips/trips-page";
-import { TripDetailPage } from "@/features/me/trips/trip-detail-page";
+function TripDetailRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/me/guest/bookings/${id}`} replace />;
+}
 
 // /me — unified dashboard
 import { MeDashboard } from "@/features/me/me-dashboard";
@@ -22,6 +23,7 @@ import { MeDashboard } from "@/features/me/me-dashboard";
 import { GuestHome } from "@/features/me/guest/guest-home";
 import { GuestBookingsPage } from "@/features/me/guest/bookings/list-page";
 import { GuestBookingDetailPage } from "@/features/me/guest/bookings/detail-page";
+import { GuestPaymentPage } from "@/features/me/guest/bookings/payment-page";
 import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
 import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
 
@@ -53,16 +55,26 @@ import { FinancePage } from "@/features/me/host/finance/page";
 import { GuestTm30Page } from "@/features/me/guest/tm30/page";
 import { PassportOnboardingStep } from "@/features/me/onboarding/passport-step";
 
+// Host settings
+import { PaymentSettingsPage } from "@/features/me/host/settings/payment-settings-page";
+
 // Marketplace
 import { ListingsPage } from "@/features/marketplace/listings-page";
 import { ListingDetailPage } from "@/features/marketplace/listing-detail-page";
 
 function ComingSoon({ label }: { label: string }) {
+  const nav = useNavigate();
   return (
-    <div className="flex flex-col items-center justify-center py-32 text-center">
+    <div className="flex flex-col items-center justify-center py-32 text-center px-4">
       <div className="w-14 h-14 rounded-2xl bg-bg-subtle flex items-center justify-center text-2xl mb-4">🚧</div>
       <p className="text-lg font-semibold text-fg">{label}</p>
-      <p className="text-sm text-fg-muted mt-1">This section is coming soon.</p>
+      <p className="text-sm text-fg-muted mt-1 mb-6">This section is coming soon.</p>
+      <button
+        onClick={() => nav(-1)}
+        className="text-sm font-medium text-fg-muted hover:text-fg underline underline-offset-4 transition-colors"
+      >
+        Go back
+      </button>
     </div>
   );
 }
@@ -98,6 +110,7 @@ export default function App() {
         <Route path="/me/guest" element={<GuestHome />} />
         <Route path="/me/guest/bookings" element={<GuestBookingsPage />} />
         <Route path="/me/guest/bookings/:id" element={<GuestBookingDetailPage />} />
+        <Route path="/me/guest/bookings/:id/payment" element={<GuestPaymentPage />} />
         <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
         <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
@@ -107,7 +120,7 @@ export default function App() {
 
         {/* Legacy trips — redirect to new paths */}
         <Route path="/me/trips" element={<Navigate to="/me/guest/bookings" replace />} />
-        <Route path="/me/trips/:id" element={<TripDetailPage />} />
+        <Route path="/me/trips/:id" element={<TripDetailRedirect />} />
 
         {/* Host context */}
         <Route path="/me/host" element={<HostHomePage />} />
@@ -122,6 +135,7 @@ export default function App() {
         <Route path="/me/host/tickets" element={<TicketsListPage />} />
         <Route path="/me/host/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/me/host/finance" element={<FinancePage />} />
+        <Route path="/me/host/settings/payment" element={<PaymentSettingsPage />} />
         <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
           <Route path="/me/host/managed" element={<ManagedListPage />} />

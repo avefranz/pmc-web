@@ -3,10 +3,14 @@ import { Link } from "react-router-dom";
 import { Search, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCapabilities } from "@/lib/hooks/use-capabilities";
+import { useMyBookings } from "@/lib/hooks/use-bookings";
+import { useMyApplications } from "@/lib/hooks/use-booking-requests";
 
 export function GuestHome() {
-  const { data: caps, isLoading } = useCapabilities();
+  const { data: bookings, isLoading: loadingBookings } = useMyBookings();
+  const { data: applications, isLoading: loadingApps } = useMyApplications();
+
+  const isLoading = loadingBookings || loadingApps;
 
   if (isLoading) {
     return (
@@ -18,17 +22,23 @@ export function GuestHome() {
     );
   }
 
-  // Active bookings → booking list
-  if (caps && caps.stats.activeBookingsCount > 0) {
+  // Any bookings (any status) → show bookings list
+  if (bookings && bookings.length > 0) {
     return <Navigate to="/me/guest/bookings" replace />;
   }
 
-  // Pending applications → applications list
-  if (caps && caps.stats.pendingApplicationsCount > 0) {
+  // Pending applications but no bookings → show applications
+  const pendingApps = (applications ?? []).filter((a) => a.status === "Pending");
+  if (pendingApps.length > 0) {
     return <Navigate to="/me/guest/applications" replace />;
   }
 
-  // Empty state — no bookings or applications yet
+  // Any applications (resolved) → show applications list
+  if (applications && applications.length > 0) {
+    return <Navigate to="/me/guest/applications" replace />;
+  }
+
+  // Truly new user — nothing yet
   return (
     <div className="flex flex-col items-center justify-center py-32 text-center px-4">
       <div className="w-16 h-16 rounded-2xl bg-bg-subtle flex items-center justify-center mb-6">

@@ -49,6 +49,11 @@ export interface UserProfileDto {
   visaType?: VisaType | null;
   lastEntryDate?: string;
   lastEntryPort?: string;
+  // Landlord payment details
+  promptPayId?: string | null;
+  bankName?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
 }
 
 export interface UpdateProfileRequest {
@@ -63,6 +68,57 @@ export interface UpdateProfileRequest {
   visaType?: VisaType | null;
   lastEntryDate?: string;
   lastEntryPort?: string;
+  // Landlord payment details
+  promptPayId?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+}
+
+// ─── Payment ──────────────────────────────────────────────────────────────────
+
+export type PaymentRecordStatus = "Pending" | "TenantConfirmed" | "LandlordConfirmed";
+export type PaymentRecordType = "Deposit" | "FirstMonth" | "EarlyExitPenalty";
+
+export interface PaymentRecordDto {
+  id: string;
+  type: PaymentRecordType;
+  amount: number;
+  status: PaymentRecordStatus;
+  tenantNote: string | null;
+  tenantConfirmedAt: string | null;
+  landlordConfirmedAt: string | null;
+}
+
+export interface PaymentInstructionsDto {
+  bookingId: string;
+  depositAmount: number;
+  firstMonthAmount: number;
+  totalDue: number;
+  promptPayId: string | null;
+  bankName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountName: string | null;
+  payments: PaymentRecordDto[];
+  isFullyPaid: boolean;
+}
+
+// ─── Cancellation ─────────────────────────────────────────────────────────────
+
+export type CancellationStatus = "Requested" | "Confirmed" | "Processed";
+
+export interface BookingCancellationDto {
+  id: string;
+  bookingId: string;
+  earliestExitDate: string;
+  monthlyRent: number;
+  penaltyAmount: number;
+  depositRefundAmount: number;
+  netRefund: number;
+  status: CancellationStatus;
+  tenantNote: string | null;
+  landlordConfirmedAt: string | null;
+  createdAt: string;
 }
 
 export interface Tm30TenantRecordDto {

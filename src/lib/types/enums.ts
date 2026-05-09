@@ -76,12 +76,11 @@ export enum MessageVisibility {
 }
 
 export enum BookingStatus {
-  Draft = "Draft",
+  PendingPayment = "PendingPayment",
   Confirmed = "Confirmed",
   Active = "Active",
   Completed = "Completed",
   Cancelled = "Cancelled",
-  Pending = "Pending",
 }
 
 export enum InvoiceStatus {

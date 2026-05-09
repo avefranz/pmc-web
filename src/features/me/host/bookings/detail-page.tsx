@@ -24,6 +24,10 @@ import {
   useUploadTm30,
   useUpdatePassport,
   useUnlinkTenant,
+  useBookingPayment,
+  useConfirmReceipt,
+  useBookingCancellation,
+  useConfirmCancellation,
 } from "@/lib/hooks/use-bookings";
 import { useGenerateInvite } from "@/lib/hooks/use-invites";
 import { buildInviteUrl } from "@/lib/api/invites.api";
@@ -356,6 +360,17 @@ function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: st
   );
 }
 
+// ─── Invoice type labels ──────────────────────────────────────────────────────
+
+const INVOICE_TYPE_LABELS: Record<string, string> = {
+  Rent: "Monthly rent",
+  Deposit: "Security deposit",
+  Utilities: "Utilities",
+  Cleaning: "Cleaning fee",
+  Damage: "Damage fee",
+  Other: "Other",
+};
+
 // ─── Ticket status badge ──────────────────────────────────────────────────────
 
 function ticketStatusClass(status: string): string {
@@ -377,6 +392,10 @@ export function BookingDetailPage() {
   const { data: invoices } = useBookingInvoices(id!);
   const { data: tickets } = useBookingTickets(id!);
   const { data: contractData } = useBookingContract(id!, !!booking?.hasContract);
+  const { data: paymentData } = useBookingPayment(id!);
+  const { data: cancellation } = useBookingCancellation(id!);
+  const confirmReceipt = useConfirmReceipt(id!);
+  const confirmCancellation = useConfirmCancellation(id!);
   const addGuest = useAddGuest(id!);
   const payInvoice = usePayInvoice();
 
@@ -445,16 +464,29 @@ export function BookingDetailPage() {
   if (!booking) return <p className="text-sm text-fg-muted">Booking not found.</p>;
 
   const statusClass: Record<string, string> = {
-    [BookingStatus.Active]: "bg-success/10 text-success",
-    [BookingStatus.Confirmed]: "bg-bg text-fg",
-    [BookingStatus.Draft]: "bg-bg-subtle text-fg-muted",
-    [BookingStatus.Completed]: "bg-bg-subtle text-fg-muted",
-    [BookingStatus.Cancelled]: "bg-danger/10 text-danger",
+    [BookingStatus.Active]:         "bg-success/10 text-success",
+    [BookingStatus.Confirmed]:      "bg-bg text-fg",
+    [BookingStatus.PendingPayment]: "bg-warning/10 text-warning",
+    [BookingStatus.Completed]:      "bg-bg-subtle text-fg-muted",
+    [BookingStatus.Cancelled]:      "bg-danger/10 text-danger",
   };
 
   const pendingInvoices = (invoices ?? []).filter(
     (inv) => inv.status === InvoiceStatus.Pending || inv.status === InvoiceStatus.PartiallyPaid,
   );
+
+  // Lease duration & monthly rate
+  const checkInDate = new Date(booking.checkInDate);
+  const checkOutDate = new Date(booking.checkOutDate);
+  const durationMonths = (checkOutDate.getFullYear() - checkInDate.getFullYear()) * 12 + (checkOutDate.getMonth() - checkInDate.getMonth());
+  const monthlyRate = durationMonths > 0 ? Math.round(booking.rentAmount / durationMonths) : booking.rentAmount;
+  const totalDays = Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 86_400_000);
+  const daysLeft = booking.daysRemaining;
+  const isActive = booking.status === BookingStatus.Active;
+  const leaseProgress = (isActive && daysLeft != null && totalDays > 0)
+    ? Math.min(100, Math.round(((totalDays - daysLeft) / totalDays) * 100))
+    : null;
+  const monthsLeft = (daysLeft != null && daysLeft > 0) ? Math.ceil(daysLeft / 30) : null;
   const openTickets = (tickets ?? []).filter(
     (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
   );
@@ -488,9 +520,6 @@ export function BookingDetailPage() {
           </div>
           <p className="text-sm text-fg-muted mt-1">
             {formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}
-            {booking.daysRemaining != null && (
-              <span className="ml-2 text-fg font-medium">{booking.daysRemaining}d remaining</span>
-            )}
           </p>
           {booking.listingTitle && (
             <p className="text-xs text-fg-muted">{booking.listingTitle}</p>
@@ -502,10 +531,11 @@ export function BookingDetailPage() {
       </div>
 
       {/* Key figures */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-bg-card rounded-xl shadow-card p-5">
           <p className="text-xs text-fg-muted mb-1">Monthly rent</p>
-          <p className="text-xl font-semibold text-fg">{formatThb(booking.rentAmount)}</p>
+          <p className="text-xl font-semibold text-fg">{formatThb(monthlyRate)}</p>
+          {durationMonths > 0 && <p className="text-xs text-fg-muted mt-1">{durationMonths} mo · {formatThb(booking.rentAmount)} total</p>}
         </div>
         <div className="bg-bg-card rounded-xl shadow-card p-5">
           <p className="text-xs text-fg-muted mb-1">Deposit</p>
@@ -535,6 +565,30 @@ export function BookingDetailPage() {
               }} />
             </label>
           </div>
+        </div>
+        {/* Time remaining card */}
+        <div className="bg-bg-card rounded-xl shadow-card p-5">
+          {isActive && daysLeft != null && leaseProgress !== null ? (
+            <>
+              <p className="text-xs text-fg-muted mb-1">Time remaining</p>
+              <p className={cn("text-xl font-semibold", daysLeft <= 14 ? "text-danger" : daysLeft <= 30 ? "text-warning" : "text-fg")}>
+                {daysLeft}d
+                {monthsLeft != null && monthsLeft > 0 && <span className="text-sm font-normal text-fg-muted ml-1">≈{monthsLeft}mo</span>}
+              </p>
+              <div className="mt-2 h-1.5 bg-bg-subtle rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full", daysLeft <= 14 ? "bg-danger" : daysLeft <= 30 ? "bg-warning" : "bg-success")}
+                  style={{ width: `${leaseProgress}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-fg-muted mb-1">Duration</p>
+              <p className="text-xl font-semibold text-fg">{durationMonths > 0 ? `${durationMonths} mo` : "—"}</p>
+              <p className="text-xs text-fg-muted mt-1">{formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -570,8 +624,7 @@ export function BookingDetailPage() {
                 {invoices.map((inv) => (
                   <div key={inv.id} className="bg-bg-card rounded-xl shadow-card p-4 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-fg">{inv.type}</p>
-                      {inv.description && <p className="text-xs text-fg-muted truncate">{inv.description}</p>}
+                      <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
                       {inv.dueDate && <p className="text-xs text-fg-muted">Due {formatDate(inv.dueDate)}</p>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -585,7 +638,7 @@ export function BookingDetailPage() {
                         {inv.status}
                       </span>
                       {(inv.status === InvoiceStatus.Pending || inv.status === InvoiceStatus.PartiallyPaid) && (
-                        <Button size="sm" variant="outline" onClick={() => { setPayOpen(inv.id); setPayAmount(String(inv.amount ?? "")); }}>Pay</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setPayOpen(inv.id); setPayAmount(String(inv.amount ?? "")); }}>Record payment</Button>
                       )}
                     </div>
                   </div>
@@ -626,6 +679,91 @@ export function BookingDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Payment confirmation (PendingPayment) ── */}
+      {paymentData && booking.status === BookingStatus.PendingPayment && (
+        <div className="bg-warning/10 border border-warning/20 rounded-2xl p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-fg">Pending payments</h3>
+          {paymentData.payments.map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-fg">{p.type === "Deposit" ? "Security deposit" : p.type === "FirstMonth" ? "First month's rent" : "Early exit penalty"}</p>
+                <p className="text-xs text-fg-muted">{formatThb(p.amount)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {p.status === "TenantConfirmed" && (
+                  <>
+                    <span className="text-xs bg-warning/10 text-warning font-medium px-2 py-0.5 rounded-full">Tenant confirmed</span>
+                    <Button
+                      size="sm"
+                      className="h-8 px-3 text-xs bg-success hover:bg-success/90 text-white rounded-lg"
+                      disabled={confirmReceipt.isPending}
+                      onClick={async () => {
+                        try {
+                          await confirmReceipt.mutateAsync(p.id);
+                          toast.success("Payment confirmed");
+                        } catch {
+                          toast.error("Failed to confirm");
+                        }
+                      }}
+                    >
+                      Confirm receipt
+                    </Button>
+                  </>
+                )}
+                {p.status === "LandlordConfirmed" && (
+                  <span className="text-xs bg-success/10 text-success font-medium px-2 py-0.5 rounded-full">Confirmed</span>
+                )}
+                {p.status === "Pending" && (
+                  <span className="text-xs bg-bg-subtle text-fg-muted font-medium px-2 py-0.5 rounded-full">Awaiting tenant</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Early exit confirmation ── */}
+      {cancellation && cancellation.status === "Requested" && (
+        <div className="bg-danger/10 border border-danger/20 rounded-2xl p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-fg">Early exit request</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-fg-muted">Earliest exit</p>
+              <p className="font-medium text-fg">{formatDate(cancellation.earliestExitDate)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-fg-muted">Penalty</p>
+              <p className="font-medium text-fg">{formatThb(cancellation.penaltyAmount)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-fg-muted">Deposit refund</p>
+              <p className="font-medium text-fg">{formatThb(cancellation.depositRefundAmount)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-fg-muted">Net refund to tenant</p>
+              <p className="font-semibold text-fg">{formatThb(cancellation.netRefund)}</p>
+            </div>
+          </div>
+          {cancellation.tenantNote && (
+            <p className="text-xs text-fg-muted italic">"{cancellation.tenantNote}"</p>
+          )}
+          <Button
+            className="w-full bg-danger hover:bg-danger/90 text-white rounded-xl h-10"
+            disabled={confirmCancellation.isPending}
+            onClick={async () => {
+              try {
+                await confirmCancellation.mutateAsync(cancellation.id);
+                toast.success("Early exit confirmed — booking cancelled");
+              } catch {
+                toast.error("Failed to confirm");
+              }
+            }}
+          >
+            {confirmCancellation.isPending ? "Confirming…" : "Confirm early exit"}
+          </Button>
+        </div>
+      )}
 
       {/* ── Dialogs ── */}
 

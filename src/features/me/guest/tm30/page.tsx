@@ -59,24 +59,22 @@ export function GuestTm30Page() {
                       "text-fg-muted bg-bg-subtle"
                     )}>
                       <Clock size={10} />
-                      Pending
+                      Pending filing
                     </span>
                   )}
                 </div>
               </div>
-              {rec.status === "Filed" && rec.documentUrl && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  asChild
-                >
+              {rec.status === "Filed" && rec.documentUrl ? (
+                <Button size="sm" variant="outline" className="shrink-0" asChild>
                   <a href={rec.documentUrl} target="_blank" rel="noopener noreferrer">
-                    <Download size={14} className="mr-1.5" />
-                    Download PDF
+                    <Download size={14} className="mr-1.5" />Download PDF
                   </a>
                 </Button>
-              )}
+              ) : rec.status !== "Filed" ? (
+                <p className="text-xs text-fg-muted shrink-0 max-w-[110px] text-right leading-snug">
+                  Your host will file this on your behalf
+                </p>
+              ) : null}
             </div>
           ))}
         </div>

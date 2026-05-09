@@ -513,12 +513,14 @@ export function ListingDetailPage() {
 
         {/* RIGHT: sticky booking */}
         <div className="hidden lg:block lg:sticky lg:top-28 space-y-3">
-          {/* All-fees badge — above widget, like Airbnb */}
-          <div className="flex items-center gap-3 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3">
-            <Tag size={18} className="text-brand shrink-0" />
+          {/* All-fees badge */}
+          <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-white px-4 py-3.5 shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+              <Tag size={16} strokeWidth={1.75} className="text-emerald-600" />
+            </div>
             <div>
-              <p className="text-[13px] font-semibold text-fg">Prices include all fees</p>
-              <p className="text-[11px] text-fg-muted">No hidden charges — what you see is what you pay</p>
+              <p className="text-[13px] font-semibold text-fg leading-snug">Prices include all fees</p>
+              <p className="text-[11px] text-fg-muted mt-0.5 leading-snug">No hidden charges — what you see is what you pay</p>
             </div>
           </div>
           {bookingPanel}

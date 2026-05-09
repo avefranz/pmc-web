@@ -86,6 +86,15 @@ export function InviteLandlordPage() {
             <p className="text-xs text-fg-muted">Share this link with the landlord. It expires in 48 hours.</p>
           </div>
         )}
+
+        {inviteLink && (
+          <Link
+            to="/me/host/managed"
+            className="block text-center text-sm font-medium text-fg-muted hover:text-fg underline underline-offset-4 transition-colors pt-1"
+          >
+            Done — back to managed properties
+          </Link>
+        )}
       </div>
     </div>
   );

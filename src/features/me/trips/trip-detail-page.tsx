@@ -98,7 +98,7 @@ export function TripDetailPage() {
       {/* Lease info */}
       <Card>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted mb-2">Lease</h3>
-        <InfoRow label="Monthly rent">
+        <InfoRow label="Rent">
           <span className="font-semibold">{formatThb(booking.rentAmount ?? 0)}</span>
         </InfoRow>
         <InfoRow label="Check-in">{formatDate(booking.checkInDate)}</InfoRow>

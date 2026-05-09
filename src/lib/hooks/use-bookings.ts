@@ -3,6 +3,8 @@ import { bookingsApi } from "../api/bookings.api";
 import type { CreateBookingRequest, AddGuestRequest, UpsertPassportRequest } from "../types";
 import type { BookingStatus } from "../types/enums";
 
+
+
 const keys = {
   all: ["bookings"] as const,
   host: () => ["bookings", "host"] as const,
@@ -14,6 +16,8 @@ const keys = {
   tickets: (id: string) => ["bookings", id, "tickets"] as const,
   tm30: (bookingId: string, guestId: string) => ["bookings", bookingId, "guests", guestId, "tm30"] as const,
   contract: (id: string) => ["bookings", id, "contract"] as const,
+  payment: (id: string) => ["bookings", id, "payment"] as const,
+  cancellation: (id: string) => ["bookings", id, "cancellation"] as const,
 };
 
 export const useBookings = () =>
@@ -125,5 +129,74 @@ export const useUploadTm30 = (bookingId: string, guestId: string | null) => {
   return useMutation({
     mutationFn: (file: File) => bookingsApi.uploadTm30(bookingId, guestId!, file),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.tm30(bookingId, guestId ?? "") }),
+  });
+};
+
+// ─── Payment ──────────────────────────────────────────────────────────────────
+
+export const useBookingPayment = (bookingId: string) =>
+  useQuery({
+    queryKey: keys.payment(bookingId),
+    queryFn: () => bookingsApi.getPaymentInstructions(bookingId),
+    staleTime: 30_000,
+  });
+
+export const useConfirmTransfer = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ paymentId, note }: { paymentId: string; note?: string }) =>
+      bookingsApi.confirmTransfer(bookingId, paymentId, note),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.payment(bookingId) }),
+  });
+};
+
+export const useConfirmReceipt = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paymentId: string) => bookingsApi.confirmReceipt(bookingId, paymentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.payment(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.host() });
+    },
+  });
+};
+
+// ─── Cancellation ─────────────────────────────────────────────────────────────
+
+export const useBookingCancellation = (bookingId: string) =>
+  useQuery({
+    queryKey: keys.cancellation(bookingId),
+    queryFn: () => bookingsApi.getCancellation(bookingId),
+    staleTime: 30_000,
+    retry: (count, err: unknown) => {
+      // 404 means no cancellation request exists — don't retry
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return false;
+      return count < 1;
+    },
+  });
+
+export const useRequestCancellation = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note?: string) => bookingsApi.requestCancellation(bookingId, note),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useConfirmCancellation = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cancellationId: string) => bookingsApi.confirmCancellation(cancellationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.host() });
+      qc.invalidateQueries({ queryKey: keys.my() });
+    },
   });
 };

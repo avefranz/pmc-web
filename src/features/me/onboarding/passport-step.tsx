@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useUpdateProfile } from "@/lib/hooks/use-profile";
 import { VisaType } from "@/lib/types/enums";
 import { toast } from "sonner";
-import { SiamoLogo } from "@/components/layout/siamo-logo";
 
 const COUNTRIES: [string, string][] = [
   ["AF","Afghanistan"],["AL","Albania"],["DZ","Algeria"],["AR","Argentina"],["AM","Armenia"],
@@ -73,109 +72,107 @@ export function PassportOnboardingStep() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg px-4 py-8">
-      <div className="w-full max-w-[480px]">
-        {/* Logo */}
-        <div className="flex justify-center mb-8">
-          <Link to="/listings">
-            <SiamoLogo className="h-11" />
-          </Link>
-        </div>
+    <div className="max-w-3xl">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-6">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h1 className="text-2xl font-semibold text-fg">Personal details</h1>
+      </div>
 
-        <div className="bg-bg-card rounded-xl shadow-pop p-8">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-fg mb-1">Complete your profile</h1>
-            <p className="text-sm text-fg-muted">
-              Passport details are required to generate your rental contract and TM30 filing.
-              You can also fill these later in your profile.
-            </p>
+      <div className="bg-bg-card rounded-2xl shadow-card p-6 mb-4">
+        <p className="text-sm text-fg-muted mb-6">
+          Passport details are required to generate your rental contract and TM30 filing.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium text-fg">Nationality</Label>
+            <Select value={nationality} onValueChange={setNationality}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select country" />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNTRIES.map(([code, name]) => (
+                  <SelectItem key={code} value={code}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-fg">Nationality</Label>
-              <Select value={nationality} onValueChange={setNationality}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRIES.map(([code, name]) => (
-                    <SelectItem key={code} value={code}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium text-fg">Passport number</Label>
+            <Input
+              value={passportNumber}
+              onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
+              placeholder="AB123456"
+            />
+          </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-fg">Passport number</Label>
-              <Input
-                value={passportNumber}
-                onChange={(e) => setPassportNumber(e.target.value.toUpperCase())}
-                placeholder="AB123456"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium text-fg">Passport expiry</Label>
+            <Input
+              type="date"
+              value={passportExpiry}
+              onChange={(e) => setPassportExpiry(e.target.value)}
+            />
+          </div>
 
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium text-fg">Visa type</Label>
+            <Select value={visaType} onValueChange={(v) => setVisaType(v as VisaType)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select visa type" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(VISA_LABELS).map(([val, label]) => (
+                  <SelectItem key={val} value={val}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-fg">Passport expiry</Label>
+              <Label className="text-sm font-medium text-fg">Last entry date</Label>
               <Input
                 type="date"
-                value={passportExpiry}
-                onChange={(e) => setPassportExpiry(e.target.value)}
+                value={lastEntryDate}
+                onChange={(e) => setLastEntryDate(e.target.value)}
               />
             </div>
-
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-fg">Visa type</Label>
-              <Select value={visaType} onValueChange={(v) => setVisaType(v as VisaType)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select visa type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(VISA_LABELS).map(([val, label]) => (
-                    <SelectItem key={val} value={val}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-sm font-medium text-fg">Entry port</Label>
+              <Input
+                value={lastEntryPort}
+                onChange={(e) => setLastEntryPort(e.target.value)}
+                placeholder="Suvarnabhumi"
+              />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-fg">Last entry date</Label>
-                <Input
-                  type="date"
-                  value={lastEntryDate}
-                  onChange={(e) => setLastEntryDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-fg">Entry port</Label>
-                <Input
-                  value={lastEntryPort}
-                  onChange={(e) => setLastEntryPort(e.target.value)}
-                  placeholder="Suvarnabhumi"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex flex-col gap-2">
-              <Button
-                type="submit"
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white font-medium"
-                disabled={updateProfile.isPending}
-              >
-                {updateProfile.isPending ? "Saving…" : "Save & continue"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full text-fg-muted"
-                onClick={handleSkip}
-              >
-                Skip for now
-              </Button>
-            </div>
-          </form>
-        </div>
+          <div className="pt-2 flex flex-col gap-2">
+            <Button
+              type="submit"
+              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white font-medium"
+              disabled={updateProfile.isPending}
+            >
+              {updateProfile.isPending ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-fg-muted"
+              onClick={handleSkip}
+            >
+              Skip for now
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

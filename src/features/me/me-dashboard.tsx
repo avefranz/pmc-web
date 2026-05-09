@@ -2,16 +2,20 @@ import { Navigate, Link } from "react-router-dom";
 import { Search, Building2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
+import { useMyBookings } from "@/lib/hooks/use-bookings";
+import { useMyApplications } from "@/lib/hooks/use-booking-requests";
 
 /**
  * Smart entry point for /me.
- * Priority:
- * 1. Active/pending bookings as guest → /me/guest
- * 2. Has properties as host → /me/host/properties
- * 3. Empty state → dual CTA
+ * Uses both capabilities (fast) and real data (reliable) so Draft-status
+ * bookings and other edge cases are always caught.
  */
 export function MeDashboard() {
-  const { data: caps, isLoading } = useCapabilities();
+  const { data: caps, isLoading: loadingCaps } = useCapabilities();
+  const { data: bookings, isLoading: loadingBookings } = useMyBookings();
+  const { data: applications, isLoading: loadingApps } = useMyApplications();
+
+  const isLoading = loadingCaps || loadingBookings || loadingApps;
 
   if (isLoading) {
     return (
@@ -26,13 +30,24 @@ export function MeDashboard() {
     );
   }
 
-  if (caps) {
-    if (caps.stats.activeBookingsCount > 0 || caps.stats.pendingApplicationsCount > 0)
-      return <Navigate to="/me/guest" replace />;
-    if (caps.stats.ownedAssetsCount > 0)    return <Navigate to="/me/host/properties" replace />;
+  // Any bookings at all → guest cabinet (real data takes precedence over caps counters)
+  if (bookings && bookings.length > 0) {
+    return <Navigate to="/me/guest/bookings" replace />;
   }
 
-  // Both contexts empty — show dual CTA
+  // Any applications → guest applications
+  if (applications && applications.length > 0) {
+    return <Navigate to="/me/guest/applications" replace />;
+  }
+
+  // Caps-based fallbacks (for hosts with properties but no bookings as tenant)
+  if (caps) {
+    if (caps.stats.ownedAssetsCount > 0 || caps.stats.managedAssetsCount > 0) {
+      return <Navigate to="/me/host/properties" replace />;
+    }
+  }
+
+  // Dual CTA for brand new users
   return (
     <div className="flex flex-col items-center justify-center py-32 text-center px-4 gap-6">
       <h1 className="text-3xl font-bold text-fg">Welcome to Siamo</h1>
