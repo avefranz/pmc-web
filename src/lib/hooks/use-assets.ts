@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assetsApi } from "../api/assets.api";
-import type { CreateAssetRequest, UpdateLocationRequest } from "../types";
+import type { CreateAssetRequest, UpdateAssetRequest, UpdateLocationRequest } from "../types";
 
 const keys = {
   all: ["assets"] as const,
@@ -36,6 +36,17 @@ export const useCreateAsset = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.all });
       qc.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+};
+
+export const useUpdateAsset = (id: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateAssetRequest) => assetsApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.detail(id) });
+      qc.invalidateQueries({ queryKey: keys.all });
     },
   });
 };

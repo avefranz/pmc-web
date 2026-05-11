@@ -19,6 +19,14 @@ import { MessageVisibility } from "@/lib/types/enums";
 import type { TicketMessageDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  Triaging: "Under review",
+  PendingApproval: "Pending approval",
+  InProgress: "In progress",
+  Verified: "Work done",
+  Reopened: "Re-opened",
+};
+
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-border last:border-none">
@@ -115,7 +123,7 @@ export function TicketDetailPage() {
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-lg font-semibold text-fg mb-1">Ticket not found</p>
         <Button asChild variant="outline" className="mt-4">
-          <Link to="/me/host/tickets">Back to tickets</Link>
+          <Link to="/me/host/tickets">Back to maintenance</Link>
         </Button>
       </div>
     );
@@ -215,7 +223,7 @@ export function TicketDetailPage() {
           <div className="bg-bg-card rounded-xl shadow-card p-5">
             <div className="flex items-center gap-2 mb-4">
               <Badge className={cn("text-xs font-medium", ticketStatusColor(ticket.status))}>
-                {ticket.status}
+                {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
               </Badge>
               <span className="text-sm">{ticketKindIcon(ticket.kind)}</span>
               <span className="text-xs text-fg-muted">{ticketKindLabel(ticket.kind)}</span>
@@ -281,7 +289,7 @@ export function TicketDetailPage() {
                     <span className="text-sm">{ticketKindIcon(c.kind)}</span>
                     <span className="text-xs text-fg flex-1 line-clamp-1">{c.title}</span>
                     <Badge className={cn("text-[10px] font-medium shrink-0", ticketStatusColor(c.status))}>
-                      {c.status}
+                      {TICKET_STATUS_LABELS[c.status] ?? c.status}
                     </Badge>
                   </Link>
                 ))}

@@ -21,6 +21,30 @@ export interface UpdateListingRequest {
   rentalType?: string;
   startDate?: string | null;
   endDate?: string | null;
+  // Check-in
+  checkInMethod?: string | null;
+  checkInInstructions?: string | null;
+  // Utilities included in rent
+  utilityElectricity?: boolean;
+  utilityWater?: boolean;
+  utilityInternet?: boolean;
+  utilityAircon?: boolean;
+  utilityGarbage?: boolean;
+  // Pets
+  petsAllowed?: boolean;
+  petDeposit?: number;
+  // Cancellation policy
+  cancellationNoticeDays?: number;
+  cancellationPenaltyMonths?: number;
+  // Safety disclosures
+  hasSmokeDetector?: boolean;
+  hasCODetector?: boolean;
+  hasFireExtinguisher?: boolean;
+  hasFirstAidKit?: boolean;
+  hasSecurityCamera?: boolean;
+  // Location context
+  transportInfo?: string | null;
+  nearbyPlaces?: string | null;
 }
 
 export interface HotfixListingRequest {

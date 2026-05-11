@@ -122,7 +122,7 @@ export function HostRequestDetailPage() {
           <div className="flex items-start gap-3">
             <Home size={15} className="text-fg-muted mt-0.5 shrink-0" />
             <div>
-              <p className="text-xs text-fg-muted">Listing</p>
+              <p className="text-xs text-fg-muted">Ad</p>
               <p className="text-sm font-semibold text-fg">{req.listingTitle}</p>
             </div>
           </div>

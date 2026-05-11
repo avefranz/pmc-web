@@ -8,6 +8,14 @@ import { ticketKindIcon } from "@/lib/utils/ticket-status";
 import { TicketStatus, TicketKind, TicketPriority } from "@/lib/types/enums";
 import { cn } from "@/lib/utils/cn";
 
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  Triaging: "Under review",
+  PendingApproval: "Pending approval",
+  InProgress: "In progress",
+  Verified: "Work done",
+  Reopened: "Re-opened",
+};
+
 function priorityBadge(p: string) {
   if (p === "Urgent") return "bg-danger/10 text-danger";
   if (p === "High")   return "bg-warning/10 text-warning";
@@ -47,7 +55,7 @@ export function TicketsListPage() {
 
   return (
     <div>
-      <PageHeader title="Tickets" />
+      <PageHeader title="Maintenance" />
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -133,7 +141,7 @@ export function TicketsListPage() {
                   {t.priority}
                 </span>
                 <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium shrink-0", statusBadge(t.status))}>
-                  {t.status}
+                  {TICKET_STATUS_LABELS[t.status] ?? t.status}
                 </span>
                 <span className="text-xs text-fg-muted shrink-0 hidden sm:block">
                   {formatRelative(t.createdAt)}

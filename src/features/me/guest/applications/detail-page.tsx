@@ -26,7 +26,7 @@ const STATUS_CONFIG: Record<
     bg: "bg-success/10",
     ring: "ring-success/30",
     label: "Approved",
-    description: "Great news — your booking request has been approved! The host will be in touch shortly.",
+    description: "Great news — your reservation request has been approved! The host will be in touch shortly.",
   },
   Rejected: {
     icon: XCircle,
@@ -135,7 +135,7 @@ export function GuestApplicationDetailPage() {
           {/* Dates + financials */}
           <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
             <div className="px-5 pt-4 pb-3 border-b border-border">
-              <h3 className="text-sm font-semibold text-fg">Booking details</h3>
+              <h3 className="text-sm font-semibold text-fg">Reservation details</h3>
             </div>
             <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
               <CalendarDays size={15} className="text-fg-muted shrink-0" />
@@ -187,7 +187,7 @@ export function GuestApplicationDetailPage() {
           {(app.status === "Rejected" || app.status === "Expired") && (
             <Button asChild variant="outline" className="w-full rounded-xl h-10 text-sm border-border hover:bg-bg-subtle">
               <Link to="/listings">
-                <Search size={15} className="mr-2" />Browse other listings
+                <Search size={15} className="mr-2" />Browse other ads
               </Link>
             </Button>
           )}

@@ -56,7 +56,7 @@ export function FinancePage() {
       setSlipFile(null);
       setRemittanceOpen(true);
     } catch {
-      toast.error("Failed to create remittance batch");
+      toast.error("Failed to create payout");
     }
   }
 
@@ -64,12 +64,12 @@ export function FinancePage() {
     if (!remittanceBatchId || !slipFile) return;
     try {
       await confirmRemittance.mutateAsync({ batchId: remittanceBatchId, slip: slipFile });
-      toast.success("Remittance confirmed");
+      toast.success("Payout confirmed");
       setRemittanceOpen(false);
       setRemittanceBatchId(null);
       setSlipFile(null);
     } catch {
-      toast.error("Failed to confirm remittance");
+      toast.error("Failed to confirm payout");
     }
   }
 
@@ -94,7 +94,7 @@ export function FinancePage() {
             onClick={handleCreateRemittance}
             disabled={createRemittance.isPending}
           >
-            {createRemittance.isPending ? "Creating…" : "Create remittance"}
+            {createRemittance.isPending ? "Creating…" : "Pay landlord"}
           </Button>
         }
       />
@@ -198,7 +198,7 @@ export function FinancePage() {
       <Dialog open={remittanceOpen} onOpenChange={(v) => !v && setRemittanceOpen(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirm remittance</DialogTitle>
+            <DialogTitle>Confirm payout</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-fg-muted">
             Batch <span className="font-mono text-xs text-fg">{remittanceBatchId}</span> created.

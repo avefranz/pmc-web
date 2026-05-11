@@ -26,7 +26,7 @@ export function GuestTm30Page() {
           </div>
           <p className="text-lg font-semibold text-fg">No TM30 records yet</p>
           <p className="text-sm text-fg-muted mt-1">
-            TM30 documents will appear here once your booking begins.
+            TM30 documents will appear here once your reservation begins.
           </p>
         </div>
       ) : (

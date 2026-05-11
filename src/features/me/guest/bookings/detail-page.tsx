@@ -8,12 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation } from "@/lib/hooks/use-bookings";
 import { useListing } from "@/lib/hooks/use-listings";
+import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus, InvoiceStatus } from "@/lib/types/enums";
 import { cn } from "@/lib/utils/cn";
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
-  Rent: "Monthly rent",
+  Rent: "Total rent",
   Deposit: "Security deposit",
   Utilities: "Utilities",
   Cleaning: "Cleaning fee",
@@ -63,6 +64,8 @@ export function GuestBookingDetailPage() {
   const { data: listing } = useListing(booking?.listingId ?? "");
   const { data: cancellation } = useBookingCancellation(id!);
   const requestCancellation = useRequestCancellation(id!);
+  const { data: tm30Records } = useMyTm30();
+  const tm30 = tm30Records?.find((r) => r.bookingId === id);
   const [showWifiPwd, setShowWifiPwd] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [exitNote, setExitNote] = useState("");
@@ -346,6 +349,43 @@ export function GuestBookingDetailPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* TM-30 — always shown for active/confirmed bookings */}
+          {(isActive || isConfirmed || isPendingPayment) && (
+            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-fg">TM-30 Registration</h3>
+                {tm30?.status === "Filed" ? (
+                  <span className="text-xs font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">✓ Filed</span>
+                ) : (
+                  <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2 py-0.5 rounded-full">Pending</span>
+                )}
+              </div>
+              <div className="px-5 py-3.5">
+                {tm30?.status === "Filed" ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-fg-muted">
+                      Filed by your host on {tm30.filedAt ? formatDate(tm30.filedAt) : "—"}
+                    </p>
+                    {tm30.documentUrl && (
+                      <a
+                        href={tm30.documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
+                      >
+                        ↓ Download TM-30 PDF
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-fg-muted leading-relaxed">
+                    Your host will register your stay with Thai immigration (TM-30) within 24 hours of check-in. The document will appear here once filed.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

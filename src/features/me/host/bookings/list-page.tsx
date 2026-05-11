@@ -61,7 +61,7 @@ function BookingList({ bookings }: { bookings: BookingDto[] }) {
       <EmptyState
         icon={<Home size={36} />}
         title="Nothing here"
-        description="No bookings in this category."
+        description="No reservations in this category."
       />
     );
   }
@@ -78,7 +78,7 @@ export function HostBookingsPage() {
   if (isLoading) {
     return (
       <div>
-        <PageHeader title="Bookings" />
+        <PageHeader title="Reservations" />
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
@@ -89,10 +89,10 @@ export function HostBookingsPage() {
   if (!bookings?.length) {
     return (
       <div>
-        <PageHeader title="Bookings" />
+        <PageHeader title="Reservations" />
         <EmptyState
           icon={<Home size={40} />}
-          title="No bookings yet"
+          title="No reservations yet"
           description="Once guests book your properties, their reservations will appear here."
           action={
             <Link
@@ -112,7 +112,7 @@ export function HostBookingsPage() {
 
   return (
     <div>
-      <PageHeader title="Bookings" />
+      <PageHeader title="Reservations" />
       <Tabs defaultValue="active">
         <TabsList className="mb-6">
           <TabsTrigger value="active">Active ({active.length})</TabsTrigger>

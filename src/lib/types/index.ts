@@ -133,6 +133,9 @@ export interface Tm30TenantRecordDto {
 
 // ─── Assets ───────────────────────────────────────────────────────────────────
 
+export type BuildingType = "Highrise" | "Lowrise" | "Landed" | "Other";
+export type FurnishedType = "Fully" | "Semi" | "Unfurnished";
+
 export interface AssetDto {
   id: string;
   parentAssetId?: string;
@@ -156,6 +159,18 @@ export interface AssetDto {
   fuzzyLongitude?: number;
   timezone?: string;
   ownerId?: string;
+  unitNumber?: string | null;
+  // Physical characteristics
+  floor?: number | null;
+  totalFloors?: number | null;
+  areaSqm?: number | null;
+  buildingType?: BuildingType | null;
+  furnished?: FurnishedType | null;
+  // Parking
+  parkingSpaces?: number;
+  parkingIncluded?: boolean;
+  // Lease terms
+  minLeaseMonths?: number | null;
 }
 
 export interface AssetMemberDto {
@@ -199,6 +214,8 @@ export interface DiscountTier {
   discountPercent: number;
 }
 
+export type CheckInMethod = "KeyHandover" | "Smartlock" | "Keybox" | "Reception" | "Other";
+
 export interface ListingDto {
   id: string;
   assetId: string;
@@ -220,6 +237,30 @@ export interface ListingDto {
   isEditable: boolean;
   media: ListingMediaDto[];
   amenities: AmenityDto[];
+  // Check-in
+  checkInMethod?: CheckInMethod | null;
+  checkInInstructions?: string | null;
+  // Utilities included in rent
+  utilityElectricity?: boolean;
+  utilityWater?: boolean;
+  utilityInternet?: boolean;
+  utilityAircon?: boolean;
+  utilityGarbage?: boolean;
+  // Pets
+  petsAllowed?: boolean;
+  petDeposit?: number;
+  // Cancellation policy
+  cancellationNoticeDays?: number;
+  cancellationPenaltyMonths?: number;
+  // Safety disclosures
+  hasSmokeDetector?: boolean;
+  hasCODetector?: boolean;
+  hasFireExtinguisher?: boolean;
+  hasFirstAidKit?: boolean;
+  hasSecurityCamera?: boolean;
+  // Location context
+  transportInfo?: string | null;
+  nearbyPlaces?: string | null;
 }
 
 export interface CalendarDayDto {
@@ -521,10 +562,31 @@ export interface CreateAssetRequest {
   parentAssetId?: string;
 }
 
+export interface UpdateAssetRequest {
+  internalName?: string;
+  maxOccupancy?: number;
+  bathrooms?: number;
+  bedrooms?: number;
+  beds?: number;
+  // Physical characteristics
+  floor?: number | null;
+  totalFloors?: number | null;
+  areaSqm?: number | null;
+  buildingType?: BuildingType | null;
+  furnished?: FurnishedType | null;
+  // Parking
+  parkingSpaces?: number;
+  parkingIncluded?: boolean;
+  // Lease terms
+  minLeaseMonths?: number | null;
+}
+
 export interface UpdateLocationRequest {
   assetId: string;
   cityId: number;
   streetAddress: string;
+  unitNumber?: string;
+  zipCode?: string;
   latitude: number;
   longitude: number;
   timezone?: string;

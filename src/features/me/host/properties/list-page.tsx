@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils/cn";
 function occupancyLabel(status: AssetOccupancyStatus) {
   switch (status) {
     case AssetOccupancyStatus.Vacant: return { label: "Vacant", className: "bg-success/10 text-success border-success/20" };
-    case AssetOccupancyStatus.Occupied: return { label: "Occupied", className: "bg-info/10 text-[var(--color-info)] border-[var(--color-info)]/20" };
+    case AssetOccupancyStatus.Occupied: return { label: "Occupied", className: "bg-blue-50 text-blue-700 border-blue-200" };
     case AssetOccupancyStatus.ActionRequired: return { label: "Action needed", className: "bg-warning/10 text-warning border-warning/20" };
     default: return { label: status, className: "" };
   }

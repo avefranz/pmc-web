@@ -133,7 +133,7 @@ export function GuestBookingsPage() {
           description="Time to find your next place in Thailand."
           action={
             <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
-              <Link to="/listings">Browse listings</Link>
+              <Link to="/listings">Browse ads</Link>
             </Button>
           }
         />

@@ -49,7 +49,7 @@ export function GuestHome() {
         Browse furnished mid-term rentals across Thailand. Apply directly and move in within days.
       </p>
       <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white px-8">
-        <Link to="/listings"><Search size={15} className="mr-2" />Browse listings</Link>
+        <Link to="/listings"><Search size={15} className="mr-2" />Browse ads</Link>
       </Button>
     </div>
   );

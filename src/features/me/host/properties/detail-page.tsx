@@ -1,11 +1,20 @@
-import { useState, useRef } from "react";
+import { useState, useRef, lazy, Suspense, useEffect, useCallback } from "react";
+
+const PropertyMap = lazy(() =>
+  import("@/components/shared/property-map").then((m) => ({ default: m.PropertyMap }))
+);
+const LocationPicker = lazy(() =>
+  import("@/components/shared/location-picker").then((m) => ({ default: m.LocationPicker }))
+);
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Pencil, ImagePlus, X,
   BedDouble, Bath, Users, Wifi, Zap, AlertTriangle,
   LayoutGrid, FileText, CalendarDays, Wrench, Settings,
   BarChart2, Home, ChevronRight, CheckCircle2, Circle,
-  ImageIcon, Megaphone, TrendingUp,
+  ImageIcon, Megaphone, TrendingUp, MapPin, Ruler, Car,
+  Search, Loader2, Star,
+
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,21 +27,40 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AmenityToggleGrid } from "@/components/amenity-toggle-grid";
-import { useAsset, useAssetSummary, useDeleteAsset } from "@/lib/hooks/use-assets";
+import { useAsset, useAssetSummary, useDeleteAsset, useUpdateLocation, useUpdateAsset } from "@/lib/hooks/use-assets";
 import { useBookingsByAsset, useCreateBooking } from "@/lib/hooks/use-bookings";
 import { useTicketsByAsset, useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useUtilitiesByAsset, useCreateUtility, useDeleteUtility } from "@/lib/hooks/use-utilities";
 import { useListingsByAsset, useCreateNewVersion, useHotfixListing, usePublishListing } from "@/lib/hooks/use-listings";
 import { useAmenities, useAmenityCategories } from "@/lib/hooks/use-references";
+import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
 import { listingsApi } from "@/lib/api/listings.api";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
 import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind } from "@/lib/types/enums";
-import type { AmenityDto, ListingMediaDto } from "@/lib/types";
+import type { AmenityDto, ListingMediaDto, BuildingType, FurnishedType } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 import { useQueryClient } from "@tanstack/react-query";
 
-type Section = "overview" | "photos" | "listing" | "bookings" | "tickets" | "utilities" | "amenities" | "finances";
+type Section = "overview" | "photos" | "listing" | "utilities" | "amenities";
+
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  address: {
+    road?: string;
+    house_number?: string;
+    suburb?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+  };
+}
 
 function isRealDate(d?: string | null): d is string {
   return !!d && !d.startsWith("0001-");
@@ -40,28 +68,68 @@ function isRealDate(d?: string | null): d is string {
 
 // ─── Photo gallery ────────────────────────────────────────────────────────────
 
+const MAX_PHOTOS = 10;
+
 function PhotoGallery({ listingId, media }: { listingId: string; media: ListingMediaDto[] }) {
   const qc = useQueryClient();
-  const [uploading, setUploading] = useState(false);
+  // uploadProgress: number of files done out of total in current batch
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [settingCover, setSettingCover] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
+  const uploading = uploadProgress !== null;
+  const remaining = MAX_PHOTOS - media.length; // how many more photos are allowed
+
+  async function handleSetCover(mediaId: string) {
+    // Move chosen photo to front, keep rest in current order
+    const reordered = [mediaId, ...media.map((m) => m.id).filter((id) => id !== mediaId)];
+    setSettingCover(true);
     try {
-      await listingsApi.uploadMedia(listingId, file);
+      await listingsApi.reorderMedia(listingId, reordered);
       qc.invalidateQueries({ queryKey: ["listings"] });
-      toast.success("Photo uploaded");
     } catch {
-      toast.error("Failed to upload photo");
+      toast.error("Failed to set cover photo");
     } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+      setSettingCover(false);
     }
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    // Enforce limit: take only as many as are still allowed
+    const allowed = files.slice(0, Math.max(0, remaining));
+    const skipped = files.length - allowed.length;
+    if (skipped > 0) {
+      toast.warning(`Only ${MAX_PHOTOS} photos allowed. ${skipped} file${skipped > 1 ? "s" : ""} skipped.`);
+    }
+    if (!allowed.length) return;
+
+    setUploadProgress({ done: 0, total: allowed.length });
+    let failed = 0;
+    // Upload sequentially to preserve order
+    for (let i = 0; i < allowed.length; i++) {
+      try {
+        await listingsApi.uploadMedia(listingId, allowed[i]);
+        // Refresh after each upload so the grid grows in real-time
+        await qc.invalidateQueries({ queryKey: ["listings"] });
+      } catch {
+        failed++;
+      }
+      setUploadProgress({ done: i + 1, total: allowed.length });
+    }
+
+    if (failed === 0) {
+      toast.success(allowed.length === 1 ? "Photo uploaded" : `${allowed.length} photos uploaded`);
+    } else {
+      toast.error(`${failed} photo${failed > 1 ? "s" : ""} failed to upload`);
+    }
+    setUploadProgress(null);
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   async function handleDelete(mediaId: string) {
@@ -78,6 +146,12 @@ function PhotoGallery({ listingId, media }: { listingId: string; media: ListingM
     }
   }
 
+  const uploadLabel = uploadProgress
+    ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+    : remaining <= 3 && remaining > 0
+    ? `Add (${remaining} left)`
+    : "Add";
+
   return (
     <>
       {media.length === 0 ? (
@@ -86,49 +160,100 @@ function PhotoGallery({ listingId, media }: { listingId: string; media: ListingM
           "hover:border-fg-muted transition-colors bg-bg-subtle",
           uploading && "opacity-50 pointer-events-none",
         )}>
-          {uploading
-            ? <div className="w-6 h-6 border-2 border-fg-muted border-t-transparent rounded-full animate-spin" />
-            : <ImagePlus size={28} className="text-fg-muted" />}
+          {uploading ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-fg-muted border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs text-fg-muted">{uploadProgress!.done}/{uploadProgress!.total} uploaded</p>
+            </div>
+          ) : (
+            <ImagePlus size={28} className="text-fg-muted" />
+          )}
           <div className="text-center">
             <p className="text-sm font-semibold text-fg-muted">Add your first photo</p>
-            <p className="text-xs text-fg-subtle mt-0.5">Guests will see your photos on the listing</p>
+            <p className="text-xs text-fg-subtle mt-0.5">Select up to {MAX_PHOTOS} photos at once</p>
           </div>
-          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+          <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       ) : (
         <div className="space-y-4">
           <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 lg:grid-cols-5">
-            {media.map((m) => (
-              <div key={m.id} className="relative group aspect-square overflow-hidden rounded-xl bg-bg-subtle">
-                <img
-                  src={m.url}
-                  alt={m.caption ?? "Photo"}
-                  className="w-full h-full object-cover cursor-zoom-in hover:scale-[1.03] transition-transform duration-300"
-                  onClick={() => setLightboxUrl(m.url)}
-                />
-                <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmId(m.id); }}
-                  disabled={!!deleting}
-                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white"
-                >
-                  {deleting === m.id
-                    ? <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin" />
-                    : <X size={11} />}
-                </button>
-              </div>
-            ))}
-            <label className={cn(
-              "aspect-square rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-fg-muted transition-colors bg-bg-subtle",
-              uploading && "opacity-50 pointer-events-none",
-            )}>
-              {uploading
-                ? <div className="w-4 h-4 border-2 border-fg-muted border-t-transparent rounded-full animate-spin" />
-                : <ImagePlus size={18} className="text-fg-muted" />}
-              <span className="text-xs text-fg-muted font-medium">{uploading ? "Uploading…" : "Add"}</span>
-              <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
-            </label>
+            {media.map((m, idx) => {
+              const isCover = idx === 0;
+              return (
+                <div key={m.id} className="relative group aspect-square overflow-hidden rounded-xl bg-bg-subtle">
+                  <img
+                    src={m.url}
+                    alt={m.caption ?? "Photo"}
+                    className="w-full h-full object-cover cursor-zoom-in hover:scale-[1.03] transition-[opacity,transform] duration-300"
+                    style={{ opacity: 0 }}
+                    onLoad={(e) => { e.currentTarget.style.opacity = "1"; }}
+                    onClick={() => setLightboxUrl(m.url)}
+                  />
+
+                  {/* Cover badge — always visible on first photo */}
+                  {isCover && (
+                    <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                      <Star size={9} className="fill-amber-400 text-amber-400" />
+                      Cover
+                    </div>
+                  )}
+
+                  {/* "Set as cover" button — shown on hover for non-cover photos */}
+                  {!isCover && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleSetCover(m.id); }}
+                      disabled={settingCover || !!deleting}
+                      className="absolute bottom-1.5 left-1.5 flex items-center gap-1 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-500/80"
+                      title="Set as cover photo"
+                    >
+                      {settingCover
+                        ? <div className="w-2 h-2 border border-white border-t-transparent rounded-full animate-spin" />
+                        : <Star size={9} />}
+                      Cover
+                    </button>
+                  )}
+
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmId(m.id); }}
+                    disabled={!!deleting}
+                    className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-danger/80"
+                  >
+                    {deleting === m.id
+                      ? <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin" />
+                      : <X size={11} />}
+                  </button>
+                </div>
+              );
+            })}
+            {/* Upload tile — hidden when limit reached */}
+            {remaining > 0 && (
+              <label className={cn(
+                "aspect-square rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-fg-muted transition-colors bg-bg-subtle",
+                uploading && "opacity-50 pointer-events-none",
+              )}>
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-fg-muted border-t-transparent rounded-full animate-spin" />
+                    <span className="text-[10px] text-fg-muted font-medium text-center leading-tight px-1">
+                      {uploadProgress!.done}/{uploadProgress!.total}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus size={18} className="text-fg-muted" />
+                    <span className="text-xs text-fg-muted font-medium text-center leading-tight px-1">{uploadLabel}</span>
+                  </>
+                )}
+                <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+              </label>
+            )}
           </div>
-          <p className="text-xs text-fg-muted">{media.length} photo{media.length !== 1 ? "s" : ""} · Guests will see these photos on your listing</p>
+          <p className="text-xs text-fg-muted">
+            {media.length} photo{media.length !== 1 ? "s" : ""}
+            {remaining > 0 ? ` · up to ${remaining} more` : ` · maximum reached`}
+            {" · Guests will see these photos on your ad"}
+          </p>
         </div>
       )}
 
@@ -187,9 +312,14 @@ function AmenitiesSection({ listingId, listingAmenities }: { listingId: string; 
   if (isLoading) return <p className="text-sm text-fg-muted py-8 text-center">Loading amenities…</p>;
   if (!refAmenities?.length) return <p className="text-sm text-fg-muted">No amenities configured.</p>;
 
+  // "Pets allowed" is managed in the dedicated Pets section — exclude from amenity grid
+  const filteredAmenities = refAmenities.filter(
+    (a) => !a.name.toLowerCase().includes("pet")
+  );
+
   return (
     <AmenityToggleGrid
-      amenities={refAmenities}
+      amenities={filteredAmenities}
       categories={categories}
       presentSet={presentSet}
       pending={pending}
@@ -204,7 +334,7 @@ function AmenitiesSection({ listingId, listingAmenities }: { listingId: string; 
 function OccupancyBadge({ status }: { status: AssetOccupancyStatus }) {
   const map: Record<AssetOccupancyStatus, { label: string; cls: string }> = {
     [AssetOccupancyStatus.Vacant]:         { label: "Vacant",          cls: "bg-success/10 text-success border-success/20" },
-    [AssetOccupancyStatus.Occupied]:       { label: "Occupied",        cls: "bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)]/20" },
+    [AssetOccupancyStatus.Occupied]:       { label: "Occupied",        cls: "bg-blue-50 text-blue-700 border-blue-200" },
     [AssetOccupancyStatus.ActionRequired]: { label: "Action needed",   cls: "bg-warning/10 text-warning border-warning/20" },
   };
   const m = map[status] ?? { label: status, cls: "bg-bg-subtle text-fg-muted border-border" };
@@ -264,6 +394,140 @@ function SectionHeading({ title, subtitle, action }: { title: string; subtitle?:
   );
 }
 
+// ─── Listing section card ─────────────────────────────────────────────────────
+
+interface ListingSectionCardProps {
+  title: string;
+  done: boolean;
+  required?: boolean;
+  onEdit: () => void;
+  children?: React.ReactNode;
+}
+
+function ListingSectionCard({ title, done, required, onEdit, children }: ListingSectionCardProps) {
+  return (
+    <div className={cn(
+      "rounded-2xl border p-4 transition-colors",
+      done ? "border-border bg-bg-card" : "border-dashed border-border bg-bg-subtle/40",
+    )}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {done ? (
+            <CheckCircle2 size={16} className="text-success shrink-0" />
+          ) : (
+            <Circle size={16} className="text-fg-subtle shrink-0" />
+          )}
+          <span className={cn("text-sm font-semibold", done ? "text-fg" : "text-fg-muted")}>
+            {title}
+            {required && !done && <span className="ml-1 text-xs text-danger font-normal">required</span>}
+          </span>
+        </div>
+        <button
+          onClick={onEdit}
+          className="text-xs font-medium text-brand hover:underline shrink-0 flex items-center gap-1"
+        >
+          <Pencil size={11} />
+          {done ? "Edit" : "Add"}
+        </button>
+      </div>
+      {done && children && (
+        <div className="mt-2.5 pl-[26px]">
+          {children}
+        </div>
+      )}
+      {!done && (
+        <div className="mt-2.5 pl-[26px]">
+          <p className="text-xs text-fg-muted">Not set — click Add to fill in</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Cancellation policy presets ─────────────────────────────────────────────
+// noticeDays = grace period: how long tenant can leave and get deposit back.
+// minBillingDays = minimum days charged from first month payment even during grace (anti-abuse).
+// After grace period: leaving early = deposit kept (penaltyMonths = 1 always).
+const CANCELLATION_PRESETS = [
+  {
+    id: "week",
+    label: "1 week",
+    noticeDays: 7,
+    penaltyMonths: 1,
+    minBillingDays: 7,
+    note: "Only useful if property is in very high demand",
+  },
+  {
+    id: "twoweeks",
+    label: "2 weeks",
+    noticeDays: 14,
+    penaltyMonths: 1,
+    minBillingDays: 7,
+    note: "Good balance for most rentals",
+  },
+  {
+    id: "month",
+    label: "1 month",
+    noticeDays: 30,
+    penaltyMonths: 1,
+    minBillingDays: 14,
+    note: "Most tenant-friendly, easier to attract long-term renters",
+  },
+] as const;
+
+// ─── Transport & nearby presets ───────────────────────────────────────────────
+// cityId 1=Bangkok, 2=Chiang Mai, 3=Phuket, 4=Pattaya, others=generic
+const TRANSPORT_PRESETS_BY_CITY: Record<number, string[]> = {
+  1: ["BTS Skytrain nearby", "MRT nearby", "Airport Rail Link", "Bus stop nearby", "Expressway access"],
+  2: ["Songthaew route nearby", "Old City walking distance", "Bus stop nearby", "Near Nimman area"],
+  3: ["Bus stop nearby", "Near Phuket Town", "Airport 30 min drive", "Near beach"],
+  4: ["Baht bus route", "Beach Road nearby", "Bus stop nearby"],
+  5: ["Bus stop nearby", "Near Hua Hin town centre", "Near beach"],
+  6: ["Ferry pier nearby", "Near Chaweng / Lamai", "Bus stop nearby"],
+};
+const DEFAULT_TRANSPORT_PRESETS = ["Bus stop nearby", "Grab / taxi access", "Near airport", "Expressway access", "Motorcycle taxi nearby"];
+
+const NEARBY_PRESETS = [
+  "Supermarket (Big C / Lotus's)", "7-Eleven / convenience store", "Hospital / clinic",
+  "International school", "Shopping mall", "Local fresh market",
+  "Gym / fitness centre", "Restaurant area", "Pharmacy",
+];
+
+function parseChipString(raw: string, knownChips: string[]): { chips: string[]; custom: string } {
+  const parts = raw.split(/\s*·\s*|\n/).map((l) => l.trim()).filter(Boolean);
+  const chips: string[] = [];
+  const custom: string[] = [];
+  for (const part of parts) {
+    if (knownChips.includes(part)) chips.push(part);
+    else custom.push(part);
+  }
+  return { chips, custom: custom.join(" · ") };
+}
+
+// ─── House rule presets ───────────────────────────────────────────────────────
+const HOUSE_RULE_PRESETS = [
+  "No smoking indoors",
+  "No parties or events",
+  "Quiet hours after 22:00",
+  "Shoes off at the entrance",
+  "No subletting",
+  "No additional guests without prior notice",
+  "Keep common areas clean",
+  "Report maintenance issues promptly",
+];
+
+/** Split saved houseRules string into (matched presets, leftover custom text) */
+function parseHouseRules(raw: string): { presets: string[]; custom: string } {
+  const lines = raw.split(/\n|·/).map((l) => l.trim()).filter(Boolean);
+  const presets: string[] = [];
+  const custom: string[] = [];
+  for (const line of lines) {
+    if (HOUSE_RULE_PRESETS.includes(line)) presets.push(line);
+    else custom.push(line);
+  }
+  return { presets, custom: custom.join("\n") };
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function PropertyDetailPage() {
@@ -271,6 +535,29 @@ export function PropertyDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [section, setSection] = useState<Section>("overview");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [autoOpenListing, setAutoOpenListing] = useState(false);
+
+  const navigateSection = useCallback((s: Section, autoOpen = false) => {
+    setSection(s);
+    if (s === "listing" && autoOpen) setAutoOpenListing(true);
+    // Scroll to the top of the content panel, accounting for sticky header
+    setTimeout(() => {
+      if (contentRef.current) {
+        const top = contentRef.current.getBoundingClientRect().top + window.scrollY - 80;
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      }
+    }, 50);
+  }, []);
+
+  // Auto-open first incomplete listing section when navigating to Details tab
+  useEffect(() => {
+    if (autoOpenListing && section === "listing") {
+      setAutoOpenListing(false);
+      openNextListingSection(); // open first incomplete
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenListing, section]);
 
   const { data: asset, isLoading } = useAsset(id!);
   const { data: summary } = useAssetSummary(id!);
@@ -354,6 +641,28 @@ export function PropertyDetailPage() {
   // open-ended = no duration required for long-term
   const canPublish = isLongTerm ? !!publishStartDate : !!publishStartDate && !!publishEndDate;
 
+  // ── Pre-publish readiness checks (used in sidebar button + publish dialog) ──
+  const readyAddress = !!(asset?.exactLatitude && asset?.exactLongitude && asset?.cityId && asset.cityId > 0);
+  const readyBasics  = !!(listing?.title && listing?.baseMonthlyRate);
+  const readyPhotos  = (listing?.media?.length ?? 0) > 0;
+
+  // All 9 listing detail sections must be filled before publish
+  const listingSectionsDone = listing ? [
+    !!listing.title && !!listing.description,
+    !!(listing.baseMonthlyRate || listing.basePrice > 0),
+    !!listing.checkInMethod,
+    true, // Utilities — "none included" is a valid explicit choice
+    !!(listing.houseRules || listing.wifiName),
+    listing.petsAllowed !== undefined && listing.petsAllowed !== null,
+    listing.cancellationNoticeDays != null,
+    !!(listing.hasSmokeDetector || listing.hasCODetector || listing.hasFireExtinguisher || listing.hasFirstAidKit),
+    !!(listing.transportInfo || listing.nearbyPlaces),
+  ].filter(Boolean).length : 0;
+  const totalListingSections = 9;
+  const readyListing = listingSectionsDone === totalListingSections;
+
+  const readyToPublish = readyAddress && readyBasics && readyPhotos && readyListing;
+
   async function handlePublish() {
     if (!listing) return;
     if (!canPublish) return;
@@ -362,7 +671,7 @@ export function PropertyDetailPage() {
       await publishListing.mutateAsync();
       toast.success("Listing published");
       setPublishOpen(false);
-    } catch { toast.error("Failed to publish listing"); }
+    } catch { toast.error("Failed to publish ad"); }
   }
 
   const [hotfixOpen, setHotfixOpen] = useState(false);
@@ -372,9 +681,9 @@ export function PropertyDetailPage() {
     if (!listing || !hotfixReason.trim()) return;
     try {
       await hotfixListing.mutateAsync({ reason: hotfixReason });
-      toast.success("Hotfix applied");
+      toast.success("Fix applied");
       setHotfixOpen(false);
-    } catch { toast.error("Failed to apply hotfix"); }
+    } catch { toast.error("Failed to apply fix"); }
   }
 
   const createUtility = useCreateUtility();
@@ -401,10 +710,266 @@ export function PropertyDetailPage() {
   const [editDepositAmount, setEditDepositAmount] = useState(0);
   const [editWifiName, setEditWifiName] = useState("");
   const [editWifiPwd, setEditWifiPwd] = useState("");
-  const [editRules, setEditRules] = useState("");
+  const [editRules, setEditRules] = useState("");        // free-text (custom) part
+  const [editRulesPresets, setEditRulesPresets] = useState<string[]>([]); // selected presets
   const [editRentalType, setEditRentalType] = useState<RentalType>(RentalType.LongTerm);
   const [editDiscountTiers, setEditDiscountTiers] = useState<{ minMonths: number; discountPercent: number }[]>([]);
+  // New listing fields
+  const [editCheckInMethod, setEditCheckInMethod] = useState<string>("");
+  const [editCheckInInstructions, setEditCheckInInstructions] = useState("");
+  const [editUtilElec, setEditUtilElec] = useState(false);
+  const [editUtilWater, setEditUtilWater] = useState(false);
+  const [editUtilInternet, setEditUtilInternet] = useState(false);
+  const [editUtilAircon, setEditUtilAircon] = useState(false);
+  const [editUtilGarbage, setEditUtilGarbage] = useState(false);
+  const [editPetsAllowed, setEditPetsAllowed] = useState(false);
+  const [editPetDeposit, setEditPetDeposit] = useState(0);
+  const [editCancelNoticeDays, setEditCancelNoticeDays] = useState(30);
+  const [editCancelPenaltyMonths, setEditCancelPenaltyMonths] = useState(1);
+  const [editHasSmokeDetector, setEditHasSmokeDetector] = useState(false);
+  const [editHasCODetector, setEditHasCODetector] = useState(false);
+  const [editHasFireExtinguisher, setEditHasFireExtinguisher] = useState(false);
+  const [editHasFirstAid, setEditHasFirstAid] = useState(false);
+  const [editHasSecurityCamera, setEditHasSecurityCamera] = useState(false);
+  const [editTransportInfo, setEditTransportInfo] = useState("");      // free text
+  const [editTransportChips, setEditTransportChips] = useState<string[]>([]);
+  const [editNearbyPlaces, setEditNearbyPlaces] = useState("");         // free text
+  const [editNearbyChips, setEditNearbyChips] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Focused listing section dialogs
+  const [basicsOpen, setBasicsOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [checkInSectionOpen, setCheckInSectionOpen] = useState(false);
+  const [utilitiesOpen, setUtilitiesOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [petsOpen, setPetsOpen] = useState(false);
+  const [cancellationOpen, setCancellationOpen] = useState(false);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [locationCtxOpen, setLocationCtxOpen] = useState(false);
+
+  // Location dialog
+  const updateLocation = useUpdateLocation();
+  const { data: cities } = useMarketplaceCities();
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [locLat, setLocLat] = useState<number | null>(null);
+  const [locLng, setLocLng] = useState<number | null>(null);
+  const [locStreet, setLocStreet] = useState("");
+  const [locSoi, setLocSoi] = useState("");
+  const [locUnit, setLocUnit] = useState("");
+  const [locZip, setLocZip] = useState("");
+  const [locCityId, setLocCityId] = useState<number | null>(null);
+  const [locMapZoom, setLocMapZoom] = useState<number>(11);
+  const [locSearch, setLocSearch] = useState("");
+  const [locResults, setLocResults] = useState<NominatimResult[]>([]);
+  const [locSearching, setLocSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressSearch = useRef(false);
+
+  const searchAddress = useCallback(async (q: string, cityHint?: string) => {
+    if (q.length < 3) { setLocResults([]); return; }
+    setLocSearching(true);
+    try {
+      // Append city name to query for better local results, but also search without
+      // it in parallel in case the user already typed the city or wants a different area
+      const withCity = cityHint ? `${q}, ${cityHint}` : q;
+      const [r1, r2] = await Promise.all([
+        fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(withCity)}&format=json&addressdetails=1&limit=5&countrycodes=th`,
+          { headers: { "Accept-Language": "en" } }
+        ).then((r) => r.json() as Promise<NominatimResult[]>),
+        cityHint
+          ? fetch(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=3&countrycodes=th`,
+              { headers: { "Accept-Language": "en" } }
+            ).then((r) => r.json() as Promise<NominatimResult[]>)
+          : Promise.resolve([] as NominatimResult[]),
+      ]);
+      // Merge, deduplicate by place_id, city-scoped results first
+      const seen = new Set<string>();
+      const merged: NominatimResult[] = [];
+      for (const item of [...r1, ...r2]) {
+        const key = String(item.place_id);
+        if (!seen.has(key)) { seen.add(key); merged.push(item); }
+      }
+      setLocResults(merged.slice(0, 6));
+    } catch { /* ignore */ }
+    finally { setLocSearching(false); }
+  }, []);
+
+  useEffect(() => {
+    if (suppressSearch.current) {
+      suppressSearch.current = false;
+      return;
+    }
+    const cityName = locCityId
+      ? (() => {
+          const c = (cities ?? []).find((x) => x.id === locCityId);
+          return c ? (typeof c.name === "string" ? c.name : (c.name as Record<string, string>).en) : undefined;
+        })()
+      : undefined;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => searchAddress(locSearch, cityName), 400);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [locSearch, locCityId, cities, searchAddress]);
+
+  // Reverse geocode when user clicks on the map
+  // fillAddress=true (default): update street, search bar, city, and postcode
+  // fillAddress=false: only update postcode (used after dropdown pick to silently fill zip)
+  const [locReverseLoading, setLocReverseLoading] = useState(false);
+  const reverseGeocode = useCallback(async (lat: number, lng: number, { fillAddress = true }: { fillAddress?: boolean } = {}) => {
+    setLocReverseLoading(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+        { headers: { "Accept-Language": "en" } }
+      );
+      const data = await res.json() as NominatimResult;
+      const addr = data.address;
+      if (!addr) return;
+      if (addr.postcode) setLocZip(addr.postcode);
+      if (fillAddress) {
+        const road = [addr.road, addr.house_number].filter(Boolean).join(" ");
+        if (road) setLocStreet(road);
+        const nominatimCity = addr.city ?? addr.town ?? addr.village ?? "";
+        if (cities && nominatimCity) {
+          const match = cities.find((c) => {
+            const name = typeof c.name === "string" ? c.name : (c.name as Record<string, string>).en ?? "";
+            return name.toLowerCase().includes(nominatimCity.toLowerCase()) ||
+                   nominatimCity.toLowerCase().includes(name.toLowerCase());
+          });
+          if (match) setLocCityId(match.id);
+        }
+        // Show the short readable address in the search bar
+        suppressSearch.current = true;
+        setLocSearch(road || data.display_name.split(",")[0]);
+      }
+    } catch { /* ignore */ }
+    finally { setLocReverseLoading(false); }
+  }, [cities]);
+
+  // Property specs dialog
+  const updateAsset = useUpdateAsset(id!);
+  const [specsOpen, setSpecsOpen] = useState(false);
+  const [specsFloor, setSpecsFloor] = useState<string>("");
+  const [specsTotalFloors, setSpecsTotalFloors] = useState<string>("");
+  const [specsArea, setSpecsArea] = useState<string>("");
+  const [specsBuildingType, setSpecsBuildingType] = useState<BuildingType | "">("");
+  const [specsFurnished, setSpecsFurnished] = useState<FurnishedType | "">("");
+  const [specsParkingSpaces, setSpecsParkingSpaces] = useState<string>("");
+  const [specsParkingIncluded, setSpecsParkingIncluded] = useState(false);
+  const [specsMinLease, setSpecsMinLease] = useState<string>("");
+
+  function openSpecsDialog() {
+    if (!asset) return;
+    setSpecsFloor(asset.floor != null ? String(asset.floor) : "");
+    setSpecsTotalFloors(asset.totalFloors != null ? String(asset.totalFloors) : "");
+    setSpecsArea(asset.areaSqm != null ? String(asset.areaSqm) : "");
+    setSpecsBuildingType(asset.buildingType ?? "");
+    setSpecsFurnished(asset.furnished ?? "");
+    setSpecsParkingSpaces(asset.parkingSpaces != null ? String(asset.parkingSpaces) : "");
+    setSpecsParkingIncluded(asset.parkingIncluded ?? false);
+    setSpecsMinLease(asset.minLeaseMonths != null ? String(asset.minLeaseMonths) : "");
+    setSpecsOpen(true);
+  }
+
+  async function handleSaveSpecs() {
+    try {
+      await updateAsset.mutateAsync({
+        // For landed property (house/villa), "floor" field is not applicable
+        floor: (specsBuildingType === "Landed" || specsFloor === "") ? null : Number(specsFloor),
+        totalFloors: specsTotalFloors !== "" ? Number(specsTotalFloors) : null,
+        areaSqm: specsArea !== "" ? Number(specsArea) : null,
+        buildingType: (specsBuildingType as BuildingType) || null,
+        furnished: (specsFurnished as FurnishedType) || null,
+        parkingSpaces: specsParkingSpaces !== "" ? Number(specsParkingSpaces) : 0,
+        parkingIncluded: specsParkingIncluded,
+        minLeaseMonths: specsMinLease !== "" ? Number(specsMinLease) : null,
+      });
+      toast.success("Property specs saved");
+      setSpecsOpen(false);
+    } catch {
+      toast.error("Failed to save specs");
+    }
+  }
+  function pickNominatimResult(r: NominatimResult) {
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lon);
+    setLocLat(lat);
+    setLocLng(lng);
+    setLocMapZoom(16);
+    const addr = r.address;
+    const road = [addr.road, addr.house_number].filter(Boolean).join(" ");
+    const filled = road || r.display_name.split(",")[0];
+    setLocStreet(filled);
+    // Suppress the debounced re-search triggered by setLocSearch
+    suppressSearch.current = true;
+    setLocSearch(filled);
+    setLocResults([]);
+    // If forward search has postcode, use it immediately; otherwise fetch via reverse geocode
+    if (addr.postcode) {
+      setLocZip(addr.postcode);
+    } else {
+      void reverseGeocode(lat, lng, { fillAddress: false });
+    }
+    const nominatimCity = addr.city ?? addr.town ?? addr.village ?? "";
+    if (cities && nominatimCity) {
+      const match = cities.find((c) => {
+        const name = typeof c.name === "string" ? c.name : (c.name as Record<string, string>).en ?? "";
+        return name.toLowerCase().includes(nominatimCity.toLowerCase()) ||
+               nominatimCity.toLowerCase().includes(name.toLowerCase());
+      });
+      if (match) setLocCityId(match.id);
+    }
+  }
+
+  function openLocationDialog() {
+    if (!asset) return;
+    setLocLat(asset.exactLatitude ?? null);
+    setLocLng(asset.exactLongitude ?? null);
+    setLocMapZoom(asset.exactLatitude ? 16 : 11);
+    setLocUnit(asset.unitNumber ?? "");
+    setLocZip(asset.zipCode ?? "");
+    setLocCityId(asset.cityId && asset.cityId > 0 ? asset.cityId : 1);
+    const addrStr = asset.addressLine ? Object.values(asset.addressLine).filter(Boolean).join(", ") : "";
+    // Parse "Soi X, Road name" back into separate fields
+    const soiMatch = addrStr.match(/^Soi\s+([^,]+),?\s*(.*)/i);
+    if (soiMatch) {
+      setLocSoi(soiMatch[1].trim());
+      const street = soiMatch[2].trim();
+      setLocStreet(street);
+      suppressSearch.current = true;
+      setLocSearch(street || addrStr);
+    } else {
+      setLocSoi("");
+      setLocStreet(addrStr);
+      suppressSearch.current = true;
+      setLocSearch(addrStr);
+    }
+    setLocResults([]);
+    setLocationOpen(true);
+  }
+
+  async function handleSaveLocation() {
+    if (!locLat || !locLng || !asset) return;
+    try {
+      // Combine Soi into streetAddress if provided
+      const fullStreet = [locSoi && `Soi ${locSoi.replace(/^soi\s*/i, "")}`, locStreet].filter(Boolean).join(", ");
+      await updateLocation.mutateAsync({
+        assetId: asset.id,
+        cityId: (locCityId && locCityId > 0) ? locCityId : 1,
+        streetAddress: fullStreet || locStreet,
+        unitNumber: locUnit || undefined,
+        zipCode: locZip || undefined,
+        latitude: locLat,
+        longitude: locLng,
+      });
+      toast.success("Location saved");
+      setLocationOpen(false);
+    } catch {
+      toast.error("Failed to save location");
+    }
+  }
 
   function openEditSettings() {
     if (!listing) return;
@@ -418,6 +983,25 @@ export function PropertyDetailPage() {
     setEditRules(listing.houseRules ?? "");
     setEditRentalType((listing.rentalType as RentalType) ?? RentalType.LongTerm);
     setEditDiscountTiers(listing.discountTiers ?? []);
+    // New fields
+    setEditCheckInMethod(listing.checkInMethod ?? "");
+    setEditCheckInInstructions(listing.checkInInstructions ?? "");
+    setEditUtilElec(listing.utilityElectricity ?? false);
+    setEditUtilWater(listing.utilityWater ?? false);
+    setEditUtilInternet(listing.utilityInternet ?? false);
+    setEditUtilAircon(listing.utilityAircon ?? false);
+    setEditUtilGarbage(listing.utilityGarbage ?? false);
+    setEditPetsAllowed(listing.petsAllowed ?? false);
+    setEditPetDeposit(listing.petDeposit ?? 0);
+    setEditCancelNoticeDays(listing.cancellationNoticeDays ?? 30);
+    setEditCancelPenaltyMonths(listing.cancellationPenaltyMonths ?? 1);
+    setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
+    setEditHasCODetector(listing.hasCODetector ?? false);
+    setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
+    setEditHasFirstAid(listing.hasFirstAidKit ?? false);
+    setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
+    setEditTransportInfo(listing.transportInfo ?? "");
+    setEditNearbyPlaces(listing.nearbyPlaces ?? "");
     setEditOpen(true);
   }
 
@@ -435,12 +1019,117 @@ export function PropertyDetailPage() {
         wifiName: editWifiName,
         wifiPassword: editWifiPwd,
         houseRules: editRules,
+        // New fields
+        checkInMethod: editCheckInMethod || null,
+        checkInInstructions: editCheckInInstructions || null,
+        utilityElectricity: editUtilElec,
+        utilityWater: editUtilWater,
+        utilityInternet: editUtilInternet,
+        utilityAircon: editUtilAircon,
+        utilityGarbage: editUtilGarbage,
+        petsAllowed: editPetsAllowed,
+        petDeposit: editPetDeposit,
+        cancellationNoticeDays: editCancelNoticeDays,
+        cancellationPenaltyMonths: editCancelPenaltyMonths,
+        hasSmokeDetector: editHasSmokeDetector,
+        hasCODetector: editHasCODetector,
+        hasFireExtinguisher: editHasFireExtinguisher,
+        hasFirstAidKit: editHasFirstAid,
+        hasSecurityCamera: editHasSecurityCamera,
+        transportInfo: editTransportInfo || null,
+        nearbyPlaces: editNearbyPlaces || null,
       });
       qc.invalidateQueries({ queryKey: ["listings"] });
       toast.success("Saved");
       setEditOpen(false);
     } catch { toast.error("Failed to save"); }
     finally { setSaving(false); }
+  }
+
+  async function saveListingSection(patch: Record<string, unknown>, close: () => void) {
+    if (!listing) return;
+    setSaving(true);
+    try {
+      await listingsApi.update(listing.id, patch as Parameters<typeof listingsApi.update>[1]);
+      qc.invalidateQueries({ queryKey: ["listings"] });
+      toast.success("Saved");
+      close();
+    } catch { toast.error("Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  // ── Listing section auto-navigation ───────────────────────────────────────
+  // Returns the ordered list of listing section defs with current done status + open action.
+  // Reading `listing` from closure — always fresh when called.
+  function getListingSectionDefs() {
+    if (!listing) return [];
+    return [
+      {
+        id: "basics",
+        done: !!listing.title && !!listing.description,
+        open: () => { setEditTitle(listing.title ?? ""); setEditDesc(listing.description ?? ""); setBasicsOpen(true); },
+      },
+      {
+        id: "pricing",
+        done: !!(listing.baseMonthlyRate || listing.basePrice > 0),
+        open: () => { setPricingOpen(true); },
+      },
+      {
+        id: "checkin",
+        done: !!listing.checkInMethod,
+        open: () => { setEditCheckInMethod(listing.checkInMethod ?? ""); setEditCheckInInstructions(listing.checkInInstructions ?? ""); setCheckInSectionOpen(true); },
+      },
+      {
+        id: "utilities",
+        done: true,
+        open: () => { setEditUtilElec(listing.utilityElectricity ?? false); setEditUtilWater(listing.utilityWater ?? false); setEditUtilInternet(listing.utilityInternet ?? false); setEditUtilGarbage(listing.utilityGarbage ?? false); setUtilitiesOpen(true); },
+      },
+      {
+        id: "rules",
+        done: !!(listing.houseRules || listing.wifiName),
+        open: () => { const { presets, custom } = parseHouseRules(listing.houseRules ?? ""); setEditRulesPresets(presets); setEditRules(custom); setEditWifiName(listing.wifiName ?? ""); setEditWifiPwd(listing.wifiPassword ?? ""); setRulesOpen(true); },
+      },
+      {
+        id: "pets",
+        done: listing.petsAllowed !== undefined && listing.petsAllowed !== null,
+        open: () => { setEditPetsAllowed(listing.petsAllowed ?? false); setEditPetDeposit(listing.petDeposit ?? 0); setPetsOpen(true); },
+      },
+      {
+        id: "cancellation",
+        done: listing.cancellationNoticeDays != null,
+        open: () => { setEditCancelNoticeDays(listing.cancellationNoticeDays ?? 30); setEditCancelPenaltyMonths(listing.cancellationPenaltyMonths ?? 1); setCancellationOpen(true); },
+      },
+      {
+        id: "safety",
+        done: !!(listing.hasSmokeDetector || listing.hasCODetector || listing.hasFireExtinguisher || listing.hasFirstAidKit),
+        open: () => { setSafetyOpen(true); },
+      },
+      {
+        id: "transport",
+        done: !!(listing.transportInfo || listing.nearbyPlaces),
+        open: () => {
+          const allTransportChips = TRANSPORT_PRESETS_BY_CITY[asset?.cityId ?? 0] ?? DEFAULT_TRANSPORT_PRESETS;
+          const tp = parseChipString(listing.transportInfo ?? "", allTransportChips);
+          setEditTransportChips(tp.chips); setEditTransportInfo(tp.custom);
+          const np = parseChipString(listing.nearbyPlaces ?? "", NEARBY_PRESETS);
+          setEditNearbyChips(np.chips); setEditNearbyPlaces(np.custom);
+          setLocationCtxOpen(true);
+        },
+      },
+    ];
+  }
+
+  /** Open first incomplete listing section (or the one after `afterId`). */
+  function openNextListingSection(afterId?: string) {
+    const defs = getListingSectionDefs();
+    const startIdx = afterId ? (defs.findIndex((d) => d.id === afterId) + 1) : 0;
+    const next = defs.slice(startIdx).find((d) => !d.done);
+    if (next) setTimeout(() => next.open(), 120); // small delay so previous dialog can close
+  }
+
+  /** Close dialog and advance to next incomplete listing section. */
+  function saveAndNext(patch: Record<string, unknown>, closeFn: () => void, currentSectionId: string) {
+    void saveListingSection(patch, () => { closeFn(); openNextListingSection(currentSectionId); });
   }
 
   async function handleDeleteAsset() {
@@ -472,12 +1161,9 @@ export function PropertyDetailPage() {
   const NAV: { id: Section; icon: React.ElementType; label: string; badge?: number }[] = [
     { id: "overview",   icon: Home,         label: "Overview" },
     { id: "photos",     icon: LayoutGrid,   label: "Photos",     badge: listing?.media?.length ? undefined : 0 },
-    { id: "listing",    icon: FileText,     label: "Listing" },
-    { id: "bookings",   icon: CalendarDays, label: "Bookings",   badge: bookings?.length },
-    { id: "tickets",    icon: Wrench,       label: "Tickets",    badge: openTickets.length || undefined },
+    { id: "listing",    icon: FileText,     label: "Details" },
     { id: "utilities",  icon: Zap,          label: "Utilities" },
     { id: "amenities",  icon: Settings,     label: "Amenities" },
-    { id: "finances",   icon: BarChart2,    label: "Finances" },
   ];
 
   return (
@@ -488,7 +1174,7 @@ export function PropertyDetailPage() {
           <ArrowLeft size={18} />
         </Link>
         <div>
-          <h1 className="text-lg font-bold text-fg leading-none">Listing editor</h1>
+          <h1 className="text-lg font-bold text-fg leading-none">Property</h1>
           <p className="text-sm text-fg-muted mt-0.5">{asset.internalName}</p>
         </div>
       </div>
@@ -499,7 +1185,7 @@ export function PropertyDetailPage() {
           {NAV.map((n) => (
             <button
               key={n.id}
-              onClick={() => setSection(n.id)}
+              onClick={() => navigateSection(n.id)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all",
                 section === n.id
@@ -560,10 +1246,10 @@ export function PropertyDetailPage() {
                     )}>
                       {listing.status === ListingStatus.Active ? "Published" : "Draft"}
                     </span>
-                    {listing.status === ListingStatus.Draft && (
+                    {listing.status === ListingStatus.Draft && readyToPublish && (
                       <button
                         onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
-                        className="text-[11px] font-semibold text-brand hover:underline"
+                        className="text-[11px] font-semibold text-brand hover:underline cursor-pointer transition-colors"
                       >
                         Publish →
                       </button>
@@ -583,7 +1269,7 @@ export function PropertyDetailPage() {
                 label={n.label}
                 active={section === n.id}
                 badge={n.badge}
-                onClick={() => setSection(n.id)}
+                onClick={() => navigateSection(n.id)}
               />
             ))}
           </div>
@@ -599,50 +1285,92 @@ export function PropertyDetailPage() {
         </aside>
 
         {/* ── Right content ── */}
-        <div className="flex-1 min-w-0 bg-bg-card rounded-2xl border border-border shadow-card p-6">
+        <div ref={contentRef} className="flex-1 min-w-0 bg-bg-card rounded-2xl border border-border shadow-card p-6">
 
           {/* OVERVIEW */}
           {section === "overview" && (() => {
-            const hasPhotos = (listing?.media?.length ?? 0) > 0;
+            const hasAddress = !!(asset.exactLatitude && asset.exactLongitude && asset.cityId && asset.cityId > 0);
+            const hasBasics  = !!(listing?.title && listing?.baseMonthlyRate);
+            const hasPhotos  = (listing?.media?.length ?? 0) > 0;
+            // Mirror listingSectionsDone so checklist and listing panel always agree
+            const detailsDoneCount = listingSectionsDone;
+            const detailsTotal = totalListingSections; // 9
+            const hasDetails = detailsDoneCount === detailsTotal;
             const isPublished = listing?.status === ListingStatus.Active;
-            const hasListingDetails = !!listing?.title;
             const hasBookings = (bookings?.length ?? 0) > 0;
             const isNewProperty = !hasBookings && !isPublished;
 
-            const setupSteps = [
+            // ── Address desc helper ──
+            const addressDesc = (() => {
+              if (!hasAddress) return "Add your address so tenants can find you in search";
+              const parts = asset.addressLine ? Object.values(asset.addressLine).filter(Boolean) : [];
+              return parts.length ? parts.join(", ") : "Location saved";
+            })();
+
+            const hasSpecs = !!(asset.buildingType && asset.areaSqm && asset.furnished);
+            const specsDesc = hasSpecs
+              ? [
+                  asset.buildingType === "Highrise" ? "Apartment" : asset.buildingType === "Lowrise" ? "Condo" : asset.buildingType === "Landed" ? "House / Villa" : "Other",
+                  asset.areaSqm && `${asset.areaSqm} m²`,
+                  asset.furnished === "Fully" ? "Fully furnished" : asset.furnished === "Semi" ? "Semi-furnished" : "Unfurnished",
+                ].filter(Boolean).join(" · ")
+              : "Property type, size, furnishing — helps tenants find you";
+
+            const setupSteps: { id: string; label: string; desc: string; done: boolean; action: (() => void) | null }[] = [
               {
                 id: "created",
                 label: "Property created",
                 desc: `${asset.internalName} — ${[asset.bedrooms && `${asset.bedrooms} bed`, asset.bathrooms && `${asset.bathrooms} bath`].filter(Boolean).join(", ")}`,
                 done: true,
-                action: null as null | (() => void),
+                action: null,
               },
               {
-                id: "listing",
-                label: "Listing details set",
-                desc: hasListingDetails
-                  ? listing!.baseMonthlyRate
-                    ? `฿${listing!.baseMonthlyRate.toLocaleString()} / month · ${listing!.title}`
-                    : listing!.title
-                  : "Add title, price, and description",
-                done: hasListingDetails,
-                action: () => setSection("listing"),
+                id: "specs",
+                label: "Property specs",
+                desc: specsDesc,
+                done: hasSpecs,
+                action: () => openSpecsDialog(),
+              },
+              {
+                id: "address",
+                label: "Set your address",
+                desc: addressDesc,
+                done: hasAddress,
+                action: () => openLocationDialog(),
+              },
+              {
+                id: "basics",
+                label: "Add title & price",
+                desc: hasBasics
+                  ? `฿${listing!.baseMonthlyRate!.toLocaleString()} / month · ${listing!.title}`
+                  : "Your listing headline and monthly rent",
+                done: hasBasics,
+                action: () => navigateSection("listing"),
               },
               {
                 id: "photos",
                 label: "Add photos",
                 desc: hasPhotos
                   ? `${listing!.media.length} photo${listing!.media.length !== 1 ? "s" : ""} added`
-                  : "High-quality photos get 3× more inquiries",
+                  : "Great photos get 3× more inquiries — aim for 5+",
                 done: hasPhotos,
-                action: () => setSection("photos"),
+                action: () => navigateSection("photos"),
+              },
+              {
+                id: "details",
+                label: "Complete your listing",
+                desc: hasDetails
+                  ? `${detailsDoneCount} of ${detailsTotal} sections filled`
+                  : `${detailsDoneCount} of ${detailsTotal} sections — check-in, rules, utilities, and more`,
+                done: hasDetails,
+                action: () => navigateSection("listing", true),
               },
               {
                 id: "publish",
                 label: "Publish your listing",
                 desc: isPublished
                   ? `Live since ${listing?.publishedAt ? formatDate(listing.publishedAt) : "recently"}`
-                  : "Go live and start receiving booking requests",
+                  : "Go live and start receiving reservation requests",
                 done: isPublished,
                 action: () => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); },
               },
@@ -653,15 +1381,16 @@ export function PropertyDetailPage() {
             const allDone = doneCount === setupSteps.length;
 
             const pct = Math.round((doneCount / setupSteps.length) * 100);
+            const remaining = setupSteps.length - doneCount;
             const motivationalCopy = allDone
-              ? { headline: "You're live.", sub: "Sit back and wait for your first booking request." }
-              : doneCount === 0
-              ? { headline: "Let's get this ready.", sub: "A few steps stand between you and your first booking." }
-              : doneCount === 1
-              ? { headline: "Good start. Keep going.", sub: `${setupSteps.length - doneCount} steps until you're live.` }
+              ? { headline: "You're live! 🎉", sub: "Sit back and wait for your first reservation request." }
+              : doneCount <= 1
+              ? { headline: "Let's get this ready.", sub: `${remaining} steps stand between you and your first tenant.` }
               : doneCount === setupSteps.length - 1
-              ? { headline: "Almost there. One step left.", sub: "You're this close to your first booking request." }
-              : { headline: "Good progress.", sub: `${setupSteps.length - doneCount} more steps until launch.` };
+              ? { headline: "Almost there. One step left.", sub: "You're this close to your first reservation request." }
+              : doneCount >= setupSteps.length - 2
+              ? { headline: "Great progress!", sub: `Just ${remaining} more steps until you go live.` }
+              : { headline: "Keep it up.", sub: `${remaining} more steps until launch.` };
 
             return (
               <div className="space-y-6">
@@ -782,7 +1511,16 @@ export function PropertyDetailPage() {
 
                             {/* CTA */}
                             {step.done ? (
-                              <span className="shrink-0 text-xs font-semibold text-emerald-600">Done</span>
+                              step.action ? (
+                                <button
+                                  onClick={step.action}
+                                  className="shrink-0 text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:underline flex items-center gap-1 transition-colors"
+                                >
+                                  <Pencil size={10} />Edit
+                                </button>
+                              ) : (
+                                <span className="shrink-0 text-xs font-semibold text-emerald-600">✓ Done</span>
+                              )
                             ) : isNext && step.action ? (
                               <button
                                 onClick={step.action}
@@ -800,9 +1538,9 @@ export function PropertyDetailPage() {
                     {!allDone && (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
                         {[
-                          { icon: ImageIcon,  color: "text-blue-500",   bg: "bg-blue-50",   title: "Photos matter most",        body: "Listings with 5+ photos get significantly more inquiries. Use natural light." },
-                          { icon: FileText,   color: "text-indigo-500", bg: "bg-indigo-50", title: "Write a great description",  body: "Describe the neighbourhood, nearby transport, and what makes the place special." },
-                          { icon: TrendingUp, color: "text-emerald-500",bg: "bg-emerald-50",title: "Price it right",             body: "Check nearby listings to set a competitive monthly rate for your area." },
+                          { icon: ImageIcon,  color: "text-blue-500",   bg: "bg-blue-50",   title: "Photos matter most",       body: "Listings with 5+ quality photos get significantly more inquiries. Natural light and tidy rooms make a big difference." },
+                          { icon: Zap,        color: "text-amber-500",  bg: "bg-amber-50",  title: "Mention what's included",  body: "Tell tenants if utilities like electricity, water, or internet are covered in the rent. It's a common decision factor." },
+                          { icon: TrendingUp, color: "text-emerald-500",bg: "bg-emerald-50",title: "Price it right",            body: "Check nearby listings to set a competitive monthly rate. A well-priced listing fills up 2× faster." },
                         ].map((tip) => (
                           <div key={tip.title} className="rounded-xl border border-border p-4 bg-white hover:border-zinc-300 transition-colors">
                             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-3", tip.bg)}>
@@ -860,7 +1598,7 @@ export function PropertyDetailPage() {
                           <p className="text-sm mt-0.5" style={{ color:"rgba(255,255,255,.45)" }}>
                             Tenants searching in{" "}
                             <span className="text-white/70 font-medium">{asset.address?.city ?? "your area"}</span>{" "}
-                            can now find and book your place.
+                            can now find and rent your place.
                           </p>
                         </div>
                       </div>
@@ -875,9 +1613,9 @@ export function PropertyDetailPage() {
                     <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-3">What happens next</p>
                     <div className="space-y-2 mb-5">
                       {[
-                        { n:1, title:"Tenants discover your listing", desc:"Your property appears in search results for people looking in your area and price range." },
-                        { n:2, title:"A tenant sends a booking request", desc:"You'll get notified and can review their details before accepting or declining." },
-                        { n:3, title:"Sign the contract & confirm", desc:"Upload the signed lease and your booking is officially confirmed — money incoming." },
+                        { n:1, title:"Tenants discover your ad", desc:"Your property appears in search results for people looking in your area and price range." },
+                        { n:2, title:"A tenant sends a reservation request", desc:"You'll get notified and can review their details before accepting or declining." },
+                        { n:3, title:"Sign the contract & confirm", desc:"Upload the signed lease and your reservation is officially confirmed — money incoming." },
                       ].map((item) => (
                         <div key={item.n} className="flex items-start gap-3.5 p-4 rounded-xl border border-border bg-bg-subtle">
                           <div className="w-6 h-6 rounded-full bg-fg flex items-center justify-center shrink-0 mt-0.5">
@@ -899,11 +1637,11 @@ export function PropertyDetailPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <div className="bg-bg-subtle rounded-xl p-4 text-center">
                         <p className="text-2xl font-bold text-fg">{bookings?.length ?? 0}</p>
-                        <p className="text-xs text-fg-muted mt-1">Total bookings</p>
+                        <p className="text-xs text-fg-muted mt-1">Total reservations</p>
                       </div>
                       <div className="bg-bg-subtle rounded-xl p-4 text-center">
                         <p className="text-2xl font-bold text-fg">{openTickets.length}</p>
-                        <p className="text-xs text-fg-muted mt-1">Open tickets</p>
+                        <p className="text-xs text-fg-muted mt-1">Open issues</p>
                       </div>
                       {summary && (
                         <div className={cn("bg-bg-subtle rounded-xl p-4 text-center", "sm:col-span-1 col-span-2")}>
@@ -933,12 +1671,10 @@ export function PropertyDetailPage() {
                 )}
 
                 {/* Quick actions — always visible */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   {[
-                    { icon: LayoutGrid, label: "Manage photos", onClick: () => setSection("photos") },
-                    { icon: FileText,   label: "Edit listing",  onClick: () => setSection("listing") },
-                    { icon: CalendarDays, label: "New booking", onClick: () => setBookingOpen(true) },
-                    { icon: Wrench,     label: "New ticket",   onClick: () => setTicketOpen(true) },
+                    { icon: LayoutGrid, label: "Manage photos", onClick: () => navigateSection("photos") },
+                    { icon: FileText,   label: "Edit listing",  onClick: () => navigateSection("listing") },
                   ].map((a) => (
                     <button
                       key={a.label}
@@ -950,6 +1686,97 @@ export function PropertyDetailPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Property specs */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-fg">Property specs</p>
+                    <button
+                      onClick={openSpecsDialog}
+                      className="text-xs text-fg-muted hover:text-fg transition-colors flex items-center gap-1"
+                    >
+                      <Pencil size={11} />Edit specs
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {asset.areaSqm != null && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Ruler size={14} className="text-fg-muted shrink-0" />
+                        <span className="text-fg">{asset.areaSqm} m²</span>
+                      </div>
+                    )}
+                    {asset.floor != null && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Home size={14} className="text-fg-muted shrink-0" />
+                        <span className="text-fg">Floor {asset.floor}{asset.totalFloors ? ` of ${asset.totalFloors}` : ""}</span>
+                      </div>
+                    )}
+                    {asset.buildingType && (
+                      <div className="text-sm text-fg">{asset.buildingType}</div>
+                    )}
+                    {asset.furnished && (
+                      <div className="text-sm text-fg">{asset.furnished === "Fully" ? "Fully furnished" : asset.furnished === "Semi" ? "Semi-furnished" : "Unfurnished"}</div>
+                    )}
+                    {(asset.parkingSpaces != null && asset.parkingSpaces > 0) && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Car size={14} className="text-fg-muted shrink-0" />
+                        <span className="text-fg">{asset.parkingSpaces} parking{asset.parkingIncluded ? " (incl.)" : ""}</span>
+                      </div>
+                    )}
+                    {!asset.areaSqm && !asset.floor && !asset.buildingType && !asset.furnished && !(asset.parkingSpaces && asset.parkingSpaces > 0) && (
+                      <p className="col-span-full text-xs text-fg-muted">No specs set yet. Click "Edit specs" to add details.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Location map */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-fg flex items-center gap-1.5">
+                      <MapPin size={14} className="text-fg-muted" />Location
+                    </p>
+                    <button
+                      onClick={openLocationDialog}
+                      className="text-xs text-fg-muted hover:text-fg transition-colors flex items-center gap-1"
+                    >
+                      <Pencil size={11} />
+                      {asset.exactLatitude ? "Edit" : "Set location"}
+                    </button>
+                  </div>
+                  {asset.exactLatitude && asset.exactLongitude ? (
+                    <div>
+                      {/* isolation:isolate keeps Leaflet's z-index stack inside, preventing it from covering dialogs */}
+                      <div style={{ isolation: "isolate", position: "relative", zIndex: 0 }}>
+                        <Suspense fallback={<div className="rounded-2xl bg-bg-subtle animate-pulse" style={{ height: 220 }} />}>
+                          <PropertyMap
+                            lat={asset.exactLatitude}
+                            lng={asset.exactLongitude}
+                            label={asset.internalName}
+                          />
+                        </Suspense>
+                      </div>
+                      {(asset.addressLine || asset.unitNumber || asset.zipCode) && (
+                        <div className="mt-2 text-xs text-fg-muted flex items-start gap-1.5">
+                          <MapPin size={11} className="shrink-0 mt-0.5" />
+                          <div>
+                            {asset.unitNumber && <span className="font-medium text-fg">{asset.unitNumber} · </span>}
+                            {asset.addressLine && Object.values(asset.addressLine).filter(Boolean).join(", ")}
+                            {asset.zipCode && <span className="ml-1">{asset.zipCode}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={openLocationDialog}
+                      className="w-full rounded-2xl border border-dashed border-border p-6 text-center hover:bg-bg-subtle transition-colors"
+                    >
+                      <MapPin size={20} className="text-fg-muted mx-auto mb-2" />
+                      <p className="text-sm text-fg-muted">No location set</p>
+                      <p className="text-xs text-fg-muted mt-0.5">Click to add coordinates</p>
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })()}
@@ -959,7 +1786,7 @@ export function PropertyDetailPage() {
             <div>
               <SectionHeading
                 title="Photos"
-                subtitle="Manage photos for your listing. High-quality photos attract more guests."
+                subtitle="Manage photos for your ad. High-quality photos attract more guests."
               />
               {listing
                 ? <PhotoGallery listingId={listing.id} media={listing.media ?? []} />
@@ -969,17 +1796,7 @@ export function PropertyDetailPage() {
 
           {/* LISTING */}
           {section === "listing" && (
-            <div className="space-y-6">
-              <SectionHeading
-                title="Listing details"
-                subtitle="Edit your listing title, price, description, and rules."
-                action={listing && (
-                  <Button variant="outline" onClick={openEditSettings} className="gap-1.5">
-                    <Pencil size={14} />Edit
-                  </Button>
-                )}
-              />
-
+            <div className="space-y-5">
               {!listing ? (
                 <div className="text-center py-12">
                   <p className="text-fg-muted mb-4">No listing created yet.</p>
@@ -987,140 +1804,259 @@ export function PropertyDetailPage() {
                     Create listing
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-5">
-                  <Row label="Title" value={listing.title || "—"} />
-                  <Row label="Rental type" value={listing.rentalType === RentalType.LongTerm ? "Long-term" : "Short-term"} />
-                  <Row label="Price" value={
-                    listing.rentalType === RentalType.LongTerm
-                      ? `${formatThb(listing.baseMonthlyRate ?? listing.basePrice * 30)} / month`
-                      : `${formatThb(listing.basePrice)} / night`
-                  } />
-                  {listing.depositAmount > 0 && (
-                    <Row label="Security deposit" value={formatThb(listing.depositAmount)} />
-                  )}
-                  {listing.discountTiers && listing.discountTiers.length > 0 && (
-                    <Row label="Long-stay discounts" value={listing.discountTiers
-                      .sort((a, b) => a.minMonths - b.minMonths)
-                      .map((t) => `${t.minMonths}mo → ${t.discountPercent}% off`)
-                      .join(" · ")} />
-                  )}
-                  {listing.wifiName && <Row label="WiFi" value={`${listing.wifiName}${listing.wifiPassword ? ` · ${listing.wifiPassword}` : ""}`} />}
-                  {listing.description && <Row label="Description" value={listing.description} multiline />}
-                  {listing.houseRules && <Row label="House rules" value={listing.houseRules} multiline />}
+              ) : (() => {
+                const sectionsDone = listingSectionsDone;
+                const totalSections = totalListingSections;
+                const pct = Math.round((sectionsDone / totalSections) * 100);
 
-                  <div className="pt-2 border-t border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-xs font-semibold px-2.5 py-1 rounded-full",
-                        listing.status === ListingStatus.Active ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
-                      )}>
-                        {listing.status === ListingStatus.Active ? "✓ Published" : "Draft — not visible to guests"}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      {listing.status === ListingStatus.Draft && (
-                        <Button
-                          size="sm"
-                          className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
-                          onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
-                        >
-                          Publish
-                        </Button>
-                      )}
-                      {listing.status === "Active" && (
-                        <Button variant="outline" size="sm" onClick={() => setHotfixOpen(true)}>Apply hotfix</Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* BOOKINGS */}
-          {section === "bookings" && (
-            <div>
-              <SectionHeading
-                title="Bookings"
-                subtitle="All bookings for this property."
-                action={
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
-                    <Plus size={14} />New booking
-                  </Button>
-                }
-              />
-              {!bookings?.length ? (
-                <div className="text-center py-12">
-                  <CalendarDays size={36} className="text-fg-subtle mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-fg mb-1">No bookings yet</p>
-                  <p className="text-sm text-fg-muted mb-4">Create a booking to get started.</p>
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
-                    <Plus size={14} />New booking
-                  </Button>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {bookings.map((b) => (
-                    <Link key={b.id} to={`/me/host/bookings/${b.id}`}
-                      className="flex items-center justify-between py-3.5 hover:bg-bg-subtle -mx-2 px-2 rounded-lg transition-colors group">
+                return (
+                  <div className="space-y-4">
+                    {/* Header row: title + completion + publish/status */}
+                    <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-sm font-semibold text-fg group-hover:text-brand">{b.tenantName ?? "Guest"}</p>
-                        <p className="text-xs text-fg-muted">{formatDate(b.checkInDate)} – {formatDate(b.checkOutDate)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">{b.status}</Badge>
-                        <ChevronRight size={14} className="text-fg-subtle" />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TICKETS */}
-          {section === "tickets" && (
-            <div>
-              <SectionHeading
-                title="Tickets"
-                subtitle="Maintenance requests and issues."
-                action={
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="gap-1.5" onClick={() => setTicketOpen(true)}>
-                      <Plus size={14} />New ticket
-                    </Button>
-                    <Button asChild variant="ghost">
-                      <Link to="/me/host/tickets">View all</Link>
-                    </Button>
-                  </div>
-                }
-              />
-              {!openTickets.length ? (
-                <div className="text-center py-12">
-                  <Wrench size={36} className="text-fg-subtle mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-fg mb-1">No open tickets</p>
-                  <p className="text-sm text-fg-muted">Create a ticket to track maintenance or issues.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {openTickets.map((t) => (
-                    <Link key={t.id} to={`/me/host/tickets/${t.id}`}
-                      className="flex items-center justify-between py-3.5 hover:bg-bg-subtle -mx-2 px-2 rounded-lg transition-colors group">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-lg shrink-0">{ticketKindIcon(t.kind)}</span>
-                        <p className="text-sm text-fg group-hover:text-brand line-clamp-1">{t.title}</p>
+                        <h2 className="text-base font-semibold text-fg">Listing details</h2>
+                        <p className="text-sm text-fg-muted mt-0.5">
+                          {sectionsDone === totalSections
+                            ? "All sections complete"
+                            : `${sectionsDone} of ${totalSections} sections complete`}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", ticketStatusColor(t.status))}>
-                          {t.status}
-                        </span>
-                        <ChevronRight size={14} className="text-fg-subtle" />
+                        {listing.status === ListingStatus.Draft ? (
+                          readyToPublish ? (
+                            <Button
+                              size="sm"
+                              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                              onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
+                            >
+                              Publish
+                            </Button>
+                          ) : null
+                        ) : (
+                          <>
+                            <span className="text-xs font-semibold text-success">✓ Live</span>
+                            <Button variant="outline" size="sm" onClick={() => setHotfixOpen(true)}>Quick fix</Button>
+                          </>
+                        )}
                       </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="h-1.5 bg-bg-subtle rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${pct}%`,
+                          background: pct === 100 ? "var(--color-success)" : "var(--color-primary)",
+                        }}
+                      />
+                    </div>
+
+                    {/* Section cards */}
+                    <div className="space-y-2">
+
+                      {/* 1. Title & description */}
+                      <ListingSectionCard
+                        title="Title & description"
+                        done={!!listing.title && !!listing.description}
+                        required
+                        onEdit={() => {
+                          setEditTitle(listing.title);
+                          setEditDesc(listing.description ?? "");
+                          setBasicsOpen(true);
+                        }}
+                      >
+                        <p className="text-sm font-medium text-fg leading-snug">{listing.title || "—"}</p>
+                        {listing.description && (
+                          <p className="text-xs text-fg-muted mt-1 line-clamp-2">{listing.description}</p>
+                        )}
+                      </ListingSectionCard>
+
+                      {/* 2. Pricing */}
+                      <ListingSectionCard
+                        title="Pricing"
+                        done={!!(listing.baseMonthlyRate || listing.basePrice > 0)}
+                        required
+                        onEdit={() => {
+                          setEditPrice(listing.basePrice);
+                          setEditMonthlyPrice(listing.baseMonthlyRate ?? 0);
+                          setEditDepositAmount(listing.depositAmount ?? 0);
+                          setEditRentalType((listing.rentalType as RentalType) ?? RentalType.LongTerm);
+                          setEditDiscountTiers(listing.discountTiers ?? []);
+                          setPricingOpen(true);
+                        }}
+                      >
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-sm font-semibold text-fg">
+                            {formatThb(listing.baseMonthlyRate ?? listing.basePrice * 30)}/month
+                          </span>
+                          {listing.depositAmount > 0 && (
+                            <span className="text-xs text-fg-muted">{formatThb(listing.depositAmount)} deposit</span>
+                          )}
+                          {listing.discountTiers && listing.discountTiers.length > 0 && (
+                            <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full font-medium">
+                              {listing.discountTiers.length} discount tier{listing.discountTiers.length !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
+                      </ListingSectionCard>
+
+                      {/* 3. Check-in */}
+                      <ListingSectionCard
+                        title="Check-in"
+                        done={!!listing.checkInMethod}
+                        onEdit={() => {
+                          setEditCheckInMethod(listing.checkInMethod ?? "");
+                          setEditCheckInInstructions(listing.checkInInstructions ?? "");
+                          setCheckInSectionOpen(true);
+                        }}
+                      >
+                        <p className="text-sm text-fg">
+                          {listing.checkInMethod?.replace(/([A-Z])/g, " $1").trim()}
+                        </p>
+                        {listing.checkInInstructions && (
+                          <p className="text-xs text-fg-muted mt-0.5 line-clamp-1">{listing.checkInInstructions}</p>
+                        )}
+                      </ListingSectionCard>
+
+                      {/* 4. Utilities included */}
+                      {(() => {
+                        const utils = [
+                          listing.utilityElectricity && "Electricity",
+                          listing.utilityWater && "Water",
+                          listing.utilityInternet && "Internet",
+                          listing.utilityGarbage && "Garbage",
+                        ].filter(Boolean) as string[];
+                        return (
+                          <ListingSectionCard
+                            title="Utilities included"
+                            done={true}
+                            onEdit={() => {
+                              setEditUtilElec(listing.utilityElectricity ?? false);
+                              setEditUtilWater(listing.utilityWater ?? false);
+                              setEditUtilInternet(listing.utilityInternet ?? false);
+                              setEditUtilGarbage(listing.utilityGarbage ?? false);
+                              setUtilitiesOpen(true);
+                            }}
+                          >
+                            {utils.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {utils.map((u) => (
+                                  <span key={u} className="text-xs bg-bg-subtle text-fg px-2 py-0.5 rounded-full border border-border">{u}</span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-fg-muted">None included — tenant pays separately</span>
+                            )}
+                          </ListingSectionCard>
+                        );
+                      })()}
+
+                      {/* 5. House rules & WiFi */}
+                      <ListingSectionCard
+                        title="House rules & WiFi"
+                        done={!!listing.houseRules || !!listing.wifiName}
+                        onEdit={() => {
+                          const { presets, custom } = parseHouseRules(listing.houseRules ?? "");
+                          setEditRulesPresets(presets);
+                          setEditRules(custom);
+                          setEditWifiName(listing.wifiName ?? "");
+                          setEditWifiPwd(listing.wifiPassword ?? "");
+                          setRulesOpen(true);
+                        }}
+                      >
+                        {listing.houseRules && (
+                          <p className="text-xs text-fg-muted line-clamp-1">{listing.houseRules}</p>
+                        )}
+                        {listing.wifiName && (
+                          <p className="text-xs text-fg-muted mt-0.5">WiFi: {listing.wifiName} {listing.wifiPassword && `· ${listing.wifiPassword}`}</p>
+                        )}
+                      </ListingSectionCard>
+
+                      {/* 6. Pets */}
+                      <ListingSectionCard
+                        title="Pets"
+                        done={listing.petsAllowed !== undefined}
+                        onEdit={() => {
+                          setEditPetsAllowed(listing.petsAllowed ?? false);
+                          setEditPetDeposit(listing.petDeposit ?? 0);
+                          setPetsOpen(true);
+                        }}
+                      >
+                        <p className="text-sm text-fg">
+                          {listing.petsAllowed
+                            ? `Allowed${listing.petDeposit ? ` · ${formatThb(listing.petDeposit)} deposit` : ""}`
+                            : "Not allowed"}
+                        </p>
+                      </ListingSectionCard>
+
+                      {/* 7. Cancellation policy */}
+                      <ListingSectionCard
+                        title="Cancellation policy"
+                        done={listing.cancellationNoticeDays != null}
+                        onEdit={() => {
+                          setEditCancelNoticeDays(listing.cancellationNoticeDays ?? 30);
+                          setEditCancelPenaltyMonths(listing.cancellationPenaltyMonths ?? 1);
+                          setCancellationOpen(true);
+                        }}
+                      >
+                        <p className="text-sm text-fg-muted">
+                          {listing.cancellationNoticeDays ?? 30}-day notice · {listing.cancellationPenaltyMonths ?? 1} month penalty
+                        </p>
+                      </ListingSectionCard>
+
+                      {/* 8. Safety & disclosures */}
+                      {(() => {
+                        const safety = [
+                          listing.hasSmokeDetector && "Smoke detector",
+                          listing.hasCODetector && "CO (carbon monoxide) detector",
+                          listing.hasFireExtinguisher && "Fire extinguisher",
+                          listing.hasFirstAidKit && "First aid kit",
+                          listing.hasSecurityCamera && "Security cameras",
+                        ].filter(Boolean) as string[];
+                        return (
+                          <ListingSectionCard
+                            title="Safety features"
+                            done={safety.length > 0}
+                            onEdit={() => {
+                              setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
+                              setEditHasCODetector(listing.hasCODetector ?? false);
+                              setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
+                              setEditHasFirstAid(listing.hasFirstAidKit ?? false);
+                              setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
+                              setSafetyOpen(true);
+                            }}
+                          >
+                            <div className="flex flex-wrap gap-1.5">
+                              {safety.map((s) => (
+                                <span key={s} className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full border border-success/20">{s}</span>
+                              ))}
+                            </div>
+                          </ListingSectionCard>
+                        );
+                      })()}
+
+                      {/* 9. Location context */}
+                      <ListingSectionCard
+                        title="Location & transport"
+                        done={!!listing.transportInfo || !!listing.nearbyPlaces}
+                        onEdit={() => {
+                          const allTransportChips = TRANSPORT_PRESETS_BY_CITY[asset?.cityId ?? 0] ?? DEFAULT_TRANSPORT_PRESETS;
+                          const tp = parseChipString(listing.transportInfo ?? "", allTransportChips);
+                          setEditTransportChips(tp.chips); setEditTransportInfo(tp.custom);
+                          const np = parseChipString(listing.nearbyPlaces ?? "", NEARBY_PRESETS);
+                          setEditNearbyChips(np.chips); setEditNearbyPlaces(np.custom);
+                          setLocationCtxOpen(true);
+                        }}
+                      >
+                        {listing.transportInfo && <p className="text-xs text-fg-muted line-clamp-1">🚇 {listing.transportInfo}</p>}
+                        {listing.nearbyPlaces && <p className="text-xs text-fg-muted mt-0.5 line-clamp-1">📍 {listing.nearbyPlaces}</p>}
+                      </ListingSectionCard>
+
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1185,48 +2121,272 @@ export function PropertyDetailPage() {
             </div>
           )}
 
-          {/* FINANCES */}
-          {section === "finances" && (
-            <div className="space-y-6">
-              <SectionHeading
-                title="Finances"
-                subtitle="Revenue and expense summary for this property."
-              />
-              {!summary ? (
-                <p className="text-sm text-fg-muted text-center py-12">No financial data available yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-bg-subtle rounded-xl p-5">
-                      <p className="text-xs text-fg-muted mb-1">Total revenue</p>
-                      <p className="text-2xl font-bold text-fg">{formatThb(summary.totalRevenue)}</p>
-                    </div>
-                    <div className="bg-bg-subtle rounded-xl p-5">
-                      <p className="text-xs text-fg-muted mb-1">Total expenses</p>
-                      <p className="text-2xl font-bold text-fg">{formatThb(summary.totalExpenses)}</p>
-                    </div>
-                  </div>
-                  <div className={cn(
-                    "rounded-xl p-5 flex items-center justify-between",
-                    summary.netProfit >= 0 ? "bg-success/8 border border-success/20" : "bg-danger/8 border border-danger/20",
-                  )}>
-                    <div>
-                      <p className="text-xs font-semibold text-fg-muted mb-1">Net profit</p>
-                      <p className={cn("text-3xl font-bold", summary.netProfit >= 0 ? "text-success" : "text-danger")}>
-                        {formatThb(summary.netProfit)}
-                      </p>
-                    </div>
-                    <BarChart2 size={40} className={summary.netProfit >= 0 ? "text-success/30" : "text-danger/30"} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
         </div>
       </div>
 
       {/* ── Dialogs (unchanged) ── */}
+
+      {/* Location dialog */}
+      {/* ── Property specs dialog ── */}
+      <Dialog open={specsOpen} onOpenChange={setSpecsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Property specs</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-1">
+            {/* 1. Property type — first, drives what fields appear */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">What type of property is this?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: "Highrise", label: "🏢 Apartment", sub: "Unit in a high-rise building" },
+                  { value: "Lowrise",  label: "🏙️ Condo",     sub: "Unit in a low-rise building" },
+                  { value: "Landed",   label: "🏠 House / Villa", sub: "Standalone or townhouse" },
+                  { value: "Other",    label: "📦 Other",     sub: "Studio, shophouse, etc." },
+                ] as { value: BuildingType; label: string; sub: string }[]).map(({ value, label, sub }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSpecsBuildingType(value)}
+                    className={cn(
+                      "text-left rounded-xl border-2 px-3 py-2.5 transition-all",
+                      specsBuildingType === value
+                        ? "border-brand bg-brand/5 ring-1 ring-brand"
+                        : "border-border bg-white hover:bg-bg-subtle"
+                    )}
+                  >
+                    <p className={cn("text-sm font-semibold", specsBuildingType === value ? "text-brand" : "text-fg")}>{label}</p>
+                    <p className="text-xs text-fg-muted">{sub}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Size */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Size</Label>
+              <div className={cn("grid gap-3", specsBuildingType === "Landed" ? "grid-cols-2" : "grid-cols-3")}>
+                <div className="space-y-1">
+                  <Label className="text-xs">Area (m²)</Label>
+                  <Input type="number" placeholder="45" value={specsArea} onChange={(e) => setSpecsArea(e.target.value)} />
+                </div>
+                {/* Apartment: floor of unit + total floors in building */}
+                {specsBuildingType !== "Landed" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Unit floor</Label>
+                      <Input type="number" placeholder="8" value={specsFloor} onChange={(e) => setSpecsFloor(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Floors in building</Label>
+                      <Input type="number" placeholder="25" value={specsTotalFloors} onChange={(e) => setSpecsTotalFloors(e.target.value)} />
+                    </div>
+                  </>
+                )}
+                {/* House/Villa: floors in the house itself */}
+                {specsBuildingType === "Landed" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Floors in house</Label>
+                    <Input type="number" placeholder="2" value={specsTotalFloors} onChange={(e) => setSpecsTotalFloors(e.target.value)} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Furnishing + Parking + Min stay in one row group */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Furnished</Label>
+                <Select value={specsFurnished} onValueChange={(v) => setSpecsFurnished(v as FurnishedType | "")}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fully">Fully furnished</SelectItem>
+                    <SelectItem value="Semi">Semi-furnished</SelectItem>
+                    <SelectItem value="Unfurnished">Unfurnished</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 items-end">
+              <div className="space-y-1">
+                <Label className="text-xs">Parking spaces</Label>
+                <Input type="number" min={0} placeholder="0" value={specsParkingSpaces} onChange={(e) => setSpecsParkingSpaces(e.target.value)} />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer pb-2">
+                <input type="checkbox" className="h-4 w-4 rounded border-border" checked={specsParkingIncluded} onChange={(e) => setSpecsParkingIncluded(e.target.checked)} />
+                <span className="text-sm text-fg">Included in rent</span>
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSpecsOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              disabled={updateAsset.isPending}
+              onClick={handleSaveSpecs}
+            >
+              {updateAsset.isPending ? "Saving…" : "Save specs"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={locationOpen} onOpenChange={(open) => { setLocationOpen(open); if (!open) setLocResults([]); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Set location</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+
+            {/* ── Step 1: City ── */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">City</Label>
+              <Select
+                value={locCityId ? String(locCityId) : ""}
+                onValueChange={(v) => {
+                  const id = Number(v);
+                  setLocCityId(id);
+                  const city = (cities ?? []).find((c) => c.id === id);
+                  if (city) {
+                    setLocLat(city.latitude);
+                    setLocLng(city.longitude);
+                    setLocMapZoom(11);
+                    setLocSearch("");
+                    setLocResults([]);
+                  }
+                }}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select a city…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(cities ?? []).map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {typeof c.name === "string" ? c.name : (c.name as Record<string, string>).en}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* ── Step 2: Address search ── */}
+            <div className="space-y-1.5 relative">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Search address</Label>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" />
+                <Input
+                  className="pl-9 pr-8"
+                  placeholder="Street name, landmark…"
+                  value={locSearch}
+                  onChange={(e) => setLocSearch(e.target.value)}
+                  autoComplete="off"
+                />
+                {locSearching && (
+                  <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted animate-spin" />
+                )}
+              </div>
+              {locResults.length > 0 && (
+                <div className="absolute z-[500] left-0 right-0 bg-white border border-border rounded-xl shadow-lg overflow-hidden mt-1">
+                  {locResults.map((r) => (
+                    <button
+                      key={r.place_id}
+                      type="button"
+                      onClick={() => pickNominatimResult(r)}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-bg-subtle flex items-start gap-2 border-b border-border last:border-0"
+                    >
+                      <MapPin size={13} className="text-fg-muted mt-0.5 shrink-0" />
+                      <span className="text-fg line-clamp-2">{r.display_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Map ── */}
+            <div className="space-y-1.5">
+              <Suspense fallback={<div className="rounded-xl bg-bg-subtle animate-pulse" style={{ height: 210 }} />}>
+                <LocationPicker
+                  lat={locLat}
+                  lng={locLng}
+                  zoom={locMapZoom}
+                  onChange={(lat, lng) => {
+                    setLocLat(lat);
+                    setLocLng(lng);
+                    setLocMapZoom(16);
+                    setLocResults([]);
+                    reverseGeocode(lat, lng);
+                  }}
+                />
+              </Suspense>
+              <p className="text-xs text-fg-muted">
+                {locReverseLoading
+                  ? "Detecting address…"
+                  : locLat && locMapZoom >= 14
+                  ? "Tap anywhere on the map to move the pin — address fills in automatically."
+                  : locLat
+                  ? "Zoom in or tap the map to place a precise pin."
+                  : "Search above, or tap the map to drop a pin — address detects automatically."}
+              </p>
+            </div>
+
+            {/* ── Step 3: Address details ── */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Address details</Label>
+              <div className="bg-bg-subtle rounded-xl p-3 space-y-2.5">
+                {/* User-entered fields */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    placeholder="Soi / Alley (optional)"
+                    value={locSoi}
+                    onChange={(e) => setLocSoi(e.target.value)}
+                    className="bg-white"
+                  />
+                  <Input
+                    placeholder="Unit / Floor / Moo (optional)"
+                    value={locUnit}
+                    onChange={(e) => setLocUnit(e.target.value)}
+                    className="bg-white"
+                  />
+                </div>
+                {/* Auto-detected fields — read-only */}
+                <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                  <div className="bg-white border border-border rounded-md px-3 py-2 text-sm truncate min-h-9 flex items-center gap-1.5">
+                    {locReverseLoading ? (
+                      <span className="text-fg-muted italic text-xs">Detecting address…</span>
+                    ) : locStreet ? (
+                      <>
+                        <span className="text-fg-muted shrink-0">📍</span>
+                        <span className="truncate">{locStreet}</span>
+                      </>
+                    ) : (
+                      <span className="text-fg-muted italic text-xs">Road auto-detects from pin</span>
+                    )}
+                  </div>
+                  <div className="bg-white border border-border rounded-md px-3 py-2 text-sm min-h-9 min-w-[90px] flex items-center gap-1.5">
+                    {locZip ? (
+                      <span className="font-mono tracking-wide">{locZip}</span>
+                    ) : (
+                      <span className="text-fg-muted italic text-xs">ZIP</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLocationOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              disabled={!locLat || !locLng || updateLocation.isPending}
+              onClick={handleSaveLocation}
+            >
+              {updateLocation.isPending ? "Saving…" : "Save location"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
@@ -1243,7 +2403,7 @@ export function PropertyDetailPage() {
 
       <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>New booking</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>New reservation</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1305,10 +2465,403 @@ export function PropertyDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Edit listing details</DialogTitle></DialogHeader>
+      {/* Focused listing section dialogs */}
+
+      {/* Basics dialog */}
+      <Dialog open={basicsOpen} onOpenChange={setBasicsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Title & description</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="space-y-1.5"><Label>Title</Label><Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Cozy 2BR in Sukhumvit" /></div>
+            <div className="space-y-1.5"><Label>Description</Label><Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="min-h-[120px] resize-none" placeholder="Describe what makes your place special — neighbourhood, views, nearby transport…" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBasicsOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ title: editTitle, description: editDesc }, () => setBasicsOpen(false), "basics")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pricing dialog */}
+      <Dialog open={pricingOpen} onOpenChange={setPricingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Pricing</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Monthly rate (฿)</Label>
+              <Input type="number" value={editMonthlyPrice || ""} onChange={(e) => setEditMonthlyPrice(Number(e.target.value))} placeholder="18000" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Security deposit (฿)</Label>
+              <Input type="number" value={editDepositAmount || ""} onChange={(e) => setEditDepositAmount(Number(e.target.value))} placeholder="0" min={0} />
+              <p className="text-xs text-fg-muted">Typically 1–2 months rent. 0 = no deposit.</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Long-stay discounts</Label>
+                <button type="button" onClick={() => setEditDiscountTiers((prev) => [...prev, { minMonths: 3, discountPercent: 5 }])} className="text-xs font-semibold text-brand hover:underline flex items-center gap-1"><Plus size={12} />Add tier</button>
+              </div>
+              {editDiscountTiers.length === 0 && <p className="text-xs text-fg-muted">None — tenants pay full monthly rate.</p>}
+              {editDiscountTiers.sort((a, b) => a.minMonths - b.minMonths).map((tier, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input type="number" min={1} max={24} value={tier.minMonths} onChange={(e) => setEditDiscountTiers((prev) => prev.map((t, j) => j === i ? { ...t, minMonths: Number(e.target.value) } : t))} className="w-20 text-center" />
+                  <span className="text-xs text-fg-muted whitespace-nowrap">months →</span>
+                  <Input type="number" min={1} max={50} value={tier.discountPercent} onChange={(e) => setEditDiscountTiers((prev) => prev.map((t, j) => j === i ? { ...t, discountPercent: Number(e.target.value) } : t))} className="w-20 text-center" />
+                  <span className="text-xs text-fg-muted">% off</span>
+                  <button type="button" onClick={() => setEditDiscountTiers((prev) => prev.filter((_, j) => j !== i))} className="w-7 h-7 rounded-lg hover:bg-danger/10 flex items-center justify-center text-fg-subtle hover:text-danger"><X size={13} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPricingOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ baseMonthlyRate: editMonthlyPrice, basePrice: Math.round(editMonthlyPrice / 30), depositAmount: editDepositAmount, discountTiers: editDiscountTiers }, () => setPricingOpen(false), "pricing")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Check-in dialog */}
+      <Dialog open={checkInSectionOpen} onOpenChange={setCheckInSectionOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Check-in</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Check-in method</Label>
+              <Select value={editCheckInMethod} onValueChange={setEditCheckInMethod}>
+                <SelectTrigger><SelectValue placeholder="How do guests access the property?" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="KeyHandover">Key handover — meet in person</SelectItem>
+                  <SelectItem value="Smartlock">Smartlock — code sent before arrival</SelectItem>
+                  <SelectItem value="Keybox">Keybox — key left in a lockbox</SelectItem>
+                  <SelectItem value="Reception">Reception / building management</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Access instructions <span className="text-fg-muted font-normal text-xs">(optional)</span></Label>
+              <Textarea value={editCheckInInstructions} onChange={(e) => setEditCheckInInstructions(e.target.value)} placeholder="Gate code: 1234 · Parking: B1 · Call +66 81 xxx if any issue" className="min-h-[80px] resize-none" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCheckInSectionOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ checkInMethod: editCheckInMethod || null, checkInInstructions: editCheckInInstructions || null }, () => setCheckInSectionOpen(false), "checkin")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Utilities dialog */}
+      <Dialog open={utilitiesOpen} onOpenChange={setUtilitiesOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Utilities included</DialogTitle></DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-fg-muted mb-4">Which utilities are included in the monthly rent?</p>
+            <div className="space-y-3">
+              {/* None included — clears all others */}
+              {(() => {
+                const noneSelected = !editUtilElec && !editUtilWater && !editUtilInternet && !editUtilGarbage;
+                return (
+                  <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl border border-border hover:bg-bg-subtle transition-colors">
+                    <span className="text-sm font-medium text-fg">None — tenant pays separately</span>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border"
+                      checked={noneSelected}
+                      onChange={() => { setEditUtilElec(false); setEditUtilWater(false); setEditUtilInternet(false); setEditUtilGarbage(false); }}
+                    />
+                  </label>
+                );
+              })()}
+              <div className="border-t border-border" />
+              {[
+                { label: "Electricity", val: editUtilElec, set: setEditUtilElec },
+                { label: "Water", val: editUtilWater, set: setEditUtilWater },
+                { label: "Internet / WiFi", val: editUtilInternet, set: setEditUtilInternet },
+                { label: "Garbage collection", val: editUtilGarbage, set: setEditUtilGarbage },
+              ].map(({ label, val, set }) => (
+                <label key={label} className="flex items-center justify-between cursor-pointer p-3 rounded-xl border border-border hover:bg-bg-subtle transition-colors">
+                  <span className="text-sm font-medium text-fg">{label}</span>
+                  <input type="checkbox" className="h-4 w-4 rounded border-border" checked={val} onChange={(e) => set(e.target.checked)} />
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUtilitiesOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ utilityElectricity: editUtilElec, utilityWater: editUtilWater, utilityInternet: editUtilInternet, utilityAircon: false, utilityGarbage: editUtilGarbage }, () => setUtilitiesOpen(false), "utilities")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rules & WiFi dialog */}
+      <Dialog open={rulesOpen} onOpenChange={setRulesOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>House rules & WiFi</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Preset rule chips */}
+            <div className="space-y-2">
+              <Label>Common rules</Label>
+              <div className="flex flex-wrap gap-2">
+                {HOUSE_RULE_PRESETS.map((rule) => {
+                  const active = editRulesPresets.includes(rule);
+                  return (
+                    <button
+                      key={rule}
+                      type="button"
+                      onClick={() =>
+                        setEditRulesPresets((prev) =>
+                          active ? prev.filter((r) => r !== rule) : [...prev, rule]
+                        )
+                      }
+                      className={cn(
+                        "text-xs px-3 py-1.5 rounded-full border transition-colors",
+                        active
+                          ? "bg-brand text-white border-brand"
+                          : "bg-white text-fg border-border hover:bg-bg-subtle"
+                      )}
+                    >
+                      {rule}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Custom / additional rules */}
+            <div className="space-y-1.5">
+              <Label>Additional rules <span className="text-fg-muted font-normal">(optional)</span></Label>
+              <Textarea
+                value={editRules}
+                onChange={(e) => setEditRules(e.target.value)}
+                className="min-h-[72px] resize-none"
+                placeholder="Any other rules specific to your property…"
+              />
+            </div>
+            {/* WiFi */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>WiFi name</Label><Input value={editWifiName} onChange={(e) => setEditWifiName(e.target.value)} placeholder="MyWiFi" /></div>
+              <div className="space-y-1.5"><Label>WiFi password</Label><Input value={editWifiPwd} onChange={(e) => setEditWifiPwd(e.target.value)} placeholder="password" /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRulesOpen(false)}>Cancel</Button>
+            <Button
+              disabled={saving}
+              onClick={() => {
+                const combined = [...editRulesPresets, editRules.trim()].filter(Boolean).join("\n");
+                saveAndNext({ houseRules: combined || null, wifiName: editWifiName, wifiPassword: editWifiPwd }, () => setRulesOpen(false), "rules");
+              }}
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pets dialog */}
+      <Dialog open={petsOpen} onOpenChange={setPetsOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Pets policy</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <label className="flex items-center justify-between cursor-pointer p-4 rounded-xl border border-border hover:bg-bg-subtle transition-colors">
+              <div>
+                <p className="text-sm font-medium text-fg">Pets allowed</p>
+                <p className="text-xs text-fg-muted mt-0.5">Cats, dogs, and other pets</p>
+              </div>
+              <input type="checkbox" className="h-5 w-5 rounded border-border" checked={editPetsAllowed} onChange={(e) => setEditPetsAllowed(e.target.checked)} />
+            </label>
+            {editPetsAllowed && (
+              <div className="space-y-1.5">
+                <Label>Pet deposit (฿) <span className="text-fg-muted font-normal text-xs">0 = no extra deposit</span></Label>
+                <Input type="number" min={0} value={editPetDeposit || ""} onChange={(e) => setEditPetDeposit(Number(e.target.value))} placeholder="0" />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPetsOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ petsAllowed: editPetsAllowed, petDeposit: editPetDeposit }, () => setPetsOpen(false), "pets")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancellation dialog */}
+      <Dialog open={cancellationOpen} onOpenChange={setCancellationOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Cancellation policy</DialogTitle></DialogHeader>
+          <div className="py-2 space-y-4">
+            {/* Always-true rules box */}
+            <div className="bg-bg-subtle rounded-xl px-4 py-3 space-y-1 text-xs text-fg-muted">
+              <p className="font-semibold text-fg text-sm mb-1">Always applies — regardless of option:</p>
+              <p>💰 Tenant always pays for days they stayed <span className="text-fg font-medium">(pro-rata from first month)</span></p>
+              <p>↩️ Unused days from first month are <span className="text-fg font-medium">refunded</span></p>
+              <p>🔒 After grace period ends — early exit = <span className="text-fg font-medium">deposit kept</span></p>
+            </div>
+
+            {/* Grace period selector */}
+            <div>
+              <p className="text-sm font-medium text-fg mb-2">
+                How long is the grace period? <span className="text-fg-muted font-normal">(leave without losing deposit)</span>
+              </p>
+              <div className="space-y-2">
+                {CANCELLATION_PRESETS.map((preset) => {
+                  const active = editCancelNoticeDays === preset.noticeDays;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => { setEditCancelNoticeDays(preset.noticeDays); setEditCancelPenaltyMonths(preset.penaltyMonths); }}
+                      className={cn(
+                        "w-full text-left rounded-xl border-2 px-4 py-3 transition-all",
+                        active ? "border-brand bg-brand/5 ring-1 ring-brand" : "border-border bg-white hover:bg-bg-subtle"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={cn("font-bold text-sm", active ? "text-brand" : "text-fg")}>{preset.label}</span>
+                        <span className="text-xs text-fg-muted">{preset.note}</span>
+                      </div>
+                      <div className="space-y-0.5 text-xs">
+                        <p className="text-fg-muted">
+                          ✅ Leaves within {preset.noticeDays} days →{" "}
+                          <span className="text-fg font-medium">deposit returned</span>
+                          <span className="text-fg-muted"> · pays min {preset.minBillingDays} days from first month</span>
+                        </p>
+                        <p className="text-fg-muted">
+                          🔒 Leaves after {preset.noticeDays} days →{" "}
+                          <span className="text-fg font-medium">deposit kept</span>
+                          <span className="text-fg-muted"> · days stayed deducted from first month</span>
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancellationOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ cancellationNoticeDays: editCancelNoticeDays, cancellationPenaltyMonths: editCancelPenaltyMonths }, () => setCancellationOpen(false), "cancellation")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Safety dialog */}
+      <Dialog open={safetyOpen} onOpenChange={setSafetyOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Safety features</DialogTitle></DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-fg-muted mb-4">Required disclosure under Thai law. Check all that apply.</p>
+            <div className="space-y-2">
+              {[
+                { label: "Smoke detector", sub: "Installed and functional", val: editHasSmokeDetector, set: setEditHasSmokeDetector },
+                { label: "CO (carbon monoxide) detector", sub: "Carbon monoxide detector", val: editHasCODetector, set: setEditHasCODetector },
+                { label: "Fire extinguisher", sub: "On premises", val: editHasFireExtinguisher, set: setEditHasFireExtinguisher },
+                { label: "First aid kit", sub: "Basic medical supplies available", val: editHasFirstAid, set: setEditHasFirstAid },
+                { label: "Security cameras", sub: "Cameras on premises (must disclose)", val: editHasSecurityCamera, set: setEditHasSecurityCamera },
+              ].map(({ label, sub, val, set }) => (
+                <label key={label} className="flex items-center justify-between cursor-pointer p-3 rounded-xl border border-border hover:bg-bg-subtle transition-colors gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg">{label}</p>
+                    <p className="text-xs text-fg-muted">{sub}</p>
+                  </div>
+                  <input type="checkbox" className="h-4 w-4 rounded border-border shrink-0" checked={val} onChange={(e) => set(e.target.checked)} />
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSafetyOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={() => saveAndNext({ hasSmokeDetector: editHasSmokeDetector, hasCODetector: editHasCODetector, hasFireExtinguisher: editHasFireExtinguisher, hasFirstAidKit: editHasFirstAid, hasSecurityCamera: editHasSecurityCamera }, () => setSafetyOpen(false), "safety")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Location context dialog */}
+      <Dialog open={locationCtxOpen} onOpenChange={setLocationCtxOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Location & transport</DialogTitle></DialogHeader>
+          <div className="space-y-5 py-2">
+            {/* Transport chips */}
+            <div className="space-y-2">
+              <Label>Getting around</Label>
+              <div className="flex flex-wrap gap-2">
+                {(TRANSPORT_PRESETS_BY_CITY[asset?.cityId ?? 0] ?? DEFAULT_TRANSPORT_PRESETS).map((chip) => {
+                  const active = editTransportChips.includes(chip);
+                  return (
+                    <button key={chip} type="button"
+                      onClick={() => setEditTransportChips((prev) => active ? prev.filter((c) => c !== chip) : [...prev, chip])}
+                      className={cn("text-xs px-3 py-1.5 rounded-full border transition-colors",
+                        active ? "bg-brand text-white border-brand" : "bg-white text-fg border-border hover:bg-bg-subtle"
+                      )}
+                    >{chip}</button>
+                  );
+                })}
+              </div>
+              <Input
+                value={editTransportInfo}
+                onChange={(e) => setEditTransportInfo(e.target.value)}
+                placeholder="Anything else — e.g. BTS Asok 5 min walk"
+                className="mt-1"
+              />
+            </div>
+            {/* Nearby places chips */}
+            <div className="space-y-2">
+              <Label>Nearby</Label>
+              <div className="flex flex-wrap gap-2">
+                {NEARBY_PRESETS.map((chip) => {
+                  const active = editNearbyChips.includes(chip);
+                  return (
+                    <button key={chip} type="button"
+                      onClick={() => setEditNearbyChips((prev) => active ? prev.filter((c) => c !== chip) : [...prev, chip])}
+                      className={cn("text-xs px-3 py-1.5 rounded-full border transition-colors",
+                        active ? "bg-brand text-white border-brand" : "bg-white text-fg border-border hover:bg-bg-subtle"
+                      )}
+                    >{chip}</button>
+                  );
+                })}
+              </div>
+              <Input
+                value={editNearbyPlaces}
+                onChange={(e) => setEditNearbyPlaces(e.target.value)}
+                placeholder="Anything else — e.g. Terminal 21 10 min walk"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLocationCtxOpen(false)}>Cancel</Button>
+            <Button
+              disabled={saving}
+              onClick={() => {
+                const transport = [...editTransportChips, editTransportInfo.trim()].filter(Boolean).join(" · ") || null;
+                const nearby = [...editNearbyChips, editNearbyPlaces.trim()].filter(Boolean).join(" · ") || null;
+                saveAndNext({ transportInfo: transport, nearbyPlaces: nearby }, () => setLocationCtxOpen(false), "transport");
+              }}
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>Edit listing details</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
             <div className="space-y-1.5"><Label>Title</Label><Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Description</Label><Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="min-h-[80px] resize-none" /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -1376,6 +2929,112 @@ export function PropertyDetailPage() {
               </div>
             )}
             <div className="space-y-1.5"><Label>House rules</Label><Textarea value={editRules} onChange={(e) => setEditRules(e.target.value)} className="min-h-[60px] resize-none" /></div>
+
+            {/* Check-in */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Check-in</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Check-in method</Label>
+                  <Select value={editCheckInMethod} onValueChange={setEditCheckInMethod}>
+                    <SelectTrigger><SelectValue placeholder="Select method" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="KeyHandover">Key handover</SelectItem>
+                      <SelectItem value="Smartlock">Smartlock</SelectItem>
+                      <SelectItem value="Keybox">Keybox</SelectItem>
+                      <SelectItem value="Reception">Reception</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5 mt-3">
+                <Label>Check-in instructions</Label>
+                <Textarea value={editCheckInInstructions} onChange={(e) => setEditCheckInInstructions(e.target.value)} placeholder="Gate code, parking instructions, key location…" className="min-h-[60px] resize-none" />
+              </div>
+            </div>
+
+            {/* Utilities included */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Utilities included in rent</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Electricity", val: editUtilElec, set: setEditUtilElec },
+                  { label: "Water",       val: editUtilWater, set: setEditUtilWater },
+                  { label: "Internet",    val: editUtilInternet, set: setEditUtilInternet },
+                  { label: "Garbage",     val: editUtilGarbage, set: setEditUtilGarbage },
+                ].map(({ label, val, set }) => (
+                  <label key={label} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" className="h-4 w-4 rounded border-border" checked={val} onChange={(e) => set(e.target.checked)} />
+                    <span className="text-sm text-fg">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Pets */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Pets</p>
+              <label className="flex items-center gap-2 cursor-pointer mb-3">
+                <input type="checkbox" className="h-4 w-4 rounded border-border" checked={editPetsAllowed} onChange={(e) => setEditPetsAllowed(e.target.checked)} />
+                <span className="text-sm text-fg">Pets allowed</span>
+              </label>
+              {editPetsAllowed && (
+                <div className="space-y-1.5">
+                  <Label>Pet deposit (฿, 0 = none)</Label>
+                  <Input type="number" min={0} value={editPetDeposit || ""} onChange={(e) => setEditPetDeposit(Number(e.target.value))} placeholder="0" />
+                </div>
+              )}
+            </div>
+
+            {/* Cancellation policy */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Cancellation policy</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Notice period (days)</Label>
+                  <Input type="number" min={0} value={editCancelNoticeDays} onChange={(e) => setEditCancelNoticeDays(Number(e.target.value))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Penalty (months of rent)</Label>
+                  <Input type="number" min={0} value={editCancelPenaltyMonths} onChange={(e) => setEditCancelPenaltyMonths(Number(e.target.value))} />
+                </div>
+              </div>
+            </div>
+
+            {/* Safety */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Safety features</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Smoke detector",     val: editHasSmokeDetector,    set: setEditHasSmokeDetector },
+                  { label: "CO (carbon monoxide) detector", val: editHasCODetector, set: setEditHasCODetector },
+                  { label: "Fire extinguisher",  val: editHasFireExtinguisher, set: setEditHasFireExtinguisher },
+                  { label: "First aid kit",      val: editHasFirstAid,         set: setEditHasFirstAid },
+                  { label: "Security cameras",   val: editHasSecurityCamera,   set: setEditHasSecurityCamera },
+                ].map(({ label, val, set }) => (
+                  <label key={label} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" className="h-4 w-4 rounded border-border" checked={val} onChange={(e) => set(e.target.checked)} />
+                    <span className="text-sm text-fg">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Location context */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-fg-muted mb-3">Location context</p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Transport</Label>
+                  <Input value={editTransportInfo} onChange={(e) => setEditTransportInfo(e.target.value)} placeholder="BTS Asok 5 min walk, Airport 45 min" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Nearby places</Label>
+                  <Input value={editNearbyPlaces} onChange={(e) => setEditNearbyPlaces(e.target.value)} placeholder="Big C 200m, Samitivej Hospital 1km" />
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -1434,27 +3093,56 @@ export function PropertyDetailPage() {
           {/* ── Content ── */}
           <div className="bg-white px-6 pt-5 pb-4 space-y-5">
 
-            {/* No-photos blocker */}
-            {!(listing?.media?.length) && (
-              <div className="flex items-start gap-3 bg-amber-50 rounded-xl p-3.5 border border-amber-200">
-                <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-bold text-amber-700">Photos required to publish</p>
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    Go to the{" "}
-                    <button onClick={() => { setPublishOpen(false); setSection("photos"); }} className="underline font-semibold">
-                      Photos tab
-                    </button>{" "}
-                    and add at least one photo. Listings with photos get 3× more views.
-                  </p>
-                </div>
+            {/* Blockers — shown before publish is allowed */}
+            {(!readyAddress || !readyBasics || !readyPhotos) && (
+              <div className="space-y-2">
+                {!readyAddress && (
+                  <div className="flex items-start gap-3 bg-red-50 rounded-xl p-3.5 border border-red-200">
+                    <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-red-700">Address required</p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        <button onClick={() => { setPublishOpen(false); openLocationDialog(); }} className="underline font-semibold">Set your address</button>{" "}
+                        so tenants can find your property in search.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {!readyBasics && (
+                  <div className="flex items-start gap-3 bg-red-50 rounded-xl p-3.5 border border-red-200">
+                    <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-red-700">Title & price required</p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        <button onClick={() => { setPublishOpen(false); navigateSection("listing"); }} className="underline font-semibold">Add a title and monthly rate</button>{" "}
+                        before publishing.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {!readyPhotos && (
+                  <div className="flex items-start gap-3 bg-amber-50 rounded-xl p-3.5 border border-amber-200">
+                    <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-700">Photos required</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        <button onClick={() => { setPublishOpen(false); navigateSection("photos"); }} className="underline font-semibold">Add at least one photo</button>.{" "}
+                        Listings with photos get 3× more views.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Available from */}
             <div>
               <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-1.5">Available from</p>
-              <DatePicker value={publishStartDate} onChange={setPublishStartDate} />
+              <DatePicker
+                value={publishStartDate}
+                onChange={setPublishStartDate}
+                isDisabled={(d) => { const today = new Date(); today.setHours(0,0,0,0); return d < today; }}
+              />
             </div>
 
             {/* Duration */}
@@ -1534,7 +3222,15 @@ export function PropertyDetailPage() {
             })() : (
               <div>
                 <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-1.5">Available until</p>
-                <DatePicker value={publishEndDate} onChange={setPublishEndDate} />
+                <DatePicker
+                  value={publishEndDate}
+                  onChange={setPublishEndDate}
+                  isDisabled={(d) => {
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const minDate = publishStartDate ? new Date(publishStartDate + "T00:00:00") : today;
+                    return d < minDate;
+                  }}
+                />
               </div>
             )}
           </div>
@@ -1550,18 +3246,18 @@ export function PropertyDetailPage() {
             </button>
             <button
               type="button"
-              disabled={!canPublish || !(listing?.media?.length) || publishListing.isPending}
+              disabled={!canPublish || !readyToPublish || publishListing.isPending}
               onClick={handlePublish}
               className="flex-1 h-12 rounded-xl font-extrabold text-white text-base transition-all active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background:"linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a78bfa 100%)",
                 backgroundSize:"200% auto",
-                ...(canPublish && (listing?.media?.length ?? 0) > 0 && !publishListing.isPending
+                ...(canPublish && readyToPublish && !publishListing.isPending
                   ? { animation:"pub-pulse 2s ease-in-out infinite" }
                   : {}),
               }}
             >
-              {publishListing.isPending ? "Launching…" : "🚀 Launch listing"}
+              {publishListing.isPending ? "Launching…" : "🚀 Launch ad"}
             </button>
           </div>
         </DialogContent>
@@ -1569,11 +3265,11 @@ export function PropertyDetailPage() {
 
       <Dialog open={hotfixOpen} onOpenChange={setHotfixOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Apply hotfix</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Fix published ad</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="flex items-start gap-2 bg-warning/10 rounded-lg p-3">
               <AlertTriangle size={15} className="text-warning mt-0.5 shrink-0" />
-              <p className="text-xs text-warning">A hotfix applies changes to an active listing. Provide a clear reason.</p>
+              <p className="text-xs text-warning">A quick fix applies changes to an active ad. Provide a clear reason.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Reason *</Label>
@@ -1583,7 +3279,7 @@ export function PropertyDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setHotfixOpen(false)}>Cancel</Button>
             <Button disabled={!hotfixReason.trim() || hotfixListing.isPending} onClick={handleHotfix} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
-              {hotfixListing.isPending ? "Applying…" : "Apply hotfix"}
+              {hotfixListing.isPending ? "Applying…" : "Apply quick fix"}
             </Button>
           </DialogFooter>
         </DialogContent>

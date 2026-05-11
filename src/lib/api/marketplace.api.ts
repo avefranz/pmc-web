@@ -57,10 +57,28 @@ export const marketplaceApi = {
       )
       .then((r) => r.data.data),
 
-  getCities: () =>
-    apiClient
+  getCities: async (): Promise<MarketplaceCityDto[]> => {
+    const cities = await apiClient
       .get<ApiEnvelope<MarketplaceCityDto[]>>("/api/marketplace/cities")
-      .then((r) => r.data.data),
+      .then((r) => r.data.data);
+
+    if (cities && cities.length > 0) return cities;
+
+    // Fallback when backend Cities table is not yet seeded
+    const FALLBACK: MarketplaceCityDto[] = [
+      { id: 1,  code: "BKK", name: { en: "Bangkok",               th: "กรุงเทพฯ"          }, latitude: 13.7563, longitude: 100.5018, activeListingsCount: 0 },
+      { id: 2,  code: "CNX", name: { en: "Chiang Mai",            th: "เชียงใหม่"         }, latitude: 18.7883, longitude: 98.9853,  activeListingsCount: 0 },
+      { id: 3,  code: "HKT", name: { en: "Phuket",                th: "ภูเก็ต"            }, latitude: 7.8804,  longitude: 98.3923,  activeListingsCount: 0 },
+      { id: 4,  code: "PTY", name: { en: "Pattaya",               th: "พัทยา"             }, latitude: 12.9236, longitude: 100.8825, activeListingsCount: 0 },
+      { id: 5,  code: "HHQ", name: { en: "Hua Hin",               th: "หัวหิน"            }, latitude: 12.5684, longitude: 99.9577,  activeListingsCount: 0 },
+      { id: 6,  code: "USM", name: { en: "Koh Samui",             th: "เกาะสมุย"          }, latitude: 9.5120,  longitude: 100.0136, activeListingsCount: 0 },
+      { id: 7,  code: "CEI", name: { en: "Chiang Rai",            th: "เชียงราย"          }, latitude: 19.9105, longitude: 99.8406,  activeListingsCount: 0 },
+      { id: 8,  code: "KKC", name: { en: "Khon Kaen",             th: "ขอนแก่น"           }, latitude: 16.4419, longitude: 102.8360, activeListingsCount: 0 },
+      { id: 9,  code: "UTP", name: { en: "Rayong",                th: "ระยอง"             }, latitude: 12.6814, longitude: 101.2816, activeListingsCount: 0 },
+      { id: 10, code: "NST", name: { en: "Nakhon Si Thammarat",   th: "นครศรีธรรมราช"    }, latitude: 8.4326,  longitude: 99.9633,  activeListingsCount: 0 },
+    ];
+    return FALLBACK;
+  },
 
   submitBookingRequest: (data: BookingRequestData) => {
     // Backend uses checkInDate; frontend model uses moveInDate

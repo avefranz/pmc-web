@@ -76,6 +76,35 @@ export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
   publishedAt: string;
   media: MarketplaceListingMediaDto[];
   amenities: MarketplaceListingAmenityDto[];
+  // Asset specs (proxied from asset)
+  areaSqm?: number | null;
+  floor?: number | null;
+  totalFloors?: number | null;
+  buildingType?: string | null;
+  furnished?: string | null;
+  parkingSpaces?: number;
+  parkingIncluded?: boolean;
+  minLeaseMonths?: number | null;
+  // Listing extras
+  checkInMethod?: string | null;
+  checkInInstructions?: string | null;
+  utilityElectricity?: boolean;
+  utilityWater?: boolean;
+  utilityInternet?: boolean;
+  utilityAircon?: boolean;
+  utilityGarbage?: boolean;
+  petsAllowed?: boolean;
+  petDeposit?: number;
+  cancellationNoticeDays?: number;
+  cancellationPenaltyMonths?: number;
+  hasSmokeDetector?: boolean;
+  hasCODetector?: boolean;
+  hasFireExtinguisher?: boolean;
+  hasFirstAidKit?: boolean;
+  hasSecurityCamera?: boolean;
+  transportInfo?: string | null;
+  nearbyPlaces?: string | null;
+  wifiName?: string | null;
 }
 
 export interface MarketplaceCityDto {

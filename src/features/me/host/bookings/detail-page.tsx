@@ -363,7 +363,7 @@ function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: st
 // ─── Invoice type labels ──────────────────────────────────────────────────────
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
-  Rent: "Monthly rent",
+  Rent: "Total rent",
   Deposit: "Security deposit",
   Utilities: "Utilities",
   Cleaning: "Cleaning fee",
@@ -379,6 +379,14 @@ function ticketStatusClass(status: string): string {
   if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(status)) return "bg-warning/10 text-warning";
   return "bg-bg-subtle text-fg-muted";
 }
+
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  Triaging: "Under review",
+  PendingApproval: "Pending approval",
+  InProgress: "In progress",
+  Verified: "Work done",
+  Reopened: "Re-opened",
+};
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -511,7 +519,7 @@ export function BookingDetailPage() {
             {booking.tenantName && (
               <button
                 className="p-1.5 rounded-lg hover:bg-danger/10 text-fg-muted hover:text-danger transition-colors"
-                title="Unlink tenant"
+                title="Remove tenant"
                 onClick={() => setUnlinkTenantOpen(true)}
               >
                 <Trash2 size={14} />
@@ -593,35 +601,120 @@ export function BookingDetailPage() {
       </div>
 
       {/* Two-column body */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
 
-        {/* LEFT: Guests */}
+        {/* LEFT: Payments timeline */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-fg">Guests</h2>
-            <Button size="sm" className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" onClick={() => setAddGuestOpen(true)}>
-              <Plus size={13} className="mr-1" />Add guest
-            </Button>
-          </div>
-          {!guests?.length ? (
-            <p className="text-sm text-fg-muted">No guests added yet. Add a guest to enable TM-30 filing and portal access.</p>
+          <h2 className="text-sm font-semibold text-fg mb-3">Payments</h2>
+          {!invoices?.length ? (
+            <p className="text-sm text-fg-muted">No invoices yet.</p>
           ) : (
             <div className="space-y-3">
-              {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} />)}
-            </div>
-          )}
-        </div>
+              {invoices.map((inv) => {
+                const isFullRent = inv.type === "Rent" && inv.amount != null && inv.amount === booking.rentAmount && durationMonths > 1;
 
-        {/* RIGHT: Invoices + Tickets */}
-        <div className="space-y-6">
-          {/* Invoices */}
-          <div>
-            <h2 className="text-sm font-semibold text-fg mb-3">Invoices</h2>
-            {!invoices?.length ? (
-              <p className="text-sm text-fg-muted">No invoices yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {invoices.map((inv) => (
+                // ── Monthly rent: date-aware timeline ──
+                if (isFullRent) {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const isPaid = inv.status === InvoiceStatus.Paid;
+
+                  const months: { label: string; date: Date; isPast: boolean; isCurrent: boolean }[] = [];
+                  for (let m = 0; m < durationMonths; m++) {
+                    const d = new Date(booking.checkInDate);
+                    d.setDate(1);
+                    d.setMonth(d.getMonth() + m);
+                    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                    const isPast = monthEnd < today;
+                    const isCurrent = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+                    months.push({
+                      label: d.toLocaleString("en", { month: "long", year: "numeric" }),
+                      date: d,
+                      isPast,
+                      isCurrent,
+                    });
+                  }
+
+                  const paidMonths = isPaid ? durationMonths : 0;
+                  const dueMonths = months.filter((m) => m.isPast || m.isCurrent).length;
+                  const overduePending = !isPaid && dueMonths > 0;
+
+                  return (
+                    <div key={inv.id} className="bg-bg-card rounded-xl shadow-card overflow-hidden">
+                      {/* Header */}
+                      <div className="px-5 pt-4 pb-3.5 flex items-center justify-between border-b border-border">
+                        <div>
+                          <p className="text-sm font-semibold text-fg">Monthly rent</p>
+                          <p className="text-xs text-fg-muted mt-0.5">{formatThb(monthlyRate)} / month · {durationMonths} months total</p>
+                        </div>
+                        {isPaid ? (
+                          <span className="text-xs font-semibold text-success bg-success/10 px-2.5 py-1 rounded-full">✓ All paid</span>
+                        ) : overduePending ? (
+                          <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-1 rounded-full">{dueMonths - paidMonths} month{dueMonths - paidMonths !== 1 ? "s" : ""} due</span>
+                        ) : (
+                          <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">{paidMonths}/{durationMonths} paid</span>
+                        )}
+                      </div>
+
+                      {/* Month rows */}
+                      <div className="divide-y divide-border">
+                        {months.map((m, i) => {
+                          const rowPaid = isPaid;
+                          const isDue = !isPaid && (m.isPast || m.isCurrent);
+                          const isUpcoming = !isPaid && !m.isPast && !m.isCurrent;
+
+                          return (
+                            <div key={i} className={cn(
+                              "px-5 py-3 flex items-center justify-between gap-3",
+                              m.isCurrent && !isPaid && "bg-warning/5",
+                            )}>
+                              <div className="flex items-center gap-3">
+                                <div className={cn(
+                                  "w-2 h-2 rounded-full shrink-0",
+                                  rowPaid ? "bg-success" : isDue ? "bg-warning" : "bg-fg-subtle/40",
+                                )} />
+                                <div>
+                                  <p className={cn("text-sm font-medium", isUpcoming ? "text-fg-muted" : "text-fg")}>{m.label}</p>
+                                  {m.isCurrent && !isPaid && <p className="text-[10px] text-warning font-medium">Due this month</p>}
+                                  {m.isPast && !isPaid && <p className="text-[10px] text-danger font-medium">Overdue</p>}
+                                  {isUpcoming && <p className="text-[10px] text-fg-subtle">Upcoming</p>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2.5 shrink-0">
+                                <span className={cn("text-sm font-semibold", isUpcoming ? "text-fg-muted" : "text-fg")}>
+                                  {formatThb(monthlyRate)}
+                                </span>
+                                {rowPaid ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-success/10 text-success">Paid</span>
+                                ) : isDue ? (
+                                  <Button
+                                    size="sm"
+                                    className="h-7 px-2.5 text-xs bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-lg"
+                                    onClick={() => { setPayOpen(inv.id); setPayAmount(String(monthlyRate)); }}
+                                  >
+                                    Confirm
+                                  </Button>
+                                ) : (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-subtle">Pending</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Footer summary */}
+                      {isPaid && (
+                        <div className="px-5 py-3 bg-success/5 border-t border-success/10 flex items-center gap-2">
+                          <span className="text-xs text-success font-semibold">✓ Fully paid — {formatThb(inv.amount!)} received</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // ── Other invoices (deposit, utilities, etc.) ──
+                return (
                   <div key={inv.id} className="bg-bg-card rounded-xl shadow-card p-4 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
@@ -638,16 +731,31 @@ export function BookingDetailPage() {
                         {inv.status}
                       </span>
                       {(inv.status === InvoiceStatus.Pending || inv.status === InvoiceStatus.PartiallyPaid) && (
-                        <Button size="sm" variant="outline" onClick={() => { setPayOpen(inv.id); setPayAmount(String(inv.amount ?? "")); }}>Record payment</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setPayOpen(inv.id); setPayAmount(String(inv.amount ?? "")); }}>Mark as paid</Button>
                       )}
                     </div>
                   </div>
-                ))}
-                {pendingInvoices.length > 0 && (
-                  <p className="text-xs text-warning font-medium">
-                    {pendingInvoices.length} invoice{pendingInvoices.length > 1 ? "s" : ""} awaiting payment
-                  </p>
-                )}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Guests + Tickets */}
+        <div className="space-y-6">
+          {/* Guests */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-fg">Guests</h2>
+              <Button size="sm" className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" onClick={() => setAddGuestOpen(true)}>
+                <Plus size={13} className="mr-1" />Add guest
+              </Button>
+            </div>
+            {!guests?.length ? (
+              <p className="text-sm text-fg-muted">No guests added yet. Add a guest to enable TM-30 filing and portal access.</p>
+            ) : (
+              <div className="space-y-3">
+                {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} />)}
               </div>
             )}
           </div>
@@ -667,7 +775,7 @@ export function BookingDetailPage() {
                       <p className="text-xs text-fg-muted">{t.displayId}</p>
                     </div>
                     <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusClass(t.status))}>
-                      {t.status}
+                      {TICKET_STATUS_LABELS[t.status] ?? t.status}
                     </span>
                   </div>
                 ))}
@@ -785,7 +893,7 @@ export function BookingDetailPage() {
       {/* Unlink tenant */}
       <Dialog open={unlinkTenantOpen} onOpenChange={setUnlinkTenantOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Unlink tenant</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Remove tenant</DialogTitle></DialogHeader>
           <p className="text-sm text-fg-muted">
             Remove{" "}
             <span className="font-semibold text-fg">{booking.tenantName}</span>{" "}
@@ -799,10 +907,10 @@ export function BookingDetailPage() {
               onClick={async () => {
                 try {
                   await unlinkTenant.mutateAsync();
-                  toast.success("Tenant unlinked");
+                  toast.success("Tenant removed");
                   setUnlinkTenantOpen(false);
                 } catch {
-                  toast.error("Failed to unlink tenant");
+                  toast.error("Failed to remove tenant");
                 }
               }}
             >

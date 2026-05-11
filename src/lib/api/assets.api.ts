@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { AssetDto, AssetMemberDto, AssetSummaryDto, CreateAssetRequest, UpdateLocationRequest } from "../types";
+import type { AssetDto, AssetMemberDto, AssetSummaryDto, CreateAssetRequest, UpdateAssetRequest, UpdateLocationRequest } from "../types";
 
 export const assetsApi = {
   getAll: () => apiClient.get<AssetDto[]>("/api/assets").then((r) => r.data),
@@ -13,6 +13,9 @@ export const assetsApi = {
 
   create: (data: CreateAssetRequest) =>
     apiClient.post<{ data: { id: string } }>("/api/assets", data).then((r) => r.data.data),
+
+  update: (id: string, data: UpdateAssetRequest) =>
+    apiClient.patch(`/api/assets/${id}`, data).then((r) => r.data),
 
   updateLocation: (data: UpdateLocationRequest) =>
     apiClient.put("/api/assets/location", data).then((r) => r.data),

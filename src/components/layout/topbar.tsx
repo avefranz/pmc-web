@@ -8,8 +8,8 @@ import { useCapabilities } from "@/lib/hooks/use-capabilities";
 const HOST_NAV = [
   { to: "/me/host/properties", label: "Properties",  badgeKey: undefined },
   { to: "/me/host/requests",   label: "Requests",    badgeKey: "pendingRequestsCount" as const },
-  { to: "/me/host/bookings",   label: "Bookings",    badgeKey: undefined },
-  { to: "/me/host/tickets",    label: "Tickets",     badgeKey: undefined },
+  { to: "/me/host/bookings",   label: "Reservations", badgeKey: undefined },
+  { to: "/me/host/tickets",    label: "Maintenance",  badgeKey: undefined },
   { to: "/me/host/finance",    label: "Finance",     badgeKey: undefined },
 ];
 
