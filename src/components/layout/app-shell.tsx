@@ -1,6 +1,8 @@
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { TopBar } from "./topbar";
 import { cn } from "@/lib/utils/cn";
+import { useHostNotificationPoller, useGuestNotificationPoller } from "@/lib/hooks/use-notification-poller";
+import { useCapabilities } from "@/lib/hooks/use-capabilities";
 
 function MobileBottomNav() {
   const { pathname } = useLocation();
@@ -58,10 +60,21 @@ function MobileBottomNav() {
   );
 }
 
+// Runs pollers based on user role — no rendered output
+function NotificationPollers() {
+  const { data: caps } = useCapabilities();
+  useHostNotificationPoller();
+  useGuestNotificationPoller();
+  // caps is used by pollers via useCapabilities (same query key, no extra request)
+  void caps;
+  return null;
+}
+
 export function AppShell() {
   return (
     <div className="min-h-screen flex flex-col bg-bg">
       <TopBar />
+      <NotificationPollers />
       <main className="flex-1 pb-16 md:pb-0">
         <div className="w-full px-4 md:px-8 lg:px-12 py-6 md:py-8">
           <Outlet />

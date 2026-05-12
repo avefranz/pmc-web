@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Plus, Building2 } from "lucide-react";
+import { Plus, Building2, ShieldCheck, Wallet, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -157,13 +157,53 @@ export function PropertiesListPage() {
 
   if (!list.length) {
     return (
-      <div>
-        <PageHeader title="My properties" actions={addBtn} />
-        <EmptyState
-          icon={<Building2 size={40} />}
-          title="No properties yet"
-          description="Add your first property to start hosting on Siamo."
-        />
+      <div className="min-h-[calc(100vh-var(--topbar-h)-4rem)] flex flex-col items-center justify-center py-16 px-4 text-center">
+        {/* Icon */}
+        <div className="w-16 h-16 rounded-2xl bg-brand/10 flex items-center justify-center mb-6">
+          <Building2 size={32} className="text-brand" />
+        </div>
+
+        {/* Headline */}
+        <h1 className="text-2xl sm:text-3xl font-bold text-fg mb-3">
+          List your first property
+        </h1>
+        <p className="text-fg-muted text-base max-w-md mb-10">
+          Publish your apartment or villa on Siamo and start receiving booking requests from vetted tenants.
+        </p>
+
+        {/* CTA */}
+        <div className="mb-14">
+          {addBtn}
+        </div>
+
+        {/* Feature highlights */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl w-full text-left">
+          {[
+            {
+              icon: Users,
+              title: "Verified tenants",
+              desc: "Every applicant goes through identity verification before moving in.",
+            },
+            {
+              icon: Wallet,
+              title: "On-time payments",
+              desc: "Rent is collected and transferred to you automatically each month.",
+            },
+            {
+              icon: ShieldCheck,
+              title: "Full management",
+              desc: "Maintenance, contracts, and TM30 filings — we handle the paperwork.",
+            },
+          ].map(({ icon: Icon, title, desc }) => (
+            <div key={title} className="bg-bg-card rounded-xl border border-border p-5">
+              <div className="w-9 h-9 rounded-lg bg-brand/10 flex items-center justify-center mb-3">
+                <Icon size={18} className="text-brand" />
+              </div>
+              <p className="text-sm font-semibold text-fg mb-1">{title}</p>
+              <p className="text-xs text-fg-muted leading-relaxed">{desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

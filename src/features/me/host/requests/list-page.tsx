@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { format, parseISO } from "date-fns";
 import { Inbox, Clock, CheckCircle, XCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
@@ -32,7 +33,7 @@ function RequestCard({ req }: { req: HostBookingRequestDto }) {
           <p className="text-sm text-fg-muted line-clamp-1">{req.listingTitle}</p>
         </div>
         <p className="text-xs text-fg-muted mt-0.5">
-          Move-in {req.moveInDate} · {req.durationMonths} month{req.durationMonths !== 1 ? "s" : ""}
+          {req.moveInDate ? format(parseISO(req.moveInDate), "d MMM yyyy") : "—"} · {req.durationMonths} month{req.durationMonths !== 1 ? "s" : ""}
         </p>
       </div>
       <span className={cn("text-xs font-medium shrink-0", cfg.color)}>{cfg.label}</span>

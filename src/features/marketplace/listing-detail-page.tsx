@@ -6,8 +6,8 @@ import {
   Trophy, Zap, Leaf, ShieldCheck, CalendarCheck,
   FileText, RotateCcw, ClipboardList, Tag,
   Ruler, Car, PawPrint, Train, MapPin as MapPinIcon,
-  Wifi, Droplets, Trash2, Key, KeySquare, Building2,
-  ChevronDown, ChevronUp, AlertCircle, Flame,
+  Key, KeySquare, Building2,
+  ChevronDown, ChevronUp, AlertCircle,
 } from "lucide-react";
 import { amenityIcon } from "@/lib/utils/amenity-icons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,20 +147,20 @@ function generateHighlights(listing: {
   const has = (kw: string) => amenityNames.some(n => n.includes(kw));
 
   if (has("pool"))
-    hits.push({ icon: <Zap size={22} strokeWidth={1.5} />, title: "Dive right in", body: `One of the few rentals in ${listing.cityName ?? "the area"} with a private pool.` });
+    hits.push({ icon: <Zap size={20} strokeWidth={1.5} />, title: "Dive right in", body: `One of the few rentals in ${listing.cityName ?? "the area"} with a private pool.` });
   if (has("gym") || has("fitness"))
-    hits.push({ icon: <Trophy size={22} strokeWidth={1.5} />, title: "Stay fit", body: "On-site gym — no membership needed. Work out on your schedule." });
+    hits.push({ icon: <Trophy size={20} strokeWidth={1.5} />, title: "Stay fit", body: "On-site gym — no membership needed. Work out on your schedule." });
   const bestTier = listing.discountTiers?.length
     ? [...listing.discountTiers].sort((a, b) => b.discountPercent - a.discountPercent)[0]
     : null;
   if (bestTier && bestTier.discountPercent >= 5)
-    hits.push({ icon: <CalendarCheck size={22} strokeWidth={1.5} />, title: "Long-stay perks", body: `Save up to ${bestTier.discountPercent}% when you stay ${bestTier.minMonths}+ months — great for remote workers.` });
+    hits.push({ icon: <CalendarCheck size={20} strokeWidth={1.5} />, title: "Long-stay perks", body: `Save up to ${bestTier.discountPercent}% when you stay ${bestTier.minMonths}+ months — great for remote workers.` });
   if (has("wifi") || has("desk") || has("work"))
-    hits.push({ icon: <ShieldCheck size={22} strokeWidth={1.5} />, title: "Remote-work ready", body: "Fast Wi-Fi and a dedicated workspace — everything you need to work from home." });
+    hits.push({ icon: <ShieldCheck size={20} strokeWidth={1.5} />, title: "Remote-work ready", body: "Fast Wi-Fi and a dedicated workspace — everything you need to work from home." });
   if (has("balcony") || has("terrace") || has("garden"))
-    hits.push({ icon: <Leaf size={22} strokeWidth={1.5} />, title: "Indoor-outdoor living", body: "Private outdoor space to unwind — rare in this price range." });
+    hits.push({ icon: <Leaf size={20} strokeWidth={1.5} />, title: "Indoor-outdoor living", body: "Private outdoor space to unwind — rare in this price range." });
   if (hits.length < 2)
-    hits.push({ icon: <ShieldCheck size={22} strokeWidth={1.5} />, title: "Verified property", body: "Reviewed and published by the Siamo team — every ad meets our quality standard." });
+    hits.push({ icon: <ShieldCheck size={20} strokeWidth={1.5} />, title: "Verified property", body: "Reviewed and published by the Siamo team — every ad meets our quality standard." });
 
   return hits.slice(0, 3);
 }
@@ -179,82 +179,40 @@ function checkInLabel(method: string): string {
 }
 
 function CheckInIcon({ method }: { method: string }) {
-  if (method === "Smartlock") return <KeySquare size={20} strokeWidth={1.5} />;
-  if (method === "Keybox")    return <Key size={20} strokeWidth={1.5} />;
-  if (method === "Reception") return <Building2 size={20} strokeWidth={1.5} />;
-  return <Key size={20} strokeWidth={1.5} />;
+  if (method === "Smartlock") return <KeySquare size={13} strokeWidth={2} />;
+  if (method === "Keybox")    return <Key size={13} strokeWidth={2} />;
+  if (method === "Reception") return <Building2 size={13} strokeWidth={2} />;
+  return <Key size={13} strokeWidth={2} />;
 }
 
-// ─── Chip parser (reconstruct chip array from saved · string) ─────────────────
+// ─── Chip parser ──────────────────────────────────────────────────────────────
 
-function parseDisplayChips(raw: string): { chips: string[]; custom: string } {
-  const parts = raw.split(/\s*·\s*/).map((p) => p.trim()).filter(Boolean);
-  return { chips: parts, custom: "" };
-}
-
-// ─── Cancellation policy box ──────────────────────────────────────────────────
-
-function CancellationBox({ noticeDays, penaltyMonths }: { noticeDays: number; penaltyMonths: number }) {
-  const days = noticeDays;
-  const graceLabel = days <= 7 ? "1 week" : days <= 14 ? "2 weeks" : days <= 31 ? "1 month" : `${days} days`;
-
-  return (
-    <div className="rounded-2xl border border-border overflow-hidden">
-      {/* Grace period */}
-      <div className="p-4 border-b border-border bg-emerald-50/50">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-            <Check size={15} className="text-emerald-600" strokeWidth={2.5} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-fg">Grace period — {graceLabel}</p>
-            <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-              Changed your mind? Leave within <strong className="text-fg">{days} days</strong> of move-in and get your full deposit back. You only pay for the days you actually stayed.
-            </p>
-          </div>
-        </div>
-      </div>
-      {/* After grace */}
-      <div className="p-4 bg-amber-50/40">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-            <Lock size={15} className="text-amber-700" strokeWidth={2} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-fg">Early exit after grace period</p>
-            <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-              Leaving after {days} days means <strong className="text-fg">the deposit is kept</strong> by the landlord. Days already paid for are deducted from your first month pro-rata.
-            </p>
-          </div>
-        </div>
-      </div>
-      {/* Always */}
-      <div className="px-4 py-3 bg-bg-subtle border-t border-border">
-        <p className="text-xs text-fg-muted">
-          <AlertCircle size={11} className="inline mr-1 -mt-0.5 text-fg-muted" />
-          In all cases you pay for every day you stayed — deposits are never used to cover rent.
-        </p>
-      </div>
-    </div>
-  );
+function parseDisplayChips(raw: string): string[] {
+  return raw.split(/\s*·\s*/).map((p) => p.trim()).filter(Boolean);
 }
 
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 
-function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+function Section({ title, sub, children, className }: {
+  title: string;
+  sub?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cn("pb-8 border-b border-border", className)}>
-      <h2 className="text-lg font-bold text-fg mb-4">{title}</h2>
+      <div className="mb-4">
+        <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.1em]">{title}</p>
+        {sub && <h2 className="text-[20px] font-semibold text-fg mt-0.5 tracking-tight leading-snug">{sub}</h2>}
+      </div>
       {children}
     </div>
   );
 }
 
-// ─── Property map (uses actual fuzzy coordinates from listing) ───────────────
+// ─── Property map ─────────────────────────────────────────────────────────────
 
 function PropertyMap({ lat, lon, cityName }: { lat: number; lon: number; cityName?: string }) {
-  // d = half-side of the bbox in degrees:
-  //   0.008 ≈ ~900 m  → neighbourhood view (shows a few streets around the pin)
   const d = 0.008;
   const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
   return (
@@ -359,11 +317,11 @@ export function ListingDetailPage() {
 
   // ── Utilities
   const utilsIncluded = [
-    listing.utilityElectricity && { label: "Electricity", icon: <Flame size={14} /> },
-    listing.utilityWater      && { label: "Water",        icon: <Droplets size={14} /> },
-    listing.utilityInternet   && { label: "Internet",     icon: <Wifi size={14} /> },
-    listing.utilityGarbage    && { label: "Garbage",      icon: <Trash2 size={14} /> },
-  ].filter(Boolean) as { label: string; icon: React.ReactNode }[];
+    listing.utilityElectricity && { label: "Electricity" },
+    listing.utilityWater      && { label: "Water" },
+    listing.utilityInternet   && { label: "Internet" },
+    listing.utilityGarbage    && { label: "Garbage" },
+  ].filter(Boolean) as { label: string }[];
 
   const utilsExcluded = [
     !listing.utilityElectricity && "Electricity",
@@ -372,27 +330,29 @@ export function ListingDetailPage() {
     !listing.utilityGarbage     && "Garbage",
   ].filter(Boolean) as string[];
 
-  // Backend always returns utility booleans now — always show the section
-  const anyUtilityDefined = true;
-
   // ── House rules
   const rawRules = listing.houseRules ?? "";
   const ruleLines = rawRules.split(/\n|·/).map((r) => r.trim()).filter(Boolean);
-  const rulesPreview = ruleLines.slice(0, 4);
-  const hasMoreRules = ruleLines.length > 4;
+  const RULES_PREVIEW = 6; // 3 per column = 6 visible
+  const rulesPreview = ruleLines.slice(0, RULES_PREVIEW);
+  const hasMoreRules = ruleLines.length > RULES_PREVIEW;
 
   // ── Transport & nearby chips
-  const transportChips = listing.transportInfo ? parseDisplayChips(listing.transportInfo).chips : [];
-  const nearbyChips    = listing.nearbyPlaces  ? parseDisplayChips(listing.nearbyPlaces).chips  : [];
+  const transportChips = listing.transportInfo ? parseDisplayChips(listing.transportInfo) : [];
+  const nearbyChips    = listing.nearbyPlaces  ? parseDisplayChips(listing.nearbyPlaces)  : [];
 
   // ── Safety
-  const safetyItems = [
-    listing.hasSmokeDetector    && { label: "Smoke detector",         warn: false },
-    listing.hasCODetector       && { label: "CO detector",            warn: false },
-    listing.hasFireExtinguisher && { label: "Fire extinguisher",      warn: false },
-    listing.hasFirstAidKit      && { label: "First aid kit",          warn: false },
-    listing.hasSecurityCamera   && { label: "Security cameras on premises", warn: true },
-  ].filter(Boolean) as { label: string; warn: boolean }[];
+  const safetyOk   = [
+    listing.hasSmokeDetector    && "Smoke detector",
+    listing.hasCODetector       && "CO detector",
+    listing.hasFireExtinguisher && "Fire extinguisher",
+    listing.hasFirstAidKit      && "First aid kit",
+  ].filter(Boolean) as string[];
+  const hasCamera = listing.hasSecurityCamera;
+
+  // ── Cancellation grace label
+  const noticeDays = listing.cancellationNoticeDays ?? 0;
+  const graceLabel = noticeDays <= 7 ? "First 7 days" : noticeDays <= 14 ? "First 2 weeks" : noticeDays <= 31 ? "First month" : `First ${noticeDays} days`;
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 md:px-10 py-8">
@@ -432,105 +392,162 @@ export function ListingDetailPage() {
         {/* LEFT */}
         <div className="space-y-8">
 
-          {/* 1. Property type & quick specs */}
+          {/* 1. Property type & specs */}
           <div className="pb-8 border-b border-border">
-            <h2 className="text-xl font-bold text-fg mb-1">
+            <h2 className="text-xl font-semibold text-fg tracking-tight mb-2">
               {buildingLabel}{listing.cityName ? ` in ${listing.cityName}, Thailand` : " in Thailand"}
             </h2>
-            <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-fg-muted mt-1.5">
-              {!!listing.maxOccupancy && <span className="flex items-center gap-1.5"><Users size={14} />{listing.maxOccupancy} guest{listing.maxOccupancy !== 1 ? "s" : ""}</span>}
-              {!!listing.bedrooms    && <span className="flex items-center gap-1.5"><BedDouble size={14} />{listing.bedrooms} bedroom{listing.bedrooms !== 1 ? "s" : ""}</span>}
-              {!!listing.bathrooms   && <span className="flex items-center gap-1.5"><Bath size={14} />{listing.bathrooms} bath{listing.bathrooms !== 1 ? "s" : ""}</span>}
-              {listing.areaSqm       && <span className="flex items-center gap-1.5"><Ruler size={14} />{listing.areaSqm} m²</span>}
-              {listing.furnished     && <span>{listing.furnished === "Fully" ? "Fully furnished" : listing.furnished === "Semi" ? "Semi-furnished" : "Unfurnished"}</span>}
-              {listing.floor != null && <span className="flex items-center gap-1.5"><Building2 size={14} />Floor {listing.floor}{listing.totalFloors ? `/${listing.totalFloors}` : ""}</span>}
-              {(listing.parkingSpaces && listing.parkingSpaces > 0) ? <span className="flex items-center gap-1.5"><Car size={14} />{listing.parkingSpaces} parking{listing.parkingIncluded ? " (incl.)" : ""}</span> : null}
+            <div className="flex items-center flex-wrap gap-x-5 gap-y-1 text-[14.5px] text-fg">
+              {!!listing.maxOccupancy && (
+                <span className="flex items-center gap-2">
+                  <Users size={15} className="text-fg-muted" />
+                  <span><span className="text-fg-muted">Up to </span>{listing.maxOccupancy} guests</span>
+                </span>
+              )}
+              {!!listing.bedrooms && (
+                <span className="flex items-center gap-2 font-medium">
+                  <BedDouble size={15} className="text-fg-muted" />
+                  {listing.bedrooms} bedroom{listing.bedrooms !== 1 ? "s" : ""}
+                </span>
+              )}
+              {!!listing.bathrooms && (
+                <span className="flex items-center gap-2 font-medium">
+                  <Bath size={15} className="text-fg-muted" />
+                  {listing.bathrooms} bath{listing.bathrooms !== 1 ? "s" : ""}
+                </span>
+              )}
+              {listing.areaSqm && (
+                <span className="flex items-center gap-2 font-medium">
+                  <Ruler size={15} className="text-fg-muted" />
+                  {listing.areaSqm} m²
+                </span>
+              )}
+              {listing.furnished && (
+                <span className="font-medium">
+                  {listing.furnished === "Fully" ? "Fully furnished" : listing.furnished === "Semi" ? "Semi-furnished" : "Unfurnished"}
+                </span>
+              )}
+              {listing.floor != null && (
+                <span className="flex items-center gap-2 font-medium">
+                  <Building2 size={15} className="text-fg-muted" />
+                  Floor {listing.floor}{listing.totalFloors ? `/${listing.totalFloors}` : ""}
+                </span>
+              )}
+              {(listing.parkingSpaces && listing.parkingSpaces > 0) ? (
+                <span className="flex items-center gap-2 font-medium">
+                  <Car size={15} className="text-fg-muted" />
+                  {listing.parkingSpaces} parking{listing.parkingIncluded ? " (incl.)" : ""}
+                </span>
+              ) : null}
             </div>
           </div>
 
-          {/* 2. Quick info strip — check-in · utilities · wifi · pets · safety */}
-          {(() => {
-            const quickRows: { icon: React.ReactNode; label: string; value: string; accent?: string }[] = [];
-
-            if (listing.checkInMethod)
-              quickRows.push({ icon: <CheckInIcon method={listing.checkInMethod} />, label: "Check-in", value: checkInLabel(listing.checkInMethod) });
-
-            if (listing.wifiName)
-              quickRows.push({ icon: <Wifi size={16} strokeWidth={1.5} className="text-brand" />, label: "WiFi", value: listing.wifiName });
-
-            const inclList = utilsIncluded.map((u) => u.label);
-            if (inclList.length > 0)
-              quickRows.push({ icon: <Check size={16} strokeWidth={2.5} className="text-emerald-500" />, label: "Included in rent", value: inclList.join(", "), accent: "emerald" });
-            else
-              quickRows.push({ icon: <AlertCircle size={16} className="text-fg-muted" />, label: "Included in rent", value: "None — tenant pays utilities separately" });
-
-            if (utilsExcluded.length > 0 && inclList.length > 0)
-              quickRows.push({ icon: <AlertCircle size={16} className="text-fg-muted" />, label: "Paid by tenant", value: utilsExcluded.join(", ") });
-
-            if (listing.petsAllowed !== undefined)
-              quickRows.push({
-                icon: <PawPrint size={16} className={listing.petsAllowed ? "text-amber-500" : "text-fg-muted"} />,
-                label: "Pets",
-                value: listing.petsAllowed ? `Welcome${listing.petDeposit ? ` · ฿${listing.petDeposit.toLocaleString()} deposit` : ""}` : "Not allowed",
-              });
-
-            safetyItems.forEach(({ label, warn }) =>
-              quickRows.push({ icon: <ShieldCheck size={16} className={warn ? "text-amber-500" : "text-emerald-500"} />, label: warn ? "Notice" : "Safety", value: label })
-            );
-
-            if (quickRows.length === 0) return null;
-            return (
-              <div className="pb-8 border-b border-border">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3.5">
-                  {quickRows.map((row, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <span className="shrink-0 text-fg-muted w-4 flex items-center justify-center">{row.icon}</span>
-                      <span className="text-sm text-fg-muted min-w-[90px] shrink-0">{row.label}</span>
-                      <span className="text-sm font-medium text-fg truncate">{row.value}</span>
-                    </div>
-                  ))}
+          {/* 2. Key facts */}
+          <div className="pb-8 border-b border-border">
+            <div className="mb-4">
+              <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.1em]">Key facts</p>
+              <h2 className="text-[20px] font-semibold text-fg mt-0.5 tracking-tight">Practical things you'll want to know</h2>
+            </div>
+            <div className="flex flex-col divide-y divide-border">
+              {/* Check-in */}
+              {listing.checkInMethod && (
+                <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3">
+                  <div className="w-7 h-7 rounded-lg bg-bg-subtle border border-border flex items-center justify-center shrink-0">
+                    <CheckInIcon method={listing.checkInMethod} />
+                  </div>
+                  <span className="text-[11.5px] font-bold text-fg-muted uppercase tracking-[0.06em]">Check-in</span>
+                  <span className="text-sm font-medium text-fg">{checkInLabel(listing.checkInMethod)}</span>
+                </div>
+              )}
+              {/* Utilities included */}
+              <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3">
+                <div className="w-7 h-7 rounded-lg bg-bg-subtle border border-border flex items-center justify-center shrink-0">
+                  <Check size={13} strokeWidth={2.5} className="text-emerald-500" />
+                </div>
+                <span className="text-[11.5px] font-bold text-fg-muted uppercase tracking-[0.06em]">Included</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {utilsIncluded.length > 0
+                    ? utilsIncluded.map(u => (
+                        <span key={u.label} className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[12.5px] font-semibold">
+                          {u.label}
+                        </span>
+                      ))
+                    : <span className="text-sm text-fg-muted">None — tenant pays all utilities separately</span>
+                  }
                 </div>
               </div>
-            );
-          })()}
-
-          {/* 3. Highlights */}
-          {(() => {
-            const highlights = generateHighlights({ id: listing.id, amenities: listing.amenities, discountTiers: listing.discountTiers, maxOccupancy: listing.maxOccupancy, bedrooms: listing.bedrooms, cityName: listing.cityName });
-            return (
-              <div className="pb-8 border-b border-border space-y-6">
-                {highlights.map((h, i) => (
-                  <div key={i} className="flex items-start gap-4">
-                    <div className="text-fg mt-0.5 shrink-0">{h.icon}</div>
-                    <div>
-                      <p className="text-[14px] font-semibold text-fg leading-snug">{h.title}</p>
-                      <p className="text-[13px] text-fg-muted mt-0.5 leading-relaxed">{h.body}</p>
-                    </div>
+              {/* Tenant pays — only if mixed */}
+              {utilsExcluded.length > 0 && utilsIncluded.length > 0 && (
+                <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3">
+                  <div className="w-7 h-7 rounded-lg bg-bg-subtle border border-border flex items-center justify-center shrink-0">
+                    <AlertCircle size={13} className="text-fg-muted" />
                   </div>
-                ))}
-              </div>
-            );
-          })()}
+                  <span className="text-[11.5px] font-bold text-fg-muted uppercase tracking-[0.06em]">Tenant pays</span>
+                  <span className="text-sm text-fg-muted">{utilsExcluded.join(", ")}</span>
+                </div>
+              )}
+              {/* Pets */}
+              {listing.petsAllowed !== undefined && (
+                <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3">
+                  <div className="w-7 h-7 rounded-lg bg-bg-subtle border border-border flex items-center justify-center shrink-0">
+                    <PawPrint size={13} strokeWidth={1.8} className={listing.petsAllowed ? "text-amber-500" : "text-fg-muted"} />
+                  </div>
+                  <span className="text-[11.5px] font-bold text-fg-muted uppercase tracking-[0.06em]">Pets</span>
+                  <span className="text-sm font-medium text-fg">
+                    {listing.petsAllowed
+                      ? `Welcome${listing.petDeposit ? ` · ฿${listing.petDeposit.toLocaleString()} deposit` : ""}`
+                      : "Not allowed"}
+                  </span>
+                </div>
+              )}
+              {/* Safety */}
+              {safetyOk.length > 0 && (
+                <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3">
+                  <div className="w-7 h-7 rounded-lg bg-bg-subtle border border-border flex items-center justify-center shrink-0">
+                    <ShieldCheck size={13} className="text-emerald-500" />
+                  </div>
+                  <span className="text-[11.5px] font-bold text-fg-muted uppercase tracking-[0.06em]">Safety</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {safetyOk.map(label => (
+                      <span key={label} className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[12.5px] font-semibold">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Security camera notice */}
+              {hasCamera && (
+                <div className="grid grid-cols-[28px_110px_1fr] items-center gap-3 py-3 mt-1 px-3 rounded-xl bg-amber-50/60 border border-amber-100 !border-t-0 !divide-y-0">
+                  <div className="w-7 h-7 rounded-lg bg-white border border-amber-100 flex items-center justify-center shrink-0">
+                    <AlertCircle size={13} className="text-amber-500" />
+                  </div>
+                  <span className="text-[11.5px] font-bold text-amber-700 uppercase tracking-[0.06em]">Notice</span>
+                  <span className="text-sm text-fg-muted">Security cameras on premises — locations disclosed on request.</span>
+                </div>
+              )}
+            </div>
+          </div>
 
-          {/* 4. Description */}
+          {/* 3. Description */}
           {listing.description && (
-            <Section title="About this place">
-              <p className="text-sm text-fg-muted leading-relaxed whitespace-pre-line">{listing.description}</p>
+            <Section title="About this place" sub="In the host's words">
+              <p className="text-[15px] text-fg-muted leading-relaxed whitespace-pre-line max-w-[60ch]">{listing.description}</p>
             </Section>
           )}
 
-          {/* 5. Amenities — what this place offers */}
+          {/* 5. Amenities */}
           {presentAmenities.length > 0 && (
-            <Section title="What this place offers">
-              <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+            <Section title="What this place offers" sub={`${presentAmenities.length} amenities in total`}>
+              <div className="grid grid-cols-2 gap-x-6">
                 {presentAmenities.map((a) => {
                   const Icon = amenityIcon(a.name);
                   return (
-                    <div key={a.amenityId} className="flex items-center gap-3 text-sm text-fg">
-                      <div className="w-6 h-6 shrink-0 flex items-center justify-center text-fg">
-                        {Icon ? <Icon size={20} strokeWidth={1.5} /> : <Check size={16} strokeWidth={2} className="text-fg-muted" />}
+                    <div key={a.amenityId} className="flex items-center gap-3.5 py-3 border-b border-border [&:nth-last-child(-n+2)]:border-b-0">
+                      <div className="w-5 shrink-0 flex items-center justify-center text-fg">
+                        {Icon ? <Icon size={19} strokeWidth={1.8} /> : <Check size={15} strokeWidth={2} className="text-fg-muted" />}
                       </div>
-                      {a.name}
+                      <span className="text-[14.5px] font-medium text-fg">{a.name}</span>
                     </div>
                   );
                 })}
@@ -538,29 +555,31 @@ export function ListingDetailPage() {
             </Section>
           )}
 
-          {/* 8. Where you'll be — map + transport chips */}
-          <Section title="Where you'll be">
-            {/* Map — uses actual fuzzy coordinates from the listing */}
-            <div className="rounded-2xl overflow-hidden border border-border mb-1" style={{ height: 300 }}>
-              <PropertyMap lat={listing.fuzzyLatitude} lon={listing.fuzzyLongitude} cityName={listing.cityName} />
+          {/* 6. Where you'll be */}
+          <Section title="Where you'll be" sub={listing.cityName ? `${listing.cityName} neighbourhood` : "Approximate location"}>
+            {/* Map card */}
+            <div className="rounded-2xl border border-border overflow-hidden">
+              <div className="relative" style={{ height: 340 }}>
+                <PropertyMap lat={listing.fuzzyLatitude} lon={listing.fuzzyLongitude} cityName={listing.cityName} />
+              </div>
+              <div className="px-4 py-3.5 border-t border-border flex items-center gap-2 text-[13.5px]">
+                <MapPinIcon size={13} className="text-fg-muted shrink-0" />
+                {listing.cityName && <span className="font-semibold text-fg">{listing.cityName}</span>}
+                <span className="text-fg-muted">·</span>
+                <span className="text-fg-muted">Approximate location — exact address shared after booking</span>
+              </div>
             </div>
-            <p className="text-xs text-fg-muted mb-4 flex items-center gap-1">
-              <MapPinIcon size={11} className="shrink-0" />
-              {listing.cityName && <><span className="font-medium text-fg">{listing.cityName}</span>, </>}
-              Thailand · Approximate location — exact address shared after booking
-            </p>
-
-            {/* Transport & nearby chips below the map */}
+            {/* Transport & nearby in 2-col grid */}
             {(transportChips.length > 0 || nearbyChips.length > 0) && (
-              <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-6 pt-5">
                 {transportChips.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <Train size={13} />Getting around
-                    </p>
+                    <h4 className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2.5 flex items-center gap-2">
+                      <Train size={13} className="text-fg" /> Getting around
+                    </h4>
                     <div className="flex flex-wrap gap-2">
                       {transportChips.map((chip) => (
-                        <span key={chip} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-xs font-medium">
+                        <span key={chip} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-border text-[13px] text-fg">
                           🚇 {chip}
                         </span>
                       ))}
@@ -569,12 +588,12 @@ export function ListingDetailPage() {
                 )}
                 {nearbyChips.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <MapPinIcon size={13} />Nearby
-                    </p>
+                    <h4 className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2.5 flex items-center gap-2">
+                      <MapPinIcon size={13} className="text-fg" /> Nearby
+                    </h4>
                     <div className="flex flex-wrap gap-2">
                       {nearbyChips.map((chip) => (
-                        <span key={chip} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100 text-xs font-medium">
+                        <span key={chip} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-border text-[13px] text-fg">
                           📍 {chip}
                         </span>
                       ))}
@@ -585,42 +604,54 @@ export function ListingDetailPage() {
             )}
           </Section>
 
-          {/* 9. House rules */}
+          {/* 7. House rules */}
           {ruleLines.length > 0 && (
-            <Section title="House rules">
-              <div className="space-y-2.5">
+            <Section title="House rules" sub="A few things to keep in mind">
+              <div className="grid grid-cols-2 gap-x-8">
                 {(rulesExpanded ? ruleLines : rulesPreview).map((rule, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-fg-subtle/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <Check size={11} strokeWidth={2.5} className="text-fg-muted" />
-                    </div>
-                    <p className="text-sm text-fg-muted leading-snug">{rule}</p>
+                  <div key={i} className="flex items-start gap-3 py-2.5 border-b border-border [&:nth-last-child(-n+2)]:border-b-0">
+                    <Check size={15} className="text-brand mt-0.5 shrink-0" strokeWidth={2.2} />
+                    <span className="text-sm text-fg-muted leading-snug">{rule}</span>
                   </div>
                 ))}
               </div>
               {hasMoreRules && (
                 <button
                   onClick={() => setRulesExpanded((v) => !v)}
-                  className="mt-3 flex items-center gap-1.5 text-sm font-semibold text-fg hover:underline"
+                  className="mt-4 flex items-center gap-1.5 text-sm font-semibold text-fg hover:underline"
                 >
-                  {rulesExpanded ? <><ChevronUp size={16} />Show less</> : <><ChevronDown size={16} />Show all {ruleLines.length} rules</>}
+                  {rulesExpanded ? <><ChevronUp size={15} />Show less</> : <><ChevronDown size={15} />Show all {ruleLines.length} rules</>}
                 </button>
               )}
             </Section>
           )}
 
-          {/* 9. Cancellation policy */}
-          {listing.cancellationNoticeDays != null && listing.cancellationNoticeDays > 0 && (
-            <Section title="Cancellation policy">
-              <CancellationBox
-                noticeDays={listing.cancellationNoticeDays}
-                penaltyMonths={listing.cancellationPenaltyMonths ?? 1}
-              />
+          {/* 8. Cancellation policy */}
+          {noticeDays > 0 && (
+            <Section title="Cancellation policy" sub="Two windows. No surprises.">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
+                  <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2">Grace period</p>
+                  <p className="text-[22px] font-bold text-emerald-700 tracking-tight leading-none mb-2">{graceLabel}</p>
+                  <p className="text-sm font-semibold text-fg mb-2 leading-snug">Leave any time — full deposit returned</p>
+                  <p className="text-[13px] text-fg-muted leading-relaxed">Give notice within {noticeDays} days of moving in. Siamo refunds your deposit in full, minus only the nights you stayed.</p>
+                </div>
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/40 p-5">
+                  <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2">After day {noticeDays}</p>
+                  <p className="text-[22px] font-bold text-amber-700 tracking-tight leading-none mb-2">Deposit held</p>
+                  <p className="text-sm font-semibold text-fg mb-2 leading-snug">Standard contract terms apply</p>
+                  <p className="text-[13px] text-fg-muted leading-relaxed">The landlord keeps your deposit if you end the contract early. Notice period follows the signed rental agreement.</p>
+                </div>
+              </div>
+              <div className="mt-2.5 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-bg-subtle text-[13px] text-fg-muted">
+                <AlertCircle size={13} className="shrink-0" />
+                You always pay for the days you stayed — never for days you didn't.
+              </div>
             </Section>
           )}
 
-          {/* 10. Availability */}
-          <Section title="Availability">
+          {/* 9. Availability */}
+          <Section title="Availability" sub="Next 12 months at a glance">
             {availability ? (
               <AvailabilityTimeline availability={availability} />
             ) : listing.startDate ? (
@@ -633,25 +664,49 @@ export function ListingDetailPage() {
             )}
           </Section>
 
-          {/* 12. What Siamo provides */}
-          <Section title="What Siamo provides">
+          {/* 10. What Siamo provides */}
+          <Section title="What Siamo provides" sub="On every booking, end-to-end">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {([
-                { icon: <FileText size={20} strokeWidth={1.5} />, iconClass: "bg-blue-50 text-blue-600", title: "Rental contract", sub: "EN & TH bilingual" },
-                { icon: <Lock size={20} strokeWidth={1.5} />, iconClass: "bg-emerald-50 text-emerald-600", title: "Deposit protected", sub: "Held by Siamo" },
-                { icon: <ClipboardList size={20} strokeWidth={1.5} />, iconClass: "bg-amber-50 text-amber-600", title: "TM30 filing", sub: "Handled for you" },
-                { icon: <ShieldCheck size={20} strokeWidth={1.5} />, iconClass: "bg-violet-50 text-violet-600", title: "Real support", sub: "Start to move-out" },
+                { icon: <FileText size={18} strokeWidth={1.5} />, iconClass: "bg-brand/10 text-brand", title: "Rental contract", sub: "Bilingual EN & TH, drafted by Siamo legal" },
+                { icon: <Lock size={18} strokeWidth={1.5} />, iconClass: "bg-emerald-50 text-emerald-600", title: "Deposit protection", sub: "Held in escrow by Siamo, not the landlord" },
+                { icon: <ClipboardList size={18} strokeWidth={1.5} />, iconClass: "bg-amber-50 text-amber-600", title: "TM30 filing", sub: "Immigration notice filed within 24 h" },
+                { icon: <ShieldCheck size={18} strokeWidth={1.5} />, iconClass: "bg-violet-50 text-violet-600", title: "Dedicated support", sub: "Real human, Bangkok hours, EN/TH/RU" },
               ] as const).map(({ icon, iconClass, title, sub }) => (
-                <div key={title} className="flex flex-col items-center text-center gap-2 p-4 rounded-2xl border border-border bg-bg-card hover:shadow-sm transition-shadow">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0", iconClass)}>{icon}</div>
+                <div key={title} className="flex flex-col gap-2.5 p-4 rounded-2xl border border-border bg-bg-card hover:shadow-sm transition-shadow">
+                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0", iconClass)}>{icon}</div>
                   <div>
-                    <p className="text-xs font-semibold text-fg leading-snug">{title}</p>
-                    <p className="text-[11px] text-fg-muted mt-0.5">{sub}</p>
+                    <p className="text-[15px] font-semibold text-fg leading-snug">{title}</p>
+                    <p className="text-[13px] text-fg-muted mt-1 leading-snug">{sub}</p>
                   </div>
                 </div>
               ))}
             </div>
           </Section>
+
+          {/* Highlights */}
+          {(() => {
+            const highlights = generateHighlights({ id: listing.id, amenities: listing.amenities, discountTiers: listing.discountTiers, maxOccupancy: listing.maxOccupancy, bedrooms: listing.bedrooms, cityName: listing.cityName });
+            return (
+              <div className="pb-8 border-b border-border">
+                <div className="mb-4">
+                  <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.1em]">Why this place stands out</p>
+                  <h2 className="text-[20px] font-semibold text-fg mt-0.5 tracking-tight">Three reasons it's a guest favourite</h2>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {highlights.map((h, i) => (
+                    <div key={i} className="p-4 rounded-2xl border border-border bg-bg-card">
+                      <div className="w-9 h-9 rounded-xl bg-brand/10 text-brand flex items-center justify-center mb-3 shrink-0">
+                        {h.icon}
+                      </div>
+                      <p className="text-sm font-semibold text-fg leading-snug mb-1">{h.title}</p>
+                      <p className="text-[13px] text-fg-muted leading-snug">{h.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Mobile booking */}
           <div className="lg:hidden">{bookingPanel}</div>
@@ -676,49 +731,44 @@ export function ListingDetailPage() {
         </div>
       </div>
 
-      {/* ── Things to know ── */}
-      <div className="mt-10">
-        <h2 className="text-xl font-bold text-fg mb-6">Things to know</h2>
-        <div className="border border-border rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border">
-            <div className="p-6">
-              <RotateCcw size={20} strokeWidth={1.5} className="text-fg mb-4" />
-              <h3 className="font-semibold text-fg mb-3">Cancellation</h3>
-              <div className="text-sm text-fg-muted space-y-2">
-                {listing.cancellationNoticeDays != null && listing.cancellationNoticeDays > 0 ? (
-                  <>
-                    <p>Grace period: <strong className="text-fg">{listing.cancellationNoticeDays} days</strong></p>
-                    <p>Leave within grace → deposit returned in full.</p>
-                    <p>Leave after grace → deposit kept by landlord.</p>
-                  </>
-                ) : (
-                  <>
-                    <p>Free cancellation before the rental contract is signed.</p>
-                    <p>After signing, terms are defined in the agreement.</p>
-                  </>
-                )}
+      {/* ── How booking works ── */}
+      <div className="mt-12 pt-8 border-t border-border">
+        <div className="mb-6">
+          <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.1em]">How it works</p>
+          <h2 className="text-[20px] font-semibold text-fg mt-0.5 tracking-tight">From request to keys — in 3 steps</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-0 relative">
+          {/* connector line (desktop) */}
+          <div className="hidden md:block absolute top-[22px] left-[calc(16.67%+16px)] right-[calc(16.67%+16px)] h-px bg-border z-0" />
+          {([
+            {
+              step: "01",
+              title: "Send a request",
+              body: "Pick your move-in date and how many months you need. Submit the request — no payment yet, no commitment.",
+            },
+            {
+              step: "02",
+              title: "Manager confirms",
+              body: "The property manager reviews your request and confirms availability. You'll hear back within 24 hours.",
+            },
+            {
+              step: "03",
+              title: "Sign & move in",
+              body: "Sign the bilingual contract, pay the first month and deposit. We file TM30 and hand you the keys.",
+            },
+          ] as const).map(({ step, title, body }) => (
+            <div key={step} className="relative z-10 flex flex-col items-start md:items-start gap-3 px-0 md:pr-8 pb-8 md:pb-0">
+              <div className="flex items-center gap-3 md:gap-0 md:flex-col md:items-start">
+                <div className="w-11 h-11 rounded-full border-2 border-border bg-bg flex items-center justify-center shrink-0">
+                  <span className="text-[13px] font-bold text-fg-muted tabular-nums">{step}</span>
+                </div>
+              </div>
+              <div className="md:mt-4">
+                <p className="text-[15px] font-semibold text-fg mb-1">{title}</p>
+                <p className="text-[13.5px] text-fg-muted leading-relaxed">{body}</p>
               </div>
             </div>
-            <div className="p-6">
-              <FileText size={20} strokeWidth={1.5} className="text-fg mb-4" />
-              <h3 className="font-semibold text-fg mb-3">Rental terms</h3>
-              <div className="text-sm text-fg-muted space-y-2">
-                <p>Min stay: {availability?.minMonths ?? 1} month{(availability?.minMonths ?? 1) !== 1 ? "s" : ""}</p>
-                <p>Max stay: {availability?.maxMonths ?? 12} months</p>
-                <p>Deposit held securely by Siamo.</p>
-                <p>Contract in English &amp; Thai.</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <Home size={20} strokeWidth={1.5} className="text-fg mb-4" />
-              <h3 className="font-semibold text-fg mb-3">House rules</h3>
-              <div className="text-sm text-fg-muted space-y-2">
-                {ruleLines.length > 0
-                  ? ruleLines.slice(0, 4).map((r, i) => <p key={i}>{r}</p>)
-                  : (<><p>No smoking inside the property.</p><p>Quiet hours 22:00 – 08:00.</p><p>Coordinate check-in with the manager.</p></>)}
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 

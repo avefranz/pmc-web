@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { format, parseISO, addMonths } from "date-fns";
-import { X, CheckCircle2, Zap, ArrowLeft, Eye, EyeOff, ExternalLink } from "lucide-react";
+import { X, CheckCircle2, Zap, ArrowLeft, Eye, EyeOff, ExternalLink, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,131 @@ import { formatThb } from "@/lib/utils/format";
 import { useSubmitBookingRequest } from "@/lib/hooks/use-marketplace";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { authApi } from "@/lib/api/auth.api";
+import { bookingRequestsApi } from "@/lib/api/booking-requests.api";
+import { PasswordHints } from "@/components/shared/password-hints";
+import { PetsSelector, EMPTY_PETS, petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
+import { cn } from "@/lib/utils/cn";
 import type { DiscountTier, BookingRequestResult } from "@/lib/types/marketplace";
+
+// ─── Pet photo upload ─────────────────────────────────────────────────────────
+
+type PetKey = "cats" | "dogs" | "other";
+type PetPhotoMap = Record<PetKey, File[]>;
+const EMPTY_PHOTOS: PetPhotoMap = { cats: [], dogs: [], other: [] };
+
+const PET_TYPE_META: { key: PetKey; emoji: string; singular: string; plural: string }[] = [
+  { key: "cats",  emoji: "🐱", singular: "cat",       plural: "cats"       },
+  { key: "dogs",  emoji: "🐶", singular: "dog",       plural: "dogs"       },
+  { key: "other", emoji: "🐾", singular: "other pet", plural: "other pets" },
+];
+
+function PetPhotoUpload({
+  pets,
+  photos,
+  onChange,
+  showErrors,
+}: {
+  pets: PetCounts;
+  photos: PetPhotoMap;
+  onChange: (p: PetPhotoMap) => void;
+  showErrors: boolean;
+}) {
+  const inputRefs = useRef<Partial<Record<PetKey, HTMLInputElement>>>({});
+  const active = PET_TYPE_META.filter((t) => pets[t.key] > 0);
+  if (!active.length) return null;
+
+  function addFiles(key: PetKey, files: FileList | null) {
+    if (!files) return;
+    const valid = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    onChange({ ...photos, [key]: [...photos[key], ...valid].slice(0, 6) });
+  }
+
+  function remove(key: PetKey, idx: number) {
+    onChange({ ...photos, [key]: photos[key].filter((_, i) => i !== idx) });
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-border overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 bg-bg-subtle border-b border-border flex items-center gap-2">
+        <Camera size={14} className="text-fg-muted shrink-0" />
+        <p className="text-sm font-medium text-fg">
+          Pet photos <span className="text-danger">*</span>
+        </p>
+        <span className="text-xs text-fg-muted ml-auto">1 photo minimum per type</span>
+      </div>
+
+      <div className="divide-y divide-border">
+        {active.map(({ key, emoji, singular, plural }) => {
+          const count = pets[key];
+          const label = count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+          const missing = showErrors && photos[key].length === 0;
+
+          return (
+            <div key={key} className={cn("px-4 py-4", missing && "bg-danger/3")}>
+              <p className={cn("text-xs font-semibold mb-2.5 flex items-center gap-1.5", missing ? "text-danger" : "text-fg-muted")}>
+                <span>{emoji}</span>
+                {label}
+                {missing && <span className="ml-auto normal-case font-normal">Add at least 1 photo</span>}
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {/* Previews */}
+                {photos[key].map((file, idx) => (
+                  <div key={idx} className="relative w-[72px] h-[72px] rounded-xl overflow-hidden bg-bg-subtle shrink-0 group">
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => remove(key, idx)}
+                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <X size={14} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Upload slot */}
+                {photos[key].length < 6 && (
+                  <button
+                    type="button"
+                    onClick={() => inputRefs.current[key]?.click()}
+                    className={cn(
+                      "w-[72px] h-[72px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-colors shrink-0 gap-1",
+                      missing
+                        ? "border-danger text-danger hover:bg-danger/5"
+                        : "border-border text-fg-muted hover:border-brand hover:text-brand hover:bg-brand/5",
+                    )}
+                  >
+                    <Camera size={16} />
+                    <span className="text-[10px] font-medium">Add</span>
+                    <input
+                      ref={(el) => { if (el) inputRefs.current[key] = el; }}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => addFiles(key, e.target.files)}
+                    />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="px-4 py-2.5 bg-bg-subtle border-t border-border">
+        <p className="text-[11px] text-fg-muted">
+          Photos are stored on your device and will be shared with the host upon request.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function effectiveRate(base: number, months: number, tiers: DiscountTier[]): number {
   const sorted = [...tiers].sort((a, b) => b.minMonths - a.minMonths);
@@ -50,6 +174,9 @@ export function BookingRequestModal({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
+  const [pets, setPets] = useState<PetCounts>(EMPTY_PETS);
+  const [petPhotos, setPetPhotos] = useState<PetPhotoMap>(EMPTY_PHOTOS);
+  const [triedSubmit, setTriedSubmit] = useState(false);
 
   // Multi-step state
   const [step, setStep] = useState<Step>("form");
@@ -59,6 +186,11 @@ export function BookingRequestModal({
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [bookingResult, setBookingResult] = useState<BookingRequestResult | null>(null);
+
+  const hasPets = totalPets(pets) > 0;
+  const petPhotosReady = !hasPets || (["cats", "dogs", "other"] as PetKey[]).every(
+    (key) => pets[key] === 0 || petPhotos[key].length > 0,
+  );
 
   const rate = effectiveRate(monthlyRate, durationMonths, discountTiers);
   const total = rate * durationMonths;
@@ -74,10 +206,21 @@ export function BookingRequestModal({
       guestEmail: email.trim() || undefined,
       guestPhone: phone.trim() || undefined,
       message: message.trim() || undefined,
+      petCatsCount:  pets.cats  || undefined,
+      petDogsCount:  pets.dogs  || undefined,
+      petOtherCount: pets.other || undefined,
     });
+
+    // Upload pet photos if any — fire and forget (don't block success flow)
+    const allPhotos = [...petPhotos.cats, ...petPhotos.dogs, ...petPhotos.other];
+    if (allPhotos.length > 0) {
+      bookingRequestsApi.uploadPetPhotos(result.id, allPhotos).catch(() => {
+        toast.warning("Request sent, but pet photos failed to upload. You can resend them later.");
+      });
+    }
+
     setBookingResult(result);
     if (result.isInstantBook && result.bookingId) {
-      // Instant book — redirect straight to booking
       onClose();
       navigate(`/me/guest/bookings/${result.bookingId}`);
     } else {
@@ -87,6 +230,9 @@ export function BookingRequestModal({
 
   async function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setTriedSubmit(true);
+
+    if (!petPhotosReady) return;
 
     // Authenticated users don't need to fill name/email (backend takes from profile)
     if (token) {
@@ -154,10 +300,10 @@ export function BookingRequestModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-0 sm:px-4">
-      <div className="bg-bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-pop overflow-hidden">
+      <div className="bg-bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-pop flex flex-col max-h-[92dvh] sm:max-h-[90dvh]">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             {step === "auth" && (
               <button
@@ -183,6 +329,7 @@ export function BookingRequestModal({
 
         {/* ─── Success state ─── */}
         {step === "success" && (
+          <div className="overflow-y-auto overscroll-contain">
           <div className="px-6 py-10 text-center">
             {bookingResult?.isInstantBook ? (
               <div className="w-12 h-12 rounded-full bg-brand/10 flex items-center justify-center mx-auto mb-4">
@@ -210,11 +357,18 @@ export function BookingRequestModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-fg-muted">Duration</span>
-                <span className="font-medium text-fg">{durationMonths} months</span>
+                <span className="font-medium text-fg">{durationMonths} month{durationMonths !== 1 ? "s" : ""}</span>
               </div>
-              <div className="flex justify-between font-semibold text-fg border-t border-border pt-1 mt-1">
-                <span>Total estimate</span>
-                <span>{formatThb(total)}</span>
+              <div className="flex justify-between border-t border-border pt-1 mt-1">
+                <span className="text-fg-muted">Monthly rent</span>
+                <span className="font-semibold text-fg">{formatThb(rate)}/mo</span>
+              </div>
+              <div className="flex justify-between">
+                <div>
+                  <span className="text-fg-muted">Refundable deposit</span>
+                  <div className="text-[11px] text-fg-muted">held securely by Siamo</div>
+                </div>
+                <span className="font-semibold text-fg">{formatThb(rate)}</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -228,13 +382,14 @@ export function BookingRequestModal({
               </Button>
             </div>
           </div>
+          </div>
         )}
 
         {/* ─── Booking form ─── */}
         {step === "form" && (
-          <form onSubmit={handleFormSubmit}>
-            {/* Booking summary */}
-            <div className="px-6 py-4 bg-bg-subtle border-b border-border">
+          <form onSubmit={handleFormSubmit} className="flex flex-col min-h-0 flex-1">
+            {/* Booking summary — sticky top */}
+            <div className="px-6 py-4 bg-bg-subtle border-b border-border shrink-0">
               <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide mb-2">
                 Your booking
               </p>
@@ -243,63 +398,82 @@ export function BookingRequestModal({
                 <p className="text-fg-muted">
                   {moveInFormatted} → {moveOut} · {durationMonths} month{durationMonths !== 1 ? "s" : ""}
                 </p>
-                <p className="text-fg font-semibold pt-0.5">{formatThb(total)} total</p>
+                <p className="text-fg font-semibold pt-0.5">{formatThb(rate)}/mo</p>
               </div>
             </div>
 
-            {/* Form fields */}
-            <div className="px-6 py-5 space-y-4">
-              {!token && (
-                <>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium text-fg">Full name *</Label>
-                    <Input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Your full name"
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium text-fg">Email *</Label>
-                    <Input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium text-fg">Phone</Label>
-                    <Input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+66 81 234 5678"
-                    />
-                  </div>
-                </>
-              )}
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-fg">Message</Label>
-                <Textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell the host a bit about yourself and why you're looking for this place…"
-                  className="min-h-[80px] resize-none"
-                  autoFocus={!!token}
+            {/* Scrollable form fields */}
+            <div className="overflow-y-auto overscroll-contain flex-1">
+              <div className="px-6 py-5 space-y-4">
+                {!token && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Full name *</Label>
+                      <Input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Your full name"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Email *</Label>
+                      <Input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Phone</Label>
+                      <Input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+66 81 234 5678"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-fg">Message</Label>
+                  <Textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Tell the host a bit about yourself and why you're looking for this place…"
+                    className="min-h-[80px] resize-none"
+                    autoFocus={!!token}
+                  />
+                </div>
+
+                {/* Pets selector */}
+                <PetsSelector
+                  value={pets}
+                  onChange={(v) => {
+                    setPets(v);
+                    if (totalPets(v) === 0) setTriedSubmit(false);
+                  }}
+                />
+
+                {/* Pet photos — required when pets selected */}
+                <PetPhotoUpload
+                  pets={pets}
+                  photos={petPhotos}
+                  onChange={setPetPhotos}
+                  showErrors={triedSubmit}
                 />
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-6 pb-6">
+            {/* Footer — always visible */}
+            <div className="px-6 py-4 border-t border-border shrink-0">
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending}
+                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || (hasPets && !petPhotosReady)}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>
@@ -312,13 +486,14 @@ export function BookingRequestModal({
 
         {/* ─── Inline auth gate ─── */}
         {step === "auth" && (
-          <form onSubmit={handleAuthSubmit}>
+          <form onSubmit={handleAuthSubmit} className="flex flex-col min-h-0 flex-1">
+            <div className="overflow-y-auto overscroll-contain flex-1">
             <div className="px-6 py-5 space-y-5">
               {/* Context reminder */}
               <div className="bg-bg-subtle rounded-xl px-4 py-3 text-sm space-y-0.5">
                 <p className="font-medium text-fg line-clamp-1">{listingTitle}</p>
                 <p className="text-fg-muted">
-                  {moveInFormatted} · {durationMonths} month{durationMonths !== 1 ? "s" : ""} · {formatThb(total)}
+                  {moveInFormatted} · {durationMonths} month{durationMonths !== 1 ? "s" : ""} · <span className="text-fg font-semibold">{formatThb(rate)}/mo</span>
                 </p>
               </div>
 
@@ -330,15 +505,18 @@ export function BookingRequestModal({
                 </p>
               </div>
 
-              {/* Email (read-only, pre-filled) */}
+              {/* Email (editable — this becomes their login) */}
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium text-fg">Email</Label>
                 <Input
                   type="email"
                   value={email}
-                  readOnly
-                  className="bg-bg-subtle text-fg-muted cursor-default"
+                  onChange={(e) => { setEmail(e.target.value); setAuthError(""); }}
+                  placeholder="you@example.com"
+                  required
+                  autoFocus
                 />
+                <p className="text-[11px] text-fg-muted">This will be your login — make sure it's correct</p>
               </div>
 
               {/* Password */}
@@ -353,7 +531,6 @@ export function BookingRequestModal({
                     onChange={(e) => { setPassword(e.target.value); setAuthError(""); }}
                     placeholder="••••••••"
                     required
-                    autoFocus
                     className="pr-10"
                   />
                   <button
@@ -365,11 +542,14 @@ export function BookingRequestModal({
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
-                {authError && <p className="text-xs text-destructive">{authError}</p>}
+                {authError
+                  ? <p className="text-xs text-destructive">{authError}</p>
+                  : authMode === "register" && <PasswordHints password={password} />}
               </div>
             </div>
+            </div>
 
-            <div className="px-6 pb-6 space-y-3">
+            <div className="px-6 py-4 border-t border-border shrink-0 space-y-3">
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"

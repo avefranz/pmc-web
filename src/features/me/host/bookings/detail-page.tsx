@@ -401,7 +401,8 @@ export function BookingDetailPage() {
   const { data: tickets } = useBookingTickets(id!);
   const { data: contractData } = useBookingContract(id!, !!booking?.hasContract);
   const { data: paymentData } = useBookingPayment(id!);
-  const { data: cancellation } = useBookingCancellation(id!);
+  const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
+  const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
   const confirmReceipt = useConfirmReceipt(id!);
   const confirmCancellation = useConfirmCancellation(id!);
   const addGuest = useAddGuest(id!);
@@ -792,7 +793,7 @@ export function BookingDetailPage() {
       {paymentData && booking.status === BookingStatus.PendingPayment && (
         <div className="bg-warning/10 border border-warning/20 rounded-2xl p-5 space-y-3">
           <h3 className="text-sm font-semibold text-fg">Pending payments</h3>
-          {paymentData.payments.map((p) => (
+          {(paymentData.payments ?? []).map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-fg">{p.type === "Deposit" ? "Security deposit" : p.type === "FirstMonth" ? "First month's rent" : "Early exit penalty"}</p>

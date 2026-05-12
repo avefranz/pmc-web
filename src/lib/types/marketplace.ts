@@ -162,6 +162,9 @@ export interface BookingRequestData {
   guestEmail?: string;
   guestPhone?: string;
   message?: string;
+  petCatsCount?: number;
+  petDogsCount?: number;
+  petOtherCount?: number;
 }
 
 export interface BookingRequestResult {

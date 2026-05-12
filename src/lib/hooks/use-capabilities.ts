@@ -10,7 +10,8 @@ export function useCapabilities() {
     queryKey: CAPS_KEY,
     queryFn: meApi.getCapabilities,
     enabled: !!token,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 

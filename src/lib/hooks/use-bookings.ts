@@ -157,6 +157,7 @@ export const useConfirmReceipt = (bookingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.payment(bookingId) });
       qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.invoices(bookingId) });
       qc.invalidateQueries({ queryKey: keys.host() });
     },
   });
@@ -164,11 +165,12 @@ export const useConfirmReceipt = (bookingId: string) => {
 
 // ─── Cancellation ─────────────────────────────────────────────────────────────
 
-export const useBookingCancellation = (bookingId: string) =>
+export const useBookingCancellation = (bookingId: string, enabled = true) =>
   useQuery({
     queryKey: keys.cancellation(bookingId),
     queryFn: () => bookingsApi.getCancellation(bookingId),
     staleTime: 30_000,
+    enabled,
     retry: (count, err: unknown) => {
       // 404 means no cancellation request exists — don't retry
       const status = (err as { response?: { status?: number } })?.response?.status;

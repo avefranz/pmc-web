@@ -70,17 +70,17 @@ export const bookingsApi = {
   // ─── Payment ──────────────────────────────────────────────────────────────
 
   getPaymentInstructions: (bookingId: string) =>
-    apiClient.get<PaymentInstructionsDto>(`/api/bookings/${bookingId}/payment`).then((r) => r.data),
+    apiClient.get<{ data: PaymentInstructionsDto }>(`/api/bookings/${bookingId}/payment`).then((r) => r.data.data),
 
   confirmTransfer: (bookingId: string, paymentId: string, note?: string) =>
     apiClient
-      .post<PaymentRecordDto>(`/api/bookings/${bookingId}/payment/${paymentId}/transfer`, { note })
-      .then((r) => r.data),
+      .post<{ data: PaymentRecordDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/transfer`, { note })
+      .then((r) => r.data.data),
 
   confirmReceipt: (bookingId: string, paymentId: string) =>
     apiClient
-      .post<PaymentInstructionsDto>(`/api/bookings/${bookingId}/payment/${paymentId}/receipt`, {})
-      .then((r) => r.data),
+      .post<{ data: PaymentInstructionsDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/receipt`, {})
+      .then((r) => r.data.data),
 
   // ─── Cancellation ─────────────────────────────────────────────────────────
 

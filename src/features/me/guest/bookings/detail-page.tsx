@@ -1,6 +1,6 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins } from "lucide-react";
+import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { useListing } from "@/lib/hooks/use-listings";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus, InvoiceStatus } from "@/lib/types/enums";
+import type { CheckInMethod } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
@@ -56,13 +57,22 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+const CHECK_IN_METHOD_LABEL: Record<CheckInMethod, { label: string; Icon: React.ElementType }> = {
+  KeyHandover: { label: "Key handover", Icon: Key },
+  Smartlock:   { label: "Smart lock",   Icon: Lock },
+  Keybox:      { label: "Key box",      Icon: Lock },
+  Reception:   { label: "Reception",    Icon: ConciergeBell },
+  Other:       { label: "Other",        Icon: Key },
+};
+
 export function GuestBookingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: booking, isLoading } = useBooking(id!);
   const { data: invoices } = useBookingInvoices(id!);
-  const { data: listing } = useListing(booking?.listingId ?? "");
-  const { data: cancellation } = useBookingCancellation(id!);
+  const { data: listing } = useListing(booking?.listingId);
+  const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
+  const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
   const requestCancellation = useRequestCancellation(id!);
   const { data: tm30Records } = useMyTm30();
   const tm30 = tm30Records?.find((r) => r.bookingId === id);
@@ -144,7 +154,7 @@ export function GuestBookingDetailPage() {
           </div>
 
           {/* WiFi */}
-          {isUpcoming && listing && (listing.wifiName || listing.wifiPassword) && (
+          {(isActive || isConfirmed) && listing && (listing.wifiName || listing.wifiPassword) && (
             <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
               <div className="px-5 pt-4 pb-3 border-b border-border">
                 <h3 className="text-sm font-semibold text-fg">WiFi</h3>
@@ -175,7 +185,7 @@ export function GuestBookingDetailPage() {
           )}
 
           {/* House rules */}
-          {isUpcoming && listing?.houseRules && (
+          {(isActive || isConfirmed) && listing?.houseRules && (
             <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
               <div className="px-5 pt-4 pb-3 border-b border-border">
                 <h3 className="text-sm font-semibold text-fg">House rules</h3>
@@ -214,8 +224,146 @@ export function GuestBookingDetailPage() {
             <StatusPill status={booking.status} />
           </div>
 
-          {/* Pay now — show when there are unpaid invoices */}
-          {unpaidInvoices.length > 0 && (
+          {/* ── What's next (Confirmed = paid, waiting for check-in) ── */}
+          {isConfirmed && (() => {
+            const method = listing?.checkInMethod as CheckInMethod | null | undefined;
+
+            // Per-method action guidance
+            type ActionGuide = { urgent: boolean; title: string; body: string; Icon: React.ElementType };
+            const ACTION_GUIDE: Partial<Record<CheckInMethod, ActionGuide>> = {
+              KeyHandover: {
+                urgent: true,
+                title: "Contact your host to arrange check-in",
+                body: "You'll receive the keys in person — reach out before your check-in date to agree on a meeting time.",
+                Icon: MessageCircle,
+              },
+              Smartlock: {
+                urgent: false,
+                title: "Your door code is on its way",
+                body: "Your host will send you the smart lock code before check-in. No action needed from you.",
+                Icon: Lock,
+              },
+              Keybox: {
+                urgent: false,
+                title: "Your keybox code is on its way",
+                body: "Your host will share the keybox code before check-in. No action needed from you.",
+                Icon: Lock,
+              },
+              Reception: {
+                urgent: false,
+                title: "Head to the reception when you arrive",
+                body: "Staff will check you in at the front desk — no prior coordination needed.",
+                Icon: ConciergeBell,
+              },
+              Other: {
+                urgent: false,
+                title: "Check your host's instructions",
+                body: "Your host has provided check-in details below.",
+                Icon: Key,
+              },
+            };
+            const guide: ActionGuide | null = method ? (ACTION_GUIDE[method] ?? null) : null;
+
+            return (
+              <>
+                {/* "Booking confirmed" banner */}
+                <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-full bg-success flex items-center justify-center shrink-0">
+                    <Check size={16} className="text-white" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-success">Booking confirmed</p>
+                    <p className="text-xs text-fg-muted mt-0.5">Your stay is secured. See your check-in plan below.</p>
+                  </div>
+                </div>
+
+                {/* Check-in plan card */}
+                <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+                  {/* Header */}
+                  <div className="px-5 pt-4 pb-3 border-b border-border">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted mb-0.5">
+                      Check-in · {formatDate(booking.checkInDate)}
+                    </p>
+                    <h3 className="text-sm font-semibold text-fg">Your check-in plan</h3>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    {/* Action callout */}
+                    {guide && (
+                      <div className={cn(
+                        "rounded-xl px-4 py-3 flex items-start gap-3",
+                        guide.urgent
+                          ? "bg-warning/10 border border-warning/20"
+                          : "bg-brand/8 border border-brand/15"
+                      )}>
+                        <guide.Icon size={15} className={cn("shrink-0 mt-0.5", guide.urgent ? "text-warning" : "text-brand")} />
+                        <div>
+                          <p className={cn("text-sm font-semibold", guide.urgent ? "text-warning" : "text-brand")}>
+                            {guide.title}
+                          </p>
+                          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{guide.body}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Host's custom instructions */}
+                    {listing?.checkInInstructions && (
+                      <div className="rounded-xl bg-bg-subtle px-4 py-3">
+                        <p className="text-xs font-semibold text-fg-muted mb-1">From your host</p>
+                        <p className="text-sm text-fg whitespace-pre-line leading-relaxed">
+                          {listing.checkInInstructions}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* CTA for key-handover — tenant needs to act */}
+                    {guide?.urgent && (
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="w-full rounded-xl h-9 text-sm border-warning/30 text-warning hover:bg-warning/5"
+                      >
+                        <Link to={`/me/guest/tickets`}>
+                          <MessageCircle size={14} className="mr-1.5" />Contact your host
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Getting there */}
+                {(listing?.transportInfo || listing?.nearbyPlaces) && (
+                  <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+                    <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+                      <MapPin size={14} className="text-fg-muted" />
+                      <h3 className="text-sm font-semibold text-fg">Getting there</h3>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {listing.transportInfo && (
+                        <div className="flex items-start gap-3 px-5 py-3.5">
+                          <Bus size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                          <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
+                            {listing.transportInfo}
+                          </p>
+                        </div>
+                      )}
+                      {listing.nearbyPlaces && (
+                        <div className="flex items-start gap-3 px-5 py-3.5">
+                          <Building2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                          <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
+                            {listing.nearbyPlaces}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Pay now — show when there are unpaid invoices AND booking is not yet active/confirmed */}
+          {unpaidInvoices.length > 0 && !isActive && !isConfirmed && (
             <div className="bg-warning/10 border border-warning/20 rounded-2xl px-5 py-4">
               <p className="text-sm font-semibold text-fg mb-0.5">Payment required</p>
               <p className="text-xs text-fg-muted mb-3">
@@ -307,50 +455,6 @@ export function GuestBookingDetailPage() {
             )}
           </div>
 
-          {/* Invoices */}
-          {(invoices?.length ?? 0) > 0 && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-fg">Payments</h3>
-              </div>
-              {invoices!.map((inv) => {
-                const isPaid = inv.status === InvoiceStatus.Paid;
-                const isCancelledInv = inv.status === InvoiceStatus.Cancelled;
-                const needsPayment = !isPaid && !isCancelledInv;
-                return (
-                  <div key={inv.id} className="flex items-center justify-between px-5 py-3.5 border-b border-border last:border-none gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
-                      {inv.dueDate && <p className="text-xs text-fg-muted mt-0.5">Due {formatDate(inv.dueDate)}</p>}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-fg">{formatThb(inv.amount ?? 0)}</p>
-                        <span className={cn(
-                          "text-xs font-medium",
-                          isPaid ? "text-success"
-                            : inv.status === InvoiceStatus.Overdue ? "text-danger"
-                            : isCancelledInv ? "text-fg-muted"
-                            : "text-warning",
-                        )}>
-                          {isPaid ? "Paid" : isCancelledInv ? "Cancelled" : inv.status === InvoiceStatus.Overdue ? "Overdue" : "Pending"}
-                        </span>
-                      </div>
-                      {needsPayment && (
-                        <Button
-                          size="sm"
-                          className="h-8 px-3 text-xs bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-lg shrink-0"
-                          onClick={() => navigate(`/me/guest/bookings/${id}/payment`)}
-                        >
-                          Pay
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* TM-30 — always shown for active/confirmed bookings */}
           {(isActive || isConfirmed || isPendingPayment) && (
@@ -410,16 +514,8 @@ export function GuestBookingDetailPage() {
             </div>
           )}
 
-          {/* Contact support */}
-          <Button
-            asChild
-            variant="outline"
-            className="w-full rounded-xl h-10 text-sm border-border hover:bg-bg-subtle"
-          >
-            <Link to="/me/host/tickets">
-              <MessageCircle size={15} className="mr-2" />Contact support
-            </Link>
-          </Button>
+          {/* Contact host — placeholder until host contact info is in BookingDto */}
+          {/* TODO: replace with tel/LINE link once BookingDto exposes hostPhone / hostLineId */}
         </div>
       </div>
 

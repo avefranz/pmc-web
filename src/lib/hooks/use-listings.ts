@@ -7,8 +7,8 @@ const keys = {
   byAsset: (assetId: string) => ["listings", "asset", assetId] as const,
 };
 
-export const useListing = (id: string) =>
-  useQuery({ queryKey: keys.detail(id), queryFn: () => listingsApi.getById(id), staleTime: 30_000 });
+export const useListing = (id: string | undefined) =>
+  useQuery({ queryKey: keys.detail(id ?? ""), queryFn: () => listingsApi.getById(id!), staleTime: 30_000, enabled: !!id });
 
 export const useListingsByAsset = (assetId: string) =>
   useQuery({

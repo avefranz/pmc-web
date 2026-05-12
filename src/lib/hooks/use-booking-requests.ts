@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { bookingRequestsApi } from "../api/booking-requests.api";
+import { bookingRequestsApi, type GuestApplicationDto } from "../api/booking-requests.api";
 import { CAPS_KEY } from "./use-capabilities";
 
 const keys = {
@@ -40,7 +40,7 @@ export const useApproveRequest = (id: string) => {
 export const useRejectRequest = (id: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => bookingRequestsApi.reject(id),
+    mutationFn: (reason?: string) => bookingRequestsApi.reject(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.hostRequests() });
       qc.invalidateQueries({ queryKey: keys.hostRequest(id) });
@@ -57,9 +57,17 @@ export const useMyApplications = () =>
     staleTime: 30_000,
   });
 
-export const useMyApplication = (id: string) =>
-  useQuery({
+export const useMyApplication = (id: string) => {
+  const qc = useQueryClient();
+  return useQuery({
     queryKey: keys.guestApp(id),
     queryFn: () => bookingRequestsApi.getMyApplication(id),
     staleTime: 30_000,
+    // Seed from the list cache so the detail page renders immediately
+    // when navigating from the applications list.
+    initialData: () =>
+      qc.getQueryData<GuestApplicationDto[]>(keys.guestApps())?.find((a) => a.id === id),
+    initialDataUpdatedAt: () =>
+      qc.getQueryState(keys.guestApps())?.dataUpdatedAt,
   });
+};

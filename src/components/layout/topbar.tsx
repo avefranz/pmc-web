@@ -4,6 +4,7 @@ import { UserMenu } from "./user-menu";
 import { SiamoLogo } from "./siamo-logo";
 import { cn } from "@/lib/utils/cn";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
+import { useUnseenApplications } from "@/lib/hooks/use-unseen-applications";
 
 const HOST_NAV = [
   { to: "/me/host/properties", label: "Properties",  badgeKey: undefined },
@@ -16,7 +17,6 @@ const HOST_NAV = [
 const GUEST_NAV = [
   { to: "/me/guest/applications", label: "Applications", badgeKey: "pendingApplicationsCount" as const },
   { to: "/me/guest/bookings",     label: "My stays",     badgeKey: undefined },
-  { to: "/me/guest/tm30",         label: "TM30",         badgeKey: undefined },
 ];
 
 function NavItem({ to, label, badge }: { to: string; label: string; badge?: number }) {
@@ -80,7 +80,18 @@ export function TopBar() {
   const inMe    = pathname.startsWith("/me");
 
   const { data: caps } = useCapabilities();
-  const nav = isHost ? HOST_NAV : isGuest ? GUEST_NAV : null;
+  const unseenApps = useUnseenApplications();
+
+  // Hide host nav tabs until at least one property exists (or user is a manager)
+  const hostHasContent = !caps || (caps.stats.ownedAssetsCount ?? 0) > 0 || caps.isManager;
+  const nav = isHost ? (hostHasContent ? HOST_NAV : null) : isGuest ? GUEST_NAV : null;
+
+  function getBadge(item: typeof HOST_NAV[number]) {
+    if (!item.badgeKey) return undefined;
+    if (item.badgeKey === "pendingApplicationsCount") return unseenApps || undefined;
+    if (caps) return caps.stats[item.badgeKey as keyof typeof caps.stats] as number ?? 0;
+    return undefined;
+  }
 
   return (
     <header className="sticky top-0 z-40 h-[var(--topbar-h)] bg-bg-card border-b border-border flex items-center">
@@ -94,7 +105,7 @@ export function TopBar() {
               key={item.to}
               to={item.to}
               label={item.label}
-              badge={item.badgeKey && caps ? (caps.stats[item.badgeKey] ?? 0) : undefined}
+              badge={getBadge(item)}
             />
           ))}
           {!nav && inMe && <div className="flex-1" />}

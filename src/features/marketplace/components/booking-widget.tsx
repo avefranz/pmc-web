@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { addMonths, format, parseISO, startOfMonth, isBefore, isAfter, max } from "date-fns";
+import { addMonths, addDays, format, parseISO, startOfMonth, isBefore, isAfter, max } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -150,6 +150,9 @@ export function BookingWidget({
 
   const defaultMoveIn = max([today, parseISO(availability.availableFrom)]);
   const defaultMoveInStr = format(defaultMoveIn, "yyyy-MM-dd");
+  // Move-in window: if availableFrom is in the future → 30 days from it;
+  // if availableFrom is already past → 30 days from today.
+  const moveInDeadline = addDays(defaultMoveIn, 30);
 
   const [moveInStr, setMoveInStr] = useState(defaultMoveInStr);
   const [duration, setDuration] = useState(
@@ -203,10 +206,49 @@ export function BookingWidget({
           <span className="text-2xl font-bold text-fg">{formatThb(monthRate)}</span>
           <span className="text-sm text-fg-muted">/ month</span>
         </div>
-        {hasDiscount && (
-          <p className="text-xs font-medium text-success mt-0.5">
-            Save {tier!.discountPercent}% on {tier!.minMonths}+ month stays
-          </p>
+
+        {/* Discount tiers — always visible when configured */}
+        {listing.discountTiers?.length > 0 && (
+          <div className="mt-3 rounded-xl border border-border overflow-hidden">
+            {[...listing.discountTiers]
+              .sort((a, b) => a.minMonths - b.minMonths)
+              .map((t) => {
+                const isActive = duration >= t.minMonths;
+                const isCurrent = tier?.minMonths === t.minMonths;
+                const discountedRate = Math.round(baseRate * (1 - t.discountPercent / 100));
+                return (
+                  <button
+                    key={t.minMonths}
+                    onClick={() => setDuration(Math.min(t.minMonths, maxAllowed))}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm border-b border-border last:border-b-0 transition-colors text-left",
+                      isCurrent
+                        ? "bg-success/8 text-fg"
+                        : "hover:bg-bg-subtle text-fg-muted",
+                    )}
+                  >
+                    <span className={cn("font-medium", isCurrent && "text-success")}>
+                      {t.minMonths}+ months
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-xs font-semibold px-1.5 py-0.5 rounded-full",
+                        isCurrent
+                          ? "bg-success/15 text-success"
+                          : isActive
+                            ? "bg-success/10 text-success"
+                            : "bg-bg-subtle text-fg-muted",
+                      )}>
+                        −{t.discountPercent}%
+                      </span>
+                      <span className={cn("font-semibold tabular-nums", isCurrent ? "text-fg" : "text-fg-muted")}>
+                        {formatThb(discountedRate)}/mo
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
         )}
       </div>
 
@@ -219,6 +261,7 @@ export function BookingWidget({
           isDisabled={(d) => {
             if (d < today) return true;
             if (isBefore(d, parseISO(availability.availableFrom))) return true;
+            if (isAfter(d, moveInDeadline)) return true;
             if (availability.availableUntil && isAfter(d, parseISO(availability.availableUntil))) return true;
             return false;
           }}
@@ -243,46 +286,32 @@ export function BookingWidget({
           }}
         />
 
-        {/* Discount tier hint */}
-        {!hasDiscount && listing.discountTiers?.length > 0 && (
-          <div className="flex gap-1 flex-wrap mt-1">
-            {listing.discountTiers.map((t) => (
-              <span
-                key={t.minMonths}
-                className={cn(
-                  "text-[11px] px-2 py-0.5 rounded-full border font-medium cursor-pointer transition-colors",
-                  duration >= t.minMonths
-                    ? "border-success/30 bg-success/10 text-success"
-                    : "border-border text-fg-muted hover:border-fg-subtle",
-                )}
-                onClick={() => setDuration(Math.min(t.minMonths, maxAllowed))}
-              >
-                {t.minMonths}+ mo = Save {t.discountPercent}%
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Move-out summary */}
-      <div className="bg-bg-subtle rounded-xl px-4 py-3 space-y-2 text-sm">
-        <div className="flex justify-between text-fg-muted">
-          <span>Move-out</span>
-          <span className="text-fg font-medium">{moveOutFormatted}</span>
+      {/* Summary — monthly framing, no scary total */}
+      <div className="bg-bg-subtle rounded-xl px-4 py-3 space-y-2.5 text-sm">
+        {/* Move-out */}
+        <div className="flex justify-between">
+          <span className="text-fg-muted">Move-out</span>
+          <span className="text-fg font-semibold">{moveOutFormatted}</span>
         </div>
-        <div className="flex justify-between text-fg-muted">
-          <span>{formatThb(monthRate)} × {duration} months</span>
-          <span className="text-fg font-semibold">{formatThb(total)}</span>
-        </div>
-        {hasDiscount && (
-          <div className="flex justify-between text-success text-xs font-medium">
-            <span>Discount ({tier!.discountPercent}%)</span>
-            <span>−{formatThb((baseRate - monthRate) * duration)}</span>
+        {/* Deposit */}
+        <div className="flex justify-between border-t border-border pt-2.5">
+          <div>
+            <span className="text-fg-muted">Refundable deposit</span>
+            <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
           </div>
-        )}
-        <div className="border-t border-border pt-2 flex justify-between font-semibold text-fg">
-          <span>Total for {duration} months</span>
-          <span>{formatThb(total)}</span>
+          <span className="text-fg font-semibold">{formatThb(monthRate)}</span>
+        </div>
+        {/* Due on move-in */}
+        <div className="flex justify-between border-t border-border pt-2.5">
+          <div>
+            <span className="text-fg-muted">Due on move-in</span>
+            <div className="text-[11px] text-fg-muted mt-0.5">
+              1st month{hasDiscount ? ` (−${tier!.discountPercent}%)` : ""} + deposit
+            </div>
+          </div>
+          <span className="text-fg font-semibold">{formatThb(monthRate * 2)}</span>
         </div>
       </div>
 

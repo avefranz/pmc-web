@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { FileText, Clock, CheckCircle, XCircle, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils/cn";
 import { useMyApplications } from "@/lib/hooks/use-booking-requests";
+import { clearUnseen } from "@/lib/hooks/use-notification-poller";
 import type { GuestApplicationDto, BookingRequestStatus } from "@/lib/api/booking-requests.api";
 
 const STATUS_CONFIG: Record<BookingRequestStatus, { icon: React.ElementType; color: string; bg: string; label: string }> = {
@@ -39,6 +41,9 @@ function ApplicationCard({ app }: { app: GuestApplicationDto }) {
 
 export function GuestApplicationsPage() {
   const { data: applications, isLoading } = useMyApplications();
+
+  // Clear unseen badge when page mounts
+  useEffect(() => { clearUnseen(); }, []);
 
   if (isLoading) {
     return (

@@ -5,6 +5,7 @@ import { SiamoLogo } from "./siamo-logo";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useMe } from "@/lib/hooks/use-auth";
 import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
+import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { useQueryClient } from "@tanstack/react-query";
 import { initials } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -498,10 +499,12 @@ function SearchPill() {
 function MarketplaceUserMenu() {
   const { token, clearAuth } = useAuthStore();
   const { data: me } = useMe();
+  const { data: caps } = useCapabilities();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const pendingRequests = caps?.stats.pendingRequestsCount ?? 0;
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -549,8 +552,13 @@ function MarketplaceUserMenu() {
               <button onClick={() => { navigate("/me"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 My account
               </button>
-              <button onClick={() => { navigate("/me/host/properties"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
-                Host dashboard
+              <button onClick={() => { navigate("/me/host/requests"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors flex items-center justify-between">
+                <span>Host dashboard</span>
+                {pendingRequests > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-brand text-white leading-none">
+                    {pendingRequests > 9 ? "9+" : pendingRequests}
+                  </span>
+                )}
               </button>
               <button onClick={() => { navigate("/me/profile"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
                 Account
@@ -577,6 +585,28 @@ function MarketplaceUserMenu() {
   );
 }
 
+// ─── Host switch button with pending badge ────────────────────────────────────
+
+function HostSwitchButton({ token }: { token: string | null }) {
+  const { data: caps } = useCapabilities();
+  const pendingRequests = caps?.stats.pendingRequestsCount ?? 0;
+
+  return (
+    <Link
+      to={token ? "/me/host" : "/login"}
+      className="relative hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
+    >
+      <Home size={14} />
+      {token ? "Switch to hosting" : "Siamo your home"}
+      {token && pendingRequests > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-bold bg-brand text-white flex items-center justify-center leading-none">
+          {pendingRequests > 9 ? "9+" : pendingRequests}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
 export function PublicShell() {
@@ -596,13 +626,7 @@ export function PublicShell() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 justify-end">
-            <Link
-              to={token ? "/me/host" : "/login"}
-              className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
-            >
-              <Home size={14} />
-              {token ? "Switch to hosting" : "Siamo your home"}
-            </Link>
+            <HostSwitchButton token={token} />
             <MarketplaceUserMenu />
           </div>
         </div>
