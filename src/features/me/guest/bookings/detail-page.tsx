@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation } from "@/lib/hooks/use-bookings";
+import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useBookingPayment, useConfirmTransfer } from "@/lib/hooks/use-bookings";
 import { useListing } from "@/lib/hooks/use-listings";
+import { GatewayOverlay } from "./gateway-overlay";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus, InvoiceStatus } from "@/lib/types/enums";
@@ -67,7 +68,7 @@ const CHECK_IN_METHOD_LABEL: Record<CheckInMethod, { label: string; Icon: React.
 
 export function GuestBookingDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+
   const { data: booking, isLoading } = useBooking(id!);
   const { data: invoices } = useBookingInvoices(id!);
   const { data: listing } = useListing(booking?.listingId);
@@ -76,6 +77,13 @@ export function GuestBookingDetailPage() {
   const requestCancellation = useRequestCancellation(id!);
   const { data: tm30Records } = useMyTm30();
   const tm30 = tm30Records?.find((r) => r.bookingId === id);
+  const { data: payment } = useBookingPayment(id!);
+  const confirmTransfer = useConfirmTransfer(id!);
+  const { refetch: refetchBooking } = useBooking(id!);
+  const pendingPayments = (payment?.payments ?? []).filter((p) => p.status === "Pending");
+  const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const [gatewayOpen, setGatewayOpen] = useState(false);
   const [showWifiPwd, setShowWifiPwd] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [exitNote, setExitNote] = useState("");
@@ -362,19 +370,72 @@ export function GuestBookingDetailPage() {
             );
           })()}
 
-          {/* Pay now — show when there are unpaid invoices AND booking is not yet active/confirmed */}
-          {unpaidInvoices.length > 0 && !isActive && !isConfirmed && (
-            <div className="bg-warning/10 border border-warning/20 rounded-2xl px-5 py-4">
-              <p className="text-sm font-semibold text-fg mb-0.5">Payment required</p>
-              <p className="text-xs text-fg-muted mb-3">
-                {unpaidInvoices.length} unpaid invoice{unpaidInvoices.length !== 1 ? "s" : ""} · complete payment to confirm your stay.
-              </p>
-              <Button
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-9 text-sm"
-                onClick={() => navigate(`/me/guest/bookings/${id}/payment`)}
-              >
-                <CreditCard size={14} className="mr-1.5" />Pay now
-              </Button>
+          {/* Payment status card — shown while booking is PendingPayment */}
+          {isPendingPayment && (
+            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-fg">Payment</h3>
+                {pendingPayments.length > 0 && (
+                  <span className="text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
+                    {formatThb(totalPending)} due
+                  </span>
+                )}
+              </div>
+
+              {/* Per-payment breakdown */}
+              {payment && (payment.payments ?? []).length > 0 ? (
+                <div className="divide-y divide-border">
+                  {(payment.payments ?? []).map((p) => {
+                    const isPaid = p.status === "LandlordConfirmed";
+                    const label = p.type === "Deposit" ? "Security deposit"
+                      : p.type === "FirstMonth" ? "First month's rent"
+                      : "Payment";
+                    return (
+                      <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                        <div>
+                          <p className="text-sm text-fg">{label}</p>
+                          <p className="text-xs text-fg-muted">{formatThb(p.amount)}</p>
+                        </div>
+                        {isPaid ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success/10 px-2.5 py-0.5 rounded-full">
+                            <Check size={10} strokeWidth={3} /> Paid
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full">Due</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Payment data not loaded yet — show skeleton rows */
+                <div className="divide-y divide-border">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="flex items-center justify-between px-5 py-3">
+                      <div className="space-y-1.5">
+                        <div className="h-3 w-32 bg-bg-subtle rounded animate-pulse" />
+                        <div className="h-2.5 w-16 bg-bg-subtle rounded animate-pulse" />
+                      </div>
+                      <div className="h-5 w-10 bg-bg-subtle rounded-full animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Pay button — only if there's something to pay */}
+              {pendingPayments.length > 0 && (
+                <div className="px-5 py-4 border-t border-border">
+                  <Button
+                    className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm font-semibold"
+                    onClick={() => setGatewayOpen(true)}
+                  >
+                    <CreditCard size={14} className="mr-1.5" />Pay {formatThb(totalPending)} now
+                  </Button>
+                  <p className="text-[11px] text-fg-muted text-center mt-2">
+                    Complete payment to activate your booking
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -437,13 +498,7 @@ export function GuestBookingDetailPage() {
                 <span className="font-bold text-fg">{formatThb(monthlyRate)}</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-              <Coins size={15} className="text-fg-muted shrink-0 opacity-0" />
-              <div className="flex-1 flex justify-between text-sm">
-                <span className="text-fg-muted">Total rent</span>
-                <span className="font-medium text-fg">{formatThb(booking.rentAmount ?? 0)}</span>
-              </div>
-            </div>
+
             {booking.depositAmount > 0 && (
               <div className="flex items-center gap-3 px-5 py-3.5">
                 <Timer size={15} className="text-fg-muted shrink-0 opacity-0" />
@@ -556,6 +611,23 @@ export function GuestBookingDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Payment gateway */}
+      {gatewayOpen && (
+        <GatewayOverlay
+          amount={totalPending || (payment?.totalDue ?? 0)}
+          promptPayId={payment?.promptPayId}
+          onSuccess={async () => {
+            for (const p of pendingPayments) {
+              await confirmTransfer.mutateAsync({ paymentId: p.id });
+            }
+            // Force-refetch booking so status updates immediately
+            await refetchBooking();
+            toast.success("Payment confirmed — your booking is now active!");
+          }}
+          onClose={() => setGatewayOpen(false)}
+        />
+      )}
     </div>
   );
 }

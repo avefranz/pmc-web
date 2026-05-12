@@ -23,7 +23,7 @@ import { MeDashboard } from "@/features/me/me-dashboard";
 import { GuestHome } from "@/features/me/guest/guest-home";
 import { GuestBookingsPage } from "@/features/me/guest/bookings/list-page";
 import { GuestBookingDetailPage } from "@/features/me/guest/bookings/detail-page";
-import { GuestPaymentPage } from "@/features/me/guest/bookings/payment-page";
+
 import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
 import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
 
@@ -110,7 +110,6 @@ export default function App() {
         <Route path="/me/guest" element={<GuestHome />} />
         <Route path="/me/guest/bookings" element={<GuestBookingsPage />} />
         <Route path="/me/guest/bookings/:id" element={<GuestBookingDetailPage />} />
-        <Route path="/me/guest/bookings/:id/payment" element={<GuestPaymentPage />} />
         <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
         <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />

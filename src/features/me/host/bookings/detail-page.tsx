@@ -25,18 +25,18 @@ import {
   useUpdatePassport,
   useUnlinkTenant,
   useBookingPayment,
-  useConfirmReceipt,
+
   useBookingCancellation,
   useConfirmCancellation,
 } from "@/lib/hooks/use-bookings";
 import { useGenerateInvite } from "@/lib/hooks/use-invites";
 import { buildInviteUrl } from "@/lib/api/invites.api";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
-import { usePayInvoice } from "@/lib/hooks/use-finance";
+
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { ticketKindIcon } from "@/lib/utils/ticket-status";
-import { PaymentMethod, InvoiceStatus, BookingStatus, Tm30Status, InviteType, VisaType } from "@/lib/types/enums";
+import { InvoiceStatus, BookingStatus, Tm30Status, InviteType, VisaType } from "@/lib/types/enums";
 import type { BookingGuestDto, UpsertPassportRequest } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
@@ -403,17 +403,13 @@ export function BookingDetailPage() {
   const { data: paymentData } = useBookingPayment(id!);
   const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
   const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
-  const confirmReceipt = useConfirmReceipt(id!);
+
   const confirmCancellation = useConfirmCancellation(id!);
   const addGuest = useAddGuest(id!);
-  const payInvoice = usePayInvoice();
 
   const [addGuestOpen, setAddGuestOpen] = useState(false);
   const [newGuest, setNewGuest] = useState<UpsertPassportRequest>({});
 
-  const [payOpen, setPayOpen] = useState<string | null>(null);
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState<PaymentMethod>(PaymentMethod.BankTransfer);
 
   const [contractUploading, setContractUploading] = useState(false);
   const [unlinkTenantOpen, setUnlinkTenantOpen] = useState(false);
@@ -435,17 +431,7 @@ export function BookingDetailPage() {
     }
   }
 
-  async function handlePay() {
-    if (!payOpen || !payAmount) return;
-    try {
-      await payInvoice.mutateAsync({ invoiceId: payOpen, data: { method: payMethod, amount: Number(payAmount) } });
-      toast.success("Payment registered");
-      setPayOpen(null);
-      setPayAmount("");
-    } catch {
-      toast.error("Failed to register payment");
-    }
-  }
+
 
   async function handleUploadContract(file: File) {
     setContractUploading(true);
@@ -731,9 +717,7 @@ export function BookingDetailPage() {
                       })}>
                         {inv.status}
                       </span>
-                      {(inv.status === InvoiceStatus.Pending || inv.status === InvoiceStatus.PartiallyPaid) && (
-                        <Button size="sm" variant="outline" onClick={() => { setPayOpen(inv.id); setPayAmount(String(inv.amount ?? "")); }}>Mark as paid</Button>
-                      )}
+                      {/* Mark as paid removed — payments confirmed automatically by gateway */}
                     </div>
                   </div>
                 );
@@ -789,46 +773,37 @@ export function BookingDetailPage() {
         </div>
       </div>
 
-      {/* ── Payment confirmation (PendingPayment) ── */}
+      {/* ── Payment status (read-only — confirmed automatically by payment gateway) ── */}
       {paymentData && booking.status === BookingStatus.PendingPayment && (
-        <div className="bg-warning/10 border border-warning/20 rounded-2xl p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-fg">Pending payments</h3>
+        <div className="bg-bg-card border border-border rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg">Payment status</h3>
+            <span className="text-[11px] text-fg-muted bg-bg-subtle px-2 py-0.5 rounded-full">Awaiting tenant</span>
+          </div>
           {(paymentData.payments ?? []).map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-fg">{p.type === "Deposit" ? "Security deposit" : p.type === "FirstMonth" ? "First month's rent" : "Early exit penalty"}</p>
+                <p className="text-sm text-fg">
+                  {p.type === "Deposit" ? "Security deposit" : p.type === "FirstMonth" ? "First month's rent" : "Early exit penalty"}
+                </p>
                 <p className="text-xs text-fg-muted">{formatThb(p.amount)}</p>
               </div>
-              <div className="flex items-center gap-2">
-                {p.status === "TenantConfirmed" && (
-                  <>
-                    <span className="text-xs bg-warning/10 text-warning font-medium px-2 py-0.5 rounded-full">Tenant confirmed</span>
-                    <Button
-                      size="sm"
-                      className="h-8 px-3 text-xs bg-success hover:bg-success/90 text-white rounded-lg"
-                      disabled={confirmReceipt.isPending}
-                      onClick={async () => {
-                        try {
-                          await confirmReceipt.mutateAsync(p.id);
-                          toast.success("Payment confirmed");
-                        } catch {
-                          toast.error("Failed to confirm");
-                        }
-                      }}
-                    >
-                      Confirm receipt
-                    </Button>
-                  </>
-                )}
+              <div>
                 {p.status === "LandlordConfirmed" && (
-                  <span className="text-xs bg-success/10 text-success font-medium px-2 py-0.5 rounded-full">Confirmed</span>
+                  <span className="text-xs bg-success/10 text-success font-medium px-2.5 py-0.5 rounded-full">✓ Confirmed</span>
+                )}
+                {p.status === "TenantConfirmed" && (
+                  <span className="text-xs bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 font-medium px-2.5 py-0.5 rounded-full">Processing</span>
                 )}
                 {p.status === "Pending" && (
-                  <span className="text-xs bg-bg-subtle text-fg-muted font-medium px-2 py-0.5 rounded-full">Awaiting tenant</span>
+                  <span className="text-xs bg-bg-subtle text-fg-muted font-medium px-2.5 py-0.5 rounded-full">Pending</span>
                 )}
               </div>
             </div>
           ))}
+          <p className="text-[11px] text-fg-muted pt-1 border-t border-border">
+            Payments are confirmed automatically by the payment gateway.
+          </p>
         </div>
       )}
 
@@ -921,33 +896,7 @@ export function BookingDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Pay invoice */}
-      <Dialog open={!!payOpen} onOpenChange={(v) => !v && setPayOpen(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Register payment</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Amount (THB)</Label>
-              <Input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} autoFocus />
-            </div>
-            <div className="space-y-1">
-              <Label>Method</Label>
-              <Select value={payMethod} onValueChange={(v) => setPayMethod(v as PaymentMethod)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.values(PaymentMethod).map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayOpen(null)}>Cancel</Button>
-            <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" onClick={handlePay} disabled={payInvoice.isPending || !payAmount}>
-              {payInvoice.isPending ? "Saving…" : "Confirm payment"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Pay invoice dialog removed — payments are gateway-only */}
     </div>
   );
 }

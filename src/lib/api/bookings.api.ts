@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, PaymentRecordDto, BookingCancellationDto } from "../types";
+import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, BookingCancellationDto } from "../types";
 import type { BookingStatus } from "../types/enums";
 
 export const bookingsApi = {
@@ -74,7 +74,7 @@ export const bookingsApi = {
 
   confirmTransfer: (bookingId: string, paymentId: string, note?: string) =>
     apiClient
-      .post<{ data: PaymentRecordDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/transfer`, { note })
+      .post<{ data: PaymentInstructionsDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/transfer`, { note })
       .then((r) => r.data.data),
 
   confirmReceipt: (bookingId: string, paymentId: string) =>

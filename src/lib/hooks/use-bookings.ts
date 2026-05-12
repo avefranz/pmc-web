@@ -146,7 +146,11 @@ export const useConfirmTransfer = (bookingId: string) => {
   return useMutation({
     mutationFn: ({ paymentId, note }: { paymentId: string; note?: string }) =>
       bookingsApi.confirmTransfer(bookingId, paymentId, note),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.payment(bookingId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.payment(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.my() });
+    },
   });
 };
 
