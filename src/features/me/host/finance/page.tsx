@@ -1,13 +1,9 @@
-import { useState } from "react";
-import { TrendingUp, TrendingDown, Upload } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
-import { useFinanceSummary, useFinanceOverview, useCreateRemittance, useConfirmRemittance } from "@/lib/hooks/use-finance";
+import { useFinanceSummary, useFinanceOverview } from "@/lib/hooks/use-finance";
 import { formatThb } from "@/lib/utils/format";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
 
 const CHART_COLORS = ["#E0945C", "#C97D44", "#7A4A2B", "#463B2D", "#A89B85", "#C9BEA8"];
@@ -42,40 +38,16 @@ function KpiCard({ label, value, loading, delta }: {
 export function FinancePage() {
   const { data: overview, isLoading: ovLoading } = useFinanceOverview();
   const { data: summary, isLoading: sumLoading } = useFinanceSummary();
-  const createRemittance = useCreateRemittance();
-  const confirmRemittance = useConfirmRemittance();
-
-  const [remittanceBatchId, setRemittanceBatchId] = useState<string | null>(null);
-  const [remittanceOpen, setRemittanceOpen] = useState(false);
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-
-  async function handleCreateRemittance() {
-    try {
-      const result = await createRemittance.mutateAsync(undefined);
-      setRemittanceBatchId(result.batchId);
-      setSlipFile(null);
-      setRemittanceOpen(true);
-    } catch {
-      toast.error("Failed to create payout");
-    }
-  }
-
-  async function handleConfirmRemittance() {
-    if (!remittanceBatchId || !slipFile) return;
-    try {
-      await confirmRemittance.mutateAsync({ batchId: remittanceBatchId, slip: slipFile });
-      toast.success("Payout confirmed");
-      setRemittanceOpen(false);
-      setRemittanceBatchId(null);
-      setSlipFile(null);
-    } catch {
-      toast.error("Failed to confirm payout");
-    }
-  }
-
-  const revenueChartData = (summary?.revenueByType ?? []).map((r) => ({
-    name: r.category, value: r.amount,
-  }));
+  // Deposit is held in trust — not earned income, exclude from all revenue views
+  const revenueByType = (summary?.revenueByType ?? []).filter(
+    (r) => r.category !== "Deposit",
+  );
+  const revenueChartData = revenueByType.map((r) => ({ name: r.category, value: r.amount }));
+  const depositTotal = (summary?.revenueByType ?? [])
+    .filter((r) => r.category === "Deposit")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const trueRevenue = (summary?.totalRevenue ?? 0) - depositTotal;
+  const trueNetProfit = (summary?.netProfit ?? 0) - depositTotal;
   const expenseChartData = (summary?.expensesByType ?? []).map((e, i) => ({
     name: e.category, value: e.amount,
     pct: summary?.totalExpenses ? (e.amount / summary.totalExpenses) * 100 : 0,
@@ -86,18 +58,7 @@ export function FinancePage() {
 
   return (
     <div>
-      <PageHeader
-        title="Finance"
-        actions={
-          <Button
-            variant="outline"
-            onClick={handleCreateRemittance}
-            disabled={createRemittance.isPending}
-          >
-            {createRemittance.isPending ? "Creating…" : "Pay landlord"}
-          </Button>
-        }
-      />
+      <PageHeader title="Finance" />
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -114,12 +75,12 @@ export function FinancePage() {
         />
         <KpiCard
           label="Total revenue"
-          value={formatThb(summary?.totalRevenue ?? 0)}
+          value={formatThb(trueRevenue)}
           loading={sumLoading}
         />
         <KpiCard
           label="Net profit"
-          value={formatThb(summary?.netProfit ?? 0)}
+          value={formatThb(trueNetProfit)}
           loading={sumLoading}
         />
       </div>
@@ -194,42 +155,6 @@ export function FinancePage() {
         </div>
       </div>
 
-      {/* Remittance dialog */}
-      <Dialog open={remittanceOpen} onOpenChange={(v) => !v && setRemittanceOpen(false)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm payout</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-fg-muted">
-            Batch <span className="font-mono text-xs text-fg">{remittanceBatchId}</span> created.
-            Upload a payment slip to complete the transfer.
-          </p>
-          <label className="flex items-center gap-2 cursor-pointer w-fit text-sm text-fg-muted hover:text-fg transition-colors border border-border rounded-lg px-3 py-2">
-            <Upload size={14} />{slipFile ? "Change slip" : "Upload slip"}
-            <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setSlipFile(file);
-              e.target.value = "";
-            }} />
-          </label>
-          {slipFile && (
-            <p className="text-xs text-success flex items-center gap-1">
-              ✓ {slipFile.name} ({(slipFile.size / 1024).toFixed(0)} KB) — ready to upload
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemittanceOpen(false)}>Cancel</Button>
-            <Button
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
-              onClick={handleConfirmRemittance}
-              disabled={!slipFile || confirmRemittance.isPending}
-            >
-              {confirmRemittance.isPending ? "Confirming…" : "Confirm transfer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

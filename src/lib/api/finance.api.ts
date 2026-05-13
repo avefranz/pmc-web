@@ -3,31 +3,13 @@ import type {
   InvoiceDto,
   FinanceSummaryDto,
   LandlordOverviewDto,
-  CashOnHandResponse,
   AssetAnalyticsDto,
   CreateInvoiceRequest,
-  RegisterPaymentRequest,
 } from "../types";
 
 export const financeApi = {
-  pay: (invoiceId: string, data: RegisterPaymentRequest) =>
-    apiClient
-      .post<{ message: string }>(`/api/finance/invoices/${invoiceId}/pay`, data)
-      .then((r) => r.data),
-
-  getCashOnHand: () =>
-    apiClient.get<CashOnHandResponse>("/api/finance/cash-on-hand").then((r) => r.data),
-
-  createRemittance: () =>
-    apiClient.post<{ batchId: string }>("/api/finance/remittance/create").then((r) => r.data),
-
-  confirmRemittance: (batchId: string, slip: File) => {
-    const form = new FormData();
-    form.append("slip", slip);
-    return apiClient
-      .post<{ message: string }>(`/api/finance/remittance/${batchId}/confirm`, form)
-      .then((r) => r.data);
-  },
+  markInvoicePaid: (invoiceId: string) =>
+    apiClient.patch<void>(`/api/finance/invoices/${invoiceId}/paid`),
 
   createCustomInvoice: (data: CreateInvoiceRequest) =>
     apiClient

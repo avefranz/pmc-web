@@ -341,7 +341,7 @@ export function HostRequestDetailPage() {
               <Coins size={14} className="text-fg-muted shrink-0" />
               <div className="flex-1 flex justify-between text-sm">
                 <span className="text-fg-muted">Monthly rate</span>
-                <span className="font-semibold text-fg">{formatThb(req.monthlyRate)}/mo</span>
+                <span className="font-semibold text-fg">{formatThb(req.monthlyRate)} per month</span>
               </div>
             </div>
             <div className="flex items-center gap-3 px-5 py-3.5">

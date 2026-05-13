@@ -27,17 +27,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AmenityToggleGrid } from "@/components/amenity-toggle-grid";
+import { Stepper } from "@/components/shared/stepper";
 import { useAsset, useAssetSummary, useDeleteAsset, useUpdateLocation, useUpdateAsset } from "@/lib/hooks/use-assets";
 import { useBookingsByAsset, useCreateBooking } from "@/lib/hooks/use-bookings";
 import { useTicketsByAsset, useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useUtilitiesByAsset, useCreateUtility, useDeleteUtility } from "@/lib/hooks/use-utilities";
-import { useListingsByAsset, useCreateNewVersion, useHotfixListing, usePublishListing } from "@/lib/hooks/use-listings";
-import { useAmenities, useAmenityCategories } from "@/lib/hooks/use-references";
+import { useListingsByAsset, useCreateNewVersion, useCreateListing, usePublishListing } from "@/lib/hooks/use-listings";
+import { useAmenities, useAmenityCategories, useReferences } from "@/lib/hooks/use-references";
 import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
 import { listingsApi } from "@/lib/api/listings.api";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
-import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind } from "@/lib/types/enums";
+import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind, BookingStatus } from "@/lib/types/enums";
 import type { AmenityDto, ListingMediaDto, BuildingType, FurnishedType } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 import { useQueryClient } from "@tanstack/react-query";
@@ -618,10 +619,37 @@ export function PropertyDetailPage() {
   const listing = draftListing ?? listings?.[0];
 
   const createNewVersion = useCreateNewVersion();
-  const hotfixListing = useHotfixListing(listing?.id ?? "");
+  const createListing = useCreateListing();
+  const { data: refs } = useReferences();
+
   const publishListing = usePublishListing(listing?.id ?? "");
 
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupMonthlyRate, setSetupMonthlyRate] = useState("");
+  const [setupDeposit, setSetupDeposit] = useState("");
+
+  async function handleCreateListing() {
+    const rate = Number(setupMonthlyRate.replace(/[^0-9]/g, ""));
+    if (!rate) return;
+    const firstCategory = refs?.propertyCategories?.[0]?.id ?? 1;
+    await createListing.mutateAsync({
+      assetId: id!,
+      title: asset?.internalName ?? "",
+      description: "",
+      houseRules: "",
+      wifiName: "",
+      wifiPassword: "",
+      propertyCategoryId: firstCategory,
+      instantBookEnabled: false,
+      basePrice: rate,
+      baseMonthlyRate: rate,
+      depositAmount: setupDeposit ? Number(setupDeposit.replace(/[^0-9]/g, "")) : undefined,
+    });
+    setSetupOpen(false);
+  }
+
   const [publishOpen, setPublishOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [publishStartDate, setPublishStartDate] = useState("");
   const [publishEndDate, setPublishEndDate] = useState("");
   const [publishDurationMonths, setPublishDurationMonths] = useState("");
@@ -653,9 +681,9 @@ export function PropertyDetailPage() {
     !!listing.checkInMethod,
     true, // Utilities — "none included" is a valid explicit choice
     !!(listing.houseRules || listing.wifiName),
-    listing.petsAllowed !== undefined && listing.petsAllowed !== null,
+    isSectionSaved("pets"),
     listing.cancellationNoticeDays != null,
-    !!(listing.hasSmokeDetector || listing.hasCODetector || listing.hasFireExtinguisher || listing.hasFirstAidKit),
+    isSectionSaved("safety"),
     !!(listing.transportInfo || listing.nearbyPlaces),
   ].filter(Boolean).length : 0;
   const totalListingSections = 9;
@@ -666,24 +694,15 @@ export function PropertyDetailPage() {
   async function handlePublish() {
     if (!listing) return;
     if (!canPublish) return;
+    if (isPublishing) return;
+    setIsPublishing(true);
     try {
       await listingsApi.update(listing.id, { startDate: publishStartDate, endDate: computedEndDate });
       await publishListing.mutateAsync();
       toast.success("Listing published");
       setPublishOpen(false);
     } catch { toast.error("Failed to publish ad"); }
-  }
-
-  const [hotfixOpen, setHotfixOpen] = useState(false);
-  const [hotfixReason, setHotfixReason] = useState("");
-
-  async function handleHotfix() {
-    if (!listing || !hotfixReason.trim()) return;
-    try {
-      await hotfixListing.mutateAsync({ reason: hotfixReason });
-      toast.success("Fix applied");
-      setHotfixOpen(false);
-    } catch { toast.error("Failed to apply fix"); }
+    finally { setIsPublishing(false); }
   }
 
   const createUtility = useCreateUtility();
@@ -731,6 +750,7 @@ export function PropertyDetailPage() {
   const [editHasFireExtinguisher, setEditHasFireExtinguisher] = useState(false);
   const [editHasFirstAid, setEditHasFirstAid] = useState(false);
   const [editHasSecurityCamera, setEditHasSecurityCamera] = useState(false);
+  const [editNoneOfAbove, setEditNoneOfAbove] = useState(false);
   const [editTransportInfo, setEditTransportInfo] = useState("");      // free text
   const [editTransportChips, setEditTransportChips] = useState<string[]>([]);
   const [editNearbyPlaces, setEditNearbyPlaces] = useState("");         // free text
@@ -851,23 +871,23 @@ export function PropertyDetailPage() {
   // Property specs dialog
   const updateAsset = useUpdateAsset(id!);
   const [specsOpen, setSpecsOpen] = useState(false);
-  const [specsFloor, setSpecsFloor] = useState<string>("");
-  const [specsTotalFloors, setSpecsTotalFloors] = useState<string>("");
+  const [specsFloor, setSpecsFloor] = useState<number>(1);
+  const [specsTotalFloors, setSpecsTotalFloors] = useState<number>(1);
   const [specsArea, setSpecsArea] = useState<string>("");
   const [specsBuildingType, setSpecsBuildingType] = useState<BuildingType | "">("");
   const [specsFurnished, setSpecsFurnished] = useState<FurnishedType | "">("");
-  const [specsParkingSpaces, setSpecsParkingSpaces] = useState<string>("");
+  const [specsParkingSpaces, setSpecsParkingSpaces] = useState<number>(0);
   const [specsParkingIncluded, setSpecsParkingIncluded] = useState(false);
   const [specsMinLease, setSpecsMinLease] = useState<string>("");
 
   function openSpecsDialog() {
     if (!asset) return;
-    setSpecsFloor(asset.floor != null ? String(asset.floor) : "");
-    setSpecsTotalFloors(asset.totalFloors != null ? String(asset.totalFloors) : "");
+    setSpecsFloor(asset.floor ?? 1);
+    setSpecsTotalFloors(asset.totalFloors ?? 1);
     setSpecsArea(asset.areaSqm != null ? String(asset.areaSqm) : "");
     setSpecsBuildingType(asset.buildingType ?? "");
     setSpecsFurnished(asset.furnished ?? "");
-    setSpecsParkingSpaces(asset.parkingSpaces != null ? String(asset.parkingSpaces) : "");
+    setSpecsParkingSpaces(asset.parkingSpaces ?? 0);
     setSpecsParkingIncluded(asset.parkingIncluded ?? false);
     setSpecsMinLease(asset.minLeaseMonths != null ? String(asset.minLeaseMonths) : "");
     setSpecsOpen(true);
@@ -877,12 +897,12 @@ export function PropertyDetailPage() {
     try {
       await updateAsset.mutateAsync({
         // For landed property (house/villa), "floor" field is not applicable
-        floor: (specsBuildingType === "Landed" || specsFloor === "") ? null : Number(specsFloor),
-        totalFloors: specsTotalFloors !== "" ? Number(specsTotalFloors) : null,
+        floor: specsBuildingType === "Landed" ? null : specsFloor,
+        totalFloors: specsTotalFloors,
         areaSqm: specsArea !== "" ? Number(specsArea) : null,
         buildingType: (specsBuildingType as BuildingType) || null,
         furnished: (specsFurnished as FurnishedType) || null,
-        parkingSpaces: specsParkingSpaces !== "" ? Number(specsParkingSpaces) : 0,
+        parkingSpaces: specsParkingSpaces,
         parkingIncluded: specsParkingIncluded,
         minLeaseMonths: specsMinLease !== "" ? Number(specsMinLease) : null,
       });
@@ -1091,7 +1111,7 @@ export function PropertyDetailPage() {
       },
       {
         id: "pets",
-        done: listing.petsAllowed !== undefined && listing.petsAllowed !== null,
+        done: isSectionSaved("pets"),
         open: () => { setEditPetsAllowed(listing.petsAllowed ?? false); setEditPetDeposit(listing.petDeposit ?? 0); setPetsOpen(true); },
       },
       {
@@ -1101,8 +1121,18 @@ export function PropertyDetailPage() {
       },
       {
         id: "safety",
-        done: !!(listing.hasSmokeDetector || listing.hasCODetector || listing.hasFireExtinguisher || listing.hasFirstAidKit),
-        open: () => { setSafetyOpen(true); },
+        done: isSectionSaved("safety"),
+        open: () => {
+          setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
+          setEditHasCODetector(listing.hasCODetector ?? false);
+          setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
+          setEditHasFirstAid(listing.hasFirstAidKit ?? false);
+          setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
+          // Only pre-check "none" if this section was previously saved with all-false values
+          const wasSaved = isSectionSaved("safety");
+          setEditNoneOfAbove(wasSaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
+          setSafetyOpen(true);
+        },
       },
       {
         id: "transport",
@@ -1127,8 +1157,20 @@ export function PropertyDetailPage() {
     if (next) setTimeout(() => next.open(), 120); // small delay so previous dialog can close
   }
 
+  /** Mark a listing section as explicitly saved by the user (localStorage). */
+  function markSectionSaved(sectionId: string) {
+    if (!listing) return;
+    try { localStorage.setItem(`listing-${listing.id}-${sectionId}-saved`, "1"); } catch { /* ignore */ }
+  }
+  /** Check if a section was explicitly saved by the user. */
+  function isSectionSaved(sectionId: string): boolean {
+    if (!listing) return false;
+    try { return localStorage.getItem(`listing-${listing.id}-${sectionId}-saved`) === "1"; } catch { return false; }
+  }
+
   /** Close dialog and advance to next incomplete listing section. */
   function saveAndNext(patch: Record<string, unknown>, closeFn: () => void, currentSectionId: string) {
+    markSectionSaved(currentSectionId);
     void saveListingSection(patch, () => { closeFn(); openNextListingSection(currentSectionId); });
   }
 
@@ -1156,6 +1198,9 @@ export function PropertyDetailPage() {
   const activeBooking = bookings?.find((b) => b.status === "Active");
   const openTickets = tickets?.filter((t) => !["Closed", "Cancelled"].includes(t.status)) ?? [];
   const coverPhoto = listing?.media?.[0]?.url ?? asset.primaryImageUrl;
+  const hasActiveBookings = bookings?.some((b) =>
+    [BookingStatus.Active, BookingStatus.Confirmed, BookingStatus.PendingPayment].includes(b.status as BookingStatus),
+  ) ?? false;
 
   // ── Nav sections
   const NAV: { id: Section; icon: React.ElementType; label: string; badge?: number }[] = [
@@ -1239,22 +1284,12 @@ export function PropertyDetailPage() {
 
               {listing && (
                 <div className="mt-3 pt-3 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <span className={cn(
-                      "text-[11px] font-semibold px-2 py-0.5 rounded-full",
-                      listing.status === ListingStatus.Active ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
-                    )}>
-                      {listing.status === ListingStatus.Active ? "Published" : "Draft"}
-                    </span>
-                    {listing.status === ListingStatus.Draft && readyToPublish && (
-                      <button
-                        onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
-                        className="text-[11px] font-semibold text-brand hover:underline cursor-pointer transition-colors"
-                      >
-                        Publish →
-                      </button>
-                    )}
-                  </div>
+                  <span className={cn(
+                    "inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full",
+                    listing.status === ListingStatus.Active ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
+                  )}>
+                    {listing.status === ListingStatus.Active ? "Published" : "Draft"}
+                  </span>
                 </div>
               )}
             </div>
@@ -1291,7 +1326,8 @@ export function PropertyDetailPage() {
           {section === "overview" && (() => {
             const hasAddress = !!(asset.exactLatitude && asset.exactLongitude && asset.cityId && asset.cityId > 0);
             const hasBasics  = !!(listing?.title && listing?.baseMonthlyRate);
-            const hasPhotos  = (listing?.media?.length ?? 0) > 0;
+            const photoCount = listing?.media?.length ?? 0;
+            const hasPhotos  = photoCount >= 3; // require at least 3 photos to consider this step done
             // Mirror listingSectionsDone so checklist and listing panel always agree
             const detailsDoneCount = listingSectionsDone;
             const detailsTotal = totalListingSections; // 9
@@ -1325,6 +1361,15 @@ export function PropertyDetailPage() {
                 action: null,
               },
               {
+                id: "basics",
+                label: "Add title & price",
+                desc: hasBasics
+                  ? `฿${listing!.baseMonthlyRate!.toLocaleString()} / month · ${listing!.title}`
+                  : "Your listing headline and monthly rent",
+                done: hasBasics,
+                action: () => navigateSection("listing"),
+              },
+              {
                 id: "specs",
                 label: "Property specs",
                 desc: specsDesc,
@@ -1339,20 +1384,13 @@ export function PropertyDetailPage() {
                 action: () => openLocationDialog(),
               },
               {
-                id: "basics",
-                label: "Add title & price",
-                desc: hasBasics
-                  ? `฿${listing!.baseMonthlyRate!.toLocaleString()} / month · ${listing!.title}`
-                  : "Your listing headline and monthly rent",
-                done: hasBasics,
-                action: () => navigateSection("listing"),
-              },
-              {
                 id: "photos",
                 label: "Add photos",
                 desc: hasPhotos
-                  ? `${listing!.media.length} photo${listing!.media.length !== 1 ? "s" : ""} added`
-                  : "Great photos get 3× more inquiries — aim for 5+",
+                  ? `${photoCount} photo${photoCount !== 1 ? "s" : ""} added ✓`
+                  : photoCount > 0
+                    ? `${photoCount} added — need at least 3 to continue`
+                    : "Great photos get 3× more inquiries — aim for 5+",
                 done: hasPhotos,
                 action: () => navigateSection("photos"),
               },
@@ -1376,20 +1414,26 @@ export function PropertyDetailPage() {
               },
             ];
 
+            // Separate the publish step so it can be shown as a hero CTA
+            const publishStep = setupSteps.find((s) => s.id === "publish")!;
+            const contentSteps = setupSteps.filter((s) => s.id !== "publish");
+
             const doneCount = setupSteps.filter((s) => s.done).length;
-            const nextStep = setupSteps.find((s) => !s.done);
+            const contentDoneCount = contentSteps.filter((s) => s.done).length;
+            const allContentDone = contentDoneCount === contentSteps.length;
+            const nextStep = contentSteps.find((s) => !s.done);
             const allDone = doneCount === setupSteps.length;
 
-            const pct = Math.round((doneCount / setupSteps.length) * 100);
-            const remaining = setupSteps.length - doneCount;
+            const pct = Math.round((contentDoneCount / contentSteps.length) * 100);
+            const remaining = contentSteps.length - contentDoneCount;
             const motivationalCopy = allDone
               ? { headline: "You're live! 🎉", sub: "Sit back and wait for your first reservation request." }
+              : allContentDone
+              ? { headline: "Everything's ready 🎉", sub: "Your listing is complete — hit Publish to go live." }
               : doneCount <= 1
               ? { headline: "Let's get this ready.", sub: `${remaining} steps stand between you and your first tenant.` }
-              : doneCount === setupSteps.length - 1
-              ? { headline: "Almost there. One step left.", sub: "You're this close to your first reservation request." }
-              : doneCount >= setupSteps.length - 2
-              ? { headline: "Great progress!", sub: `Just ${remaining} more steps until you go live.` }
+              : doneCount >= contentSteps.length - 1
+              ? { headline: "Great progress!", sub: `Just ${remaining} more step${remaining !== 1 ? "s" : ""} until you can publish.` }
               : { headline: "Keep it up.", sub: `${remaining} more steps until launch.` };
 
             return (
@@ -1414,52 +1458,83 @@ export function PropertyDetailPage() {
                     `}</style>
 
                     {/* ── Header card ── */}
-                    <div className="rounded-2xl overflow-hidden mb-5" style={{ background: "linear-gradient(160deg,#0f172a 0%,#1e293b 100%)" }}>
-                      {/* Subtle brand accent — single radial glow, no particles */}
-                      <div style={{ position:"absolute", left:0, right:0, top:0, height:120, background:"radial-gradient(ellipse at 20% 0%,rgba(99,102,241,.18) 0%,transparent 70%)", pointerEvents:"none" }} />
-                      <div className="relative px-6 pt-6 pb-5">
-                        <div className="flex items-center justify-between gap-4 mb-5">
+                    {allContentDone ? (
+                      /* ── All steps done → big launch CTA ── */
+                      <div className="rounded-2xl overflow-hidden mb-5 relative" style={{ background: "linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#9333ea 100%)" }}>
+                        <div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at 80% 20%,rgba(255,255,255,.15) 0%,transparent 60%)", pointerEvents:"none" }} />
+                        <div className="relative px-6 py-6 flex items-center justify-between gap-6">
                           <div>
-                            <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color:"rgba(255,255,255,.35)" }}>
+                            <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color:"rgba(255,255,255,.5)" }}>
                               Setup checklist
                             </p>
-                            <h2 className="text-lg font-bold text-white leading-snug">
-                              {motivationalCopy.headline}
+                            <h2 className="text-xl font-extrabold text-white leading-snug">
+                              {allDone ? "You're live! 🎉" : "Everything's ready! 🎉"}
                             </h2>
-                            <p className="text-sm mt-1" style={{ color:"rgba(255,255,255,.45)" }}>
-                              {motivationalCopy.sub}
+                            <p className="text-sm mt-1" style={{ color:"rgba(255,255,255,.7)" }}>
+                              {allDone
+                                ? "Sit back and wait for your first reservation request."
+                                : "All steps complete — publish your listing to start receiving enquiries."}
                             </p>
                           </div>
-                          {/* Percentage — clean, typographic */}
-                          <div className="shrink-0 text-right">
-                            <span className="text-4xl font-black leading-none" style={{
-                              background:"linear-gradient(135deg,#fff 40%,rgba(255,255,255,.5))",
-                              WebkitBackgroundClip:"text",
-                              WebkitTextFillColor:"transparent",
-                            }}>{pct}</span>
-                            <span className="text-lg font-bold text-white/50 ml-0.5">%</span>
-                            <p className="text-[10px] font-semibold mt-0.5" style={{ color:"rgba(255,255,255,.3)" }}>
-                              {doneCount} of {setupSteps.length}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Progress bar — clean single color, no rainbow */}
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,.1)" }}>
-                          <div
-                            className="h-full rounded-full transition-all duration-700"
-                            style={{
-                              width:`${pct}%`,
-                              background:"linear-gradient(90deg,#6366f1,#818cf8)",
-                            }}
-                          />
+                          {!allDone && (
+                            <button
+                              onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
+                              className="shrink-0 flex items-center gap-2 px-6 py-3 rounded-2xl font-extrabold text-base transition-all active:scale-95 hover:opacity-90"
+                              style={{ background:"rgba(255,255,255,.15)", backdropFilter:"blur(8px)", border:"1.5px solid rgba(255,255,255,.3)", color:"#fff" }}
+                            >
+                              🚀 Publish now
+                            </button>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="rounded-2xl overflow-hidden mb-5" style={{ background: "linear-gradient(160deg,#0f172a 0%,#1e293b 100%)" }}>
+                        {/* Subtle brand accent — single radial glow, no particles */}
+                        <div style={{ position:"absolute", left:0, right:0, top:0, height:120, background:"radial-gradient(ellipse at 20% 0%,rgba(99,102,241,.18) 0%,transparent 70%)", pointerEvents:"none" }} />
+                        <div className="relative px-6 pt-6 pb-5">
+                          <div className="flex items-center justify-between gap-4 mb-5">
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color:"rgba(255,255,255,.35)" }}>
+                                Setup checklist
+                              </p>
+                              <h2 className="text-lg font-bold text-white leading-snug">
+                                {motivationalCopy.headline}
+                              </h2>
+                              <p className="text-sm mt-1" style={{ color:"rgba(255,255,255,.45)" }}>
+                                {motivationalCopy.sub}
+                              </p>
+                            </div>
+                            {/* Percentage — clean, typographic */}
+                            <div className="shrink-0 text-right">
+                              <span className="text-4xl font-black leading-none" style={{
+                                background:"linear-gradient(135deg,#fff 40%,rgba(255,255,255,.5))",
+                                WebkitBackgroundClip:"text",
+                                WebkitTextFillColor:"transparent",
+                              }}>{pct}</span>
+                              <span className="text-lg font-bold text-white/50 ml-0.5">%</span>
+                              <p className="text-[10px] font-semibold mt-0.5" style={{ color:"rgba(255,255,255,.3)" }}>
+                                {contentDoneCount} of {contentSteps.length}
+                              </p>
+                            </div>
+                          </div>
 
-                    {/* ── Steps ── */}
+                          {/* Progress bar — clean single color, no rainbow */}
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,.1)" }}>
+                            <div
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{
+                                width:`${pct}%`,
+                                background:"linear-gradient(90deg,#6366f1,#818cf8)",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Steps (publish step excluded — shown as hero CTA above) ── */}
                     <div className="space-y-2">
-                      {setupSteps.map((step, i) => {
+                      {contentSteps.map((step, i) => {
                         const isNext = step.id === nextStep?.id;
                         return (
                           <div
@@ -1674,7 +1749,7 @@ export function PropertyDetailPage() {
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { icon: LayoutGrid, label: "Manage photos", onClick: () => navigateSection("photos") },
-                    { icon: FileText,   label: "Edit listing",  onClick: () => navigateSection("listing") },
+                    { icon: FileText,   label: "Edit details",  onClick: () => navigateSection("listing") },
                   ].map((a) => (
                     <button
                       key={a.label}
@@ -1791,6 +1866,44 @@ export function PropertyDetailPage() {
               {listing
                 ? <PhotoGallery listingId={listing.id} media={listing.media ?? []} />
                 : <p className="text-sm text-fg-muted">Create a listing first to add photos.</p>}
+
+              {/* CTA — appears once ≥ 3 photos uploaded */}
+              {(listing?.media?.length ?? 0) >= 3 && (
+                <div className="mt-6 bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-fg">
+                      {readyToPublish
+                        ? "Everything's ready — time to go live! 🎉"
+                        : (listing?.media?.length ?? 0) >= 5
+                          ? "Great selection of photos 🎉"
+                          : "Looking good — keep going for best results"}
+                    </p>
+                    <p className="text-xs text-fg-muted mt-0.5">
+                      {readyToPublish
+                        ? "Your listing is complete. Publish it to start receiving enquiries."
+                        : (listing?.media?.length ?? 0) >= 5
+                          ? "Time to fill in your property details."
+                          : `${listing?.media?.length} photos added · 5+ recommended for more enquiries.`}
+                    </p>
+                  </div>
+                  {readyToPublish ? (
+                    <Button
+                      className="shrink-0 text-white rounded-xl"
+                      style={{ background: "linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a78bfa 100%)" }}
+                      onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
+                    >
+                      🚀 Publish →
+                    </Button>
+                  ) : (
+                    <Button
+                      className="shrink-0 bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl"
+                      onClick={() => navigateSection("listing", true)}
+                    >
+                      Next: Details →
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1799,9 +1912,12 @@ export function PropertyDetailPage() {
             <div className="space-y-5">
               {!listing ? (
                 <div className="text-center py-12">
-                  <p className="text-fg-muted mb-4">No listing created yet.</p>
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" onClick={() => createNewVersion.mutate(id!)}>
-                    Create listing
+                  <p className="text-fg-muted mb-4">Property details not set up yet.</p>
+                  <Button
+                    className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                    onClick={() => setSetupOpen(true)}
+                  >
+                    Set up property
                   </Button>
                 </div>
               ) : (() => {
@@ -1811,46 +1927,57 @@ export function PropertyDetailPage() {
 
                 return (
                   <div className="space-y-4">
-                    {/* Header row: title + completion + publish/status */}
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h2 className="text-base font-semibold text-fg">Listing details</h2>
-                        <p className="text-sm text-fg-muted mt-0.5">
-                          {sectionsDone === totalSections
-                            ? "All sections complete"
-                            : `${sectionsDone} of ${totalSections} sections complete`}
-                        </p>
+                    {/* Header: congratulatory banner when ready, plain header otherwise */}
+                    {listing.status === ListingStatus.Draft && readyToPublish ? (
+                      <div className="rounded-2xl px-5 py-4 flex items-center justify-between gap-4"
+                        style={{ background: "linear-gradient(135deg,rgba(99,102,241,.08) 0%,rgba(139,92,246,.12) 100%)", border: "1px solid rgba(139,92,246,.2)" }}
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-fg">Everything's ready — time to go live! 🎉</p>
+                          <p className="text-xs text-fg-muted mt-0.5">All sections complete. Publish to start receiving enquiries.</p>
+                        </div>
+                        <Button
+                          className="shrink-0 text-white font-bold px-5"
+                          style={{ background: "linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a78bfa 100%)" }}
+                          onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
+                        >
+                          🚀 Publish →
+                        </Button>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {listing.status === ListingStatus.Draft ? (
-                          readyToPublish ? (
-                            <Button
-                              size="sm"
-                              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
-                              onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
-                            >
-                              Publish
-                            </Button>
-                          ) : null
-                        ) : (
-                          <>
-                            <span className="text-xs font-semibold text-success">✓ Live</span>
-                            <Button variant="outline" size="sm" onClick={() => setHotfixOpen(true)}>Quick fix</Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h2 className="text-base font-semibold text-fg">Property details</h2>
+                            <p className="text-sm text-fg-muted mt-0.5">
+                              {listing.status === ListingStatus.Active
+                                ? "Your listing is live"
+                                : `${sectionsDone} of ${totalSections} sections complete`}
+                            </p>
+                          </div>
+                          {listing.status === ListingStatus.Active && (
+                            <span className="text-xs font-semibold text-success shrink-0">✓ Live</span>
+                          )}
+                        </div>
+                        {/* Progress bar */}
+                        <div className="h-1.5 bg-bg-subtle rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${pct}%`,
+                              background: pct === 100 ? "var(--color-success)" : "var(--color-primary)",
+                            }}
+                          />
+                        </div>
+                      </>
+                    )}
 
-                    {/* Progress bar */}
-                    <div className="h-1.5 bg-bg-subtle rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${pct}%`,
-                          background: pct === 100 ? "var(--color-success)" : "var(--color-primary)",
-                        }}
-                      />
-                    </div>
+                    {/* Active booking note */}
+                    {hasActiveBookings && (
+                      <p className="text-xs text-fg-muted bg-bg-subtle rounded-xl px-3 py-2">
+                        ⚡ Booking in progress — price &amp; availability changes apply to new bookings only.
+                      </p>
+                    )}
 
                     {/* Section cards */}
                     <div className="space-y-2">
@@ -1976,7 +2103,7 @@ export function PropertyDetailPage() {
                       {/* 6. Pets */}
                       <ListingSectionCard
                         title="Pets"
-                        done={listing.petsAllowed !== undefined}
+                        done={isSectionSaved("pets")}
                         onEdit={() => {
                           setEditPetsAllowed(listing.petsAllowed ?? false);
                           setEditPetDeposit(listing.petDeposit ?? 0);
@@ -2017,20 +2144,24 @@ export function PropertyDetailPage() {
                         return (
                           <ListingSectionCard
                             title="Safety features"
-                            done={safety.length > 0}
+                            done={isSectionSaved("safety")}
                             onEdit={() => {
                               setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
                               setEditHasCODetector(listing.hasCODetector ?? false);
                               setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
                               setEditHasFirstAid(listing.hasFirstAidKit ?? false);
                               setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
+                              const wasSaved = isSectionSaved("safety");
+                              setEditNoneOfAbove(wasSaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
                               setSafetyOpen(true);
                             }}
                           >
                             <div className="flex flex-wrap gap-1.5">
-                              {safety.map((s) => (
+                              {safety.length > 0 ? safety.map((s) => (
                                 <span key={s} className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full border border-success/20">{s}</span>
-                              ))}
+                              )) : isSectionSaved("safety") ? (
+                                <span className="text-sm text-fg-muted">None</span>
+                              ) : null}
                             </div>
                           </ListingSectionCard>
                         );
@@ -2124,6 +2255,47 @@ export function PropertyDetailPage() {
         </div>
       </div>
 
+      {/* ── Setup listing dialog (when no listing exists yet) ── */}
+      <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set monthly rate</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-fg-muted">Enter the rental price to activate this property.</p>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-fg">Monthly rent (฿) <span className="text-danger">*</span></Label>
+              <Input
+                inputMode="numeric"
+                placeholder="35,000"
+                value={setupMonthlyRate}
+                onChange={(e) => setSetupMonthlyRate(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-fg">Security deposit (฿)</Label>
+              <Input
+                inputMode="numeric"
+                placeholder="70,000"
+                value={setupDeposit}
+                onChange={(e) => setSetupDeposit(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSetupOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              disabled={!Number(setupMonthlyRate.replace(/[^0-9]/g, "")) || createListing.isPending}
+              onClick={handleCreateListing}
+            >
+              {createListing.isPending ? "Setting up…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Dialogs (unchanged) ── */}
 
       {/* Location dialog */}
@@ -2165,54 +2337,39 @@ export function PropertyDetailPage() {
             {/* 2. Size */}
             <div className="space-y-2">
               <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Size</Label>
-              <div className={cn("grid gap-3", specsBuildingType === "Landed" ? "grid-cols-2" : "grid-cols-3")}>
-                <div className="space-y-1">
-                  <Label className="text-xs">Area (m²)</Label>
-                  <Input type="number" placeholder="45" value={specsArea} onChange={(e) => setSpecsArea(e.target.value)} />
-                </div>
-                {/* Apartment: floor of unit + total floors in building */}
-                {specsBuildingType !== "Landed" && (
-                  <>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Unit floor</Label>
-                      <Input type="number" placeholder="8" value={specsFloor} onChange={(e) => setSpecsFloor(e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Floors in building</Label>
-                      <Input type="number" placeholder="25" value={specsTotalFloors} onChange={(e) => setSpecsTotalFloors(e.target.value)} />
-                    </div>
-                  </>
-                )}
-                {/* House/Villa: floors in the house itself */}
-                {specsBuildingType === "Landed" && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Floors in house</Label>
-                    <Input type="number" placeholder="2" value={specsTotalFloors} onChange={(e) => setSpecsTotalFloors(e.target.value)} />
-                  </div>
-                )}
+              <div className="space-y-1">
+                <Label className="text-xs text-fg-muted">Area (m²)</Label>
+                <Input type="number" placeholder="45" value={specsArea} onChange={(e) => setSpecsArea(e.target.value)} />
               </div>
+              {specsBuildingType !== "Landed" && (
+                <div className="space-y-2 pt-1">
+                  <Stepper label="Unit floor"        value={specsFloor}       onChange={setSpecsFloor}       min={1} max={200} allowDirectInput />
+                  <Stepper label="Floors in building" value={specsTotalFloors} onChange={setSpecsTotalFloors} min={1} max={200} allowDirectInput />
+                </div>
+              )}
+              {specsBuildingType === "Landed" && (
+                <Stepper label="Floors in house" value={specsTotalFloors} onChange={setSpecsTotalFloors} min={1} max={10} />
+              )}
             </div>
 
-            {/* 3. Furnishing + Parking + Min stay in one row group */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Furnished</Label>
-                <Select value={specsFurnished} onValueChange={(v) => setSpecsFurnished(v as FurnishedType | "")}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Fully">Fully furnished</SelectItem>
-                    <SelectItem value="Semi">Semi-furnished</SelectItem>
-                    <SelectItem value="Unfurnished">Unfurnished</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* 3. Furnishing */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Furnishing</Label>
+              <Select value={specsFurnished} onValueChange={(v) => setSpecsFurnished(v as FurnishedType | "")}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Fully">Fully furnished</SelectItem>
+                  <SelectItem value="Semi">Semi-furnished</SelectItem>
+                  <SelectItem value="Unfurnished">Unfurnished</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3 items-end">
-              <div className="space-y-1">
-                <Label className="text-xs">Parking spaces</Label>
-                <Input type="number" min={0} placeholder="0" value={specsParkingSpaces} onChange={(e) => setSpecsParkingSpaces(e.target.value)} />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer pb-2">
+
+            {/* 4. Parking */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Parking</Label>
+              <Stepper label="Parking spaces" value={specsParkingSpaces} onChange={setSpecsParkingSpaces} min={0} max={20} />
+              <label className="flex items-center gap-2.5 cursor-pointer px-1">
                 <input type="checkbox" className="h-4 w-4 rounded border-border" checked={specsParkingIncluded} onChange={(e) => setSpecsParkingIncluded(e.target.checked)} />
                 <span className="text-sm text-fg">Included in rent</span>
               </label>
@@ -2775,14 +2932,41 @@ export function PropertyDetailPage() {
                     <p className="text-sm font-medium text-fg">{label}</p>
                     <p className="text-xs text-fg-muted">{sub}</p>
                   </div>
-                  <input type="checkbox" className="h-4 w-4 rounded border-border shrink-0" checked={val} onChange={(e) => set(e.target.checked)} />
+                  <input type="checkbox" className="h-4 w-4 rounded border-border shrink-0" checked={val} onChange={(e) => { set(e.target.checked); if (e.target.checked) setEditNoneOfAbove(false); }} />
                 </label>
               ))}
+
+              {/* None option — clears all */}
+              <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl border border-border hover:bg-bg-subtle transition-colors gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">None of the above</p>
+                  <p className="text-xs text-fg-muted">Property has none of these safety features</p>
+                </div>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border shrink-0"
+                  checked={editNoneOfAbove}
+                  onChange={(e) => {
+                    setEditNoneOfAbove(e.target.checked);
+                    if (e.target.checked) {
+                      setEditHasSmokeDetector(false);
+                      setEditHasCODetector(false);
+                      setEditHasFireExtinguisher(false);
+                      setEditHasFirstAid(false);
+                      setEditHasSecurityCamera(false);
+                    }
+                  }}
+                />
+              </label>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSafetyOpen(false)}>Cancel</Button>
-            <Button disabled={saving} onClick={() => saveAndNext({ hasSmokeDetector: editHasSmokeDetector, hasCODetector: editHasCODetector, hasFireExtinguisher: editHasFireExtinguisher, hasFirstAidKit: editHasFirstAid, hasSecurityCamera: editHasSecurityCamera }, () => setSafetyOpen(false), "safety")} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button
+              disabled={saving || (!editHasSmokeDetector && !editHasCODetector && !editHasFireExtinguisher && !editHasFirstAid && !editHasSecurityCamera && !editNoneOfAbove)}
+              onClick={() => saveAndNext({ hasSmokeDetector: editHasSmokeDetector, hasCODetector: editHasCODetector, hasFireExtinguisher: editHasFireExtinguisher, hasFirstAidKit: editHasFirstAid, hasSecurityCamera: editHasSecurityCamera }, () => setSafetyOpen(false), "safety")}
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white disabled:opacity-50"
+            >
               {saving ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
@@ -2860,7 +3044,7 @@ export function PropertyDetailPage() {
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
-          <DialogHeader><DialogTitle>Edit listing details</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit property details</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
             <div className="space-y-1.5"><Label>Title</Label><Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Description</Label><Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="min-h-[80px] resize-none" /></div>
@@ -3205,14 +3389,14 @@ export function PropertyDetailPage() {
                       const active = publishDurationMonths === val;
                       return (
                         <button key={String(v)} type="button" onClick={() => setPublishDurationMonths(val)}
-                          className="flex-1 py-2 rounded-xl text-sm font-bold transition-all duration-150 active:scale-95"
+                          className="flex-1 py-2 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 leading-tight"
                           style={active ? {
                             background:"linear-gradient(135deg,#6366f1,#8b5cf6)",
                             color:"white",
                             boxShadow:"0 3px 10px rgba(139,92,246,.4)",
                           } : { background:"#f0f0f3", color:"#71717a" }}
                         >
-                          {v === "∞" ? "∞" : `${v}mo`}
+                          {v === "∞" ? "∞" : `${v} month${Number(v) !== 1 ? "s" : ""}`}
                         </button>
                       );
                     })}
@@ -3246,42 +3430,20 @@ export function PropertyDetailPage() {
             </button>
             <button
               type="button"
-              disabled={!canPublish || !readyToPublish || publishListing.isPending}
+              disabled={!canPublish || !readyToPublish || isPublishing}
               onClick={handlePublish}
               className="flex-1 h-12 rounded-xl font-extrabold text-white text-base transition-all active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background:"linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#a78bfa 100%)",
                 backgroundSize:"200% auto",
-                ...(canPublish && readyToPublish && !publishListing.isPending
+                ...(canPublish && readyToPublish && !isPublishing
                   ? { animation:"pub-pulse 2s ease-in-out infinite" }
                   : {}),
               }}
             >
-              {publishListing.isPending ? "Launching…" : "🚀 Launch ad"}
+              {isPublishing ? "Launching…" : "🚀 Launch ad"}
             </button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={hotfixOpen} onOpenChange={setHotfixOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Fix published ad</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="flex items-start gap-2 bg-warning/10 rounded-lg p-3">
-              <AlertTriangle size={15} className="text-warning mt-0.5 shrink-0" />
-              <p className="text-xs text-warning">A quick fix applies changes to an active ad. Provide a clear reason.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reason *</Label>
-              <Textarea value={hotfixReason} onChange={(e) => setHotfixReason(e.target.value)} className="min-h-[80px] resize-none" placeholder="e.g. Price correction requested by landlord" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHotfixOpen(false)}>Cancel</Button>
-            <Button disabled={!hotfixReason.trim() || hotfixListing.isPending} onClick={handleHotfix} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
-              {hotfixListing.isPending ? "Applying…" : "Apply quick fix"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

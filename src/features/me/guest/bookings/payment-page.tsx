@@ -8,17 +8,18 @@ import QRCode from "react-qr-code";
 import generatePayload from "promptpay-qr";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBookingPayment, useConfirmTransfer, useBooking } from "@/lib/hooks/use-bookings";
+import { useBookingPayment, useBooking } from "@/lib/hooks/use-bookings";
 import { useListing } from "@/lib/hooks/use-listings";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import type { PaymentRecordDto } from "@/lib/types";
 
-const PAYMENT_LABELS: Record<PaymentRecordDto["type"], string> = {
-  Deposit: "Security deposit",
-  FirstMonth: "First month's rent",
-  EarlyExitPenalty: "Early exit penalty",
-};
+function paymentLabel(p: PaymentRecordDto): string {
+  if (p.type === "Deposit") return "Security deposit";
+  if (p.type === "EarlyExitPenalty") return "Early exit penalty";
+  if (p.type === "MonthlyRent") return p.monthIndex === 1 ? "First month's rent" : `Month ${p.monthIndex} rent`;
+  return "Payment";
+}
 
 // ─── Simulated 2C2P Gateway ───────────────────────────────────────────────────
 
@@ -234,14 +235,9 @@ function GatewayOverlay({
 // ─── Payment status badge ─────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: PaymentRecordDto["status"] }) {
-  if (status === "LandlordConfirmed") return (
+  if (status === "Paid") return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success/10 px-2.5 py-1 rounded-full">
       <Check size={10} strokeWidth={3} /> Paid
-    </span>
-  );
-  if (status === "TenantConfirmed") return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-full">
-      <Loader2 size={10} className="animate-spin" /> Processing
     </span>
   );
   return (
@@ -257,7 +253,6 @@ export function GuestPaymentPage() {
   const { data: payment, isLoading: paymentLoading, refetch } = useBookingPayment(id!);
   const { data: booking, isLoading: bookingLoading } = useBooking(id!);
   const { data: listing } = useListing(booking?.listingId);
-  const confirmTransfer = useConfirmTransfer(id!);
   const [gatewayOpen, setGatewayOpen] = useState(false);
 
   const isLoading = paymentLoading || bookingLoading;
@@ -291,7 +286,10 @@ export function GuestPaymentPage() {
     );
   }
 
-  const allPayments = payment.payments ?? [];
+  // Show only initial payment items (Deposit + MonthlyRent[1] + EarlyExitPenalty)
+  const allPayments = (payment.payments ?? []).filter(
+    (p) => p.type === "Deposit" || p.type === "EarlyExitPenalty" || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
+  );
   const pendingPayments = allPayments.filter((p) => p.status === "Pending");
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
   const heroUrl = listing?.media?.[0]?.url ?? booking.primaryImageUrl;
@@ -301,9 +299,7 @@ export function GuestPaymentPage() {
   const durationMonths = (checkOut.getFullYear() - checkIn.getFullYear()) * 12 + (checkOut.getMonth() - checkIn.getMonth());
 
   async function handleGatewaySuccess() {
-    for (const p of pendingPayments) {
-      await confirmTransfer.mutateAsync({ paymentId: p.id });
-    }
+    // Payment is confirmed automatically by the gateway webhook on the backend
     await refetch();
     toast.success("Payment confirmed — your booking is now active!");
     setTimeout(() => navigate(`/me/guest/bookings/${id}`), 800);
@@ -398,7 +394,7 @@ export function GuestPaymentPage() {
             {allPayments.map((p) => (
               <div key={p.id} className="flex items-center justify-between px-5 py-3.5 border-b border-border last:border-none">
                 <div>
-                  <p className="text-sm font-medium text-fg">{PAYMENT_LABELS[p.type]}</p>
+                  <p className="text-sm font-medium text-fg">{paymentLabel(p)}</p>
                   <p className="text-xs text-fg-muted mt-0.5">{formatThb(p.amount)}</p>
                 </div>
                 <StatusBadge status={p.status} />
@@ -444,7 +440,7 @@ export function GuestPaymentPage() {
                 <div className="space-y-2 mb-5">
                   {pendingPayments.map((p) => (
                     <div key={p.id} className="flex justify-between text-sm">
-                      <span className="text-fg-muted">{PAYMENT_LABELS[p.type]}</span>
+                      <span className="text-fg-muted">{paymentLabel(p)}</span>
                       <span className="font-medium text-fg">{formatThb(p.amount)}</span>
                     </div>
                   ))}

@@ -242,7 +242,7 @@ export function BookingWidget({
                         −{t.discountPercent}%
                       </span>
                       <span className={cn("font-semibold tabular-nums", isCurrent ? "text-fg" : "text-fg-muted")}>
-                        {formatThb(discountedRate)}/mo
+                        {formatThb(discountedRate)}/month
                       </span>
                     </span>
                   </button>

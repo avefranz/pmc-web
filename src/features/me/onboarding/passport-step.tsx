@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DateInput } from "@/components/ui/date-input";
+import { NationalityInput } from "@/components/ui/nationality-input";
 import { useUpdateProfile } from "@/lib/hooks/use-profile";
 import { VisaType } from "@/lib/types/enums";
 import { toast } from "sonner";
@@ -92,16 +94,7 @@ export function PassportOnboardingStep() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-fg">Nationality</Label>
-            <Select value={nationality} onValueChange={setNationality}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select country" />
-              </SelectTrigger>
-              <SelectContent>
-                {COUNTRIES.map(([code, name]) => (
-                  <SelectItem key={code} value={code}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <NationalityInput value={nationality} onChange={setNationality} placeholder="Select nationality…" />
           </div>
 
           <div className="space-y-1.5">
@@ -115,11 +108,7 @@ export function PassportOnboardingStep() {
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-fg">Passport expiry</Label>
-            <Input
-              type="date"
-              value={passportExpiry}
-              onChange={(e) => setPassportExpiry(e.target.value)}
-            />
+            <DateInput value={passportExpiry} onChange={setPassportExpiry} minYear={2000} maxYear={2060} />
           </div>
 
           <div className="space-y-1.5">
@@ -139,11 +128,7 @@ export function PassportOnboardingStep() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-fg">Last entry date</Label>
-              <Input
-                type="date"
-                value={lastEntryDate}
-                onChange={(e) => setLastEntryDate(e.target.value)}
-              />
+              <DateInput value={lastEntryDate} onChange={setLastEntryDate} minYear={2015} maxYear={new Date().getFullYear()} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-fg">Entry port</Label>

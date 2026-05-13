@@ -12,7 +12,7 @@ import { useSubmitBookingRequest } from "@/lib/hooks/use-marketplace";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { authApi } from "@/lib/api/auth.api";
 import { bookingRequestsApi } from "@/lib/api/booking-requests.api";
-import { PasswordHints } from "@/components/shared/password-hints";
+import { PasswordHints, passwordValid } from "@/components/shared/password-hints";
 import { PetsSelector, EMPTY_PETS, petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
 import { cn } from "@/lib/utils/cn";
 import type { DiscountTier, BookingRequestResult } from "@/lib/types/marketplace";
@@ -150,6 +150,8 @@ interface Props {
   durationMonths: number;
   monthlyRate: number;
   discountTiers: DiscountTier[];
+  petsAllowed?: boolean;
+  petDeposit?: number;
   onClose: () => void;
 }
 
@@ -163,6 +165,8 @@ export function BookingRequestModal({
   durationMonths,
   monthlyRate,
   discountTiers,
+  petsAllowed,
+  petDeposit,
   onClose,
 }: Props) {
   const submit = useSubmitBookingRequest();
@@ -176,6 +180,7 @@ export function BookingRequestModal({
   const [message, setMessage] = useState("");
   const [pets, setPets] = useState<PetCounts>(EMPTY_PETS);
   const [petPhotos, setPetPhotos] = useState<PetPhotoMap>(EMPTY_PHOTOS);
+  const [petsExplicit, setPetsExplicit] = useState<boolean | null>(null); // null = not answered
   const [triedSubmit, setTriedSubmit] = useState(false);
 
   // Multi-step state
@@ -183,14 +188,16 @@ export function BookingRequestModal({
   const [authMode, setAuthMode] = useState<AuthMode>("register");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordBlurred, setPasswordBlurred] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [bookingResult, setBookingResult] = useState<BookingRequestResult | null>(null);
 
-  const hasPets = totalPets(pets) > 0;
+  const hasPets = petsExplicit === true && totalPets(pets) > 0;
   const petPhotosReady = !hasPets || (["cats", "dogs", "other"] as PetKey[]).every(
     (key) => pets[key] === 0 || petPhotos[key].length > 0,
   );
+  const petsAnswered = petsExplicit !== null;
 
   const rate = effectiveRate(monthlyRate, durationMonths, discountTiers);
   const total = rate * durationMonths;
@@ -206,9 +213,9 @@ export function BookingRequestModal({
       guestEmail: email.trim() || undefined,
       guestPhone: phone.trim() || undefined,
       message: message.trim() || undefined,
-      petCatsCount:  pets.cats  || undefined,
-      petDogsCount:  pets.dogs  || undefined,
-      petOtherCount: pets.other || undefined,
+      petCatsCount:  (petsExplicit && pets.cats)  || undefined,
+      petDogsCount:  (petsExplicit && pets.dogs)  || undefined,
+      petOtherCount: (petsExplicit && pets.other) || undefined,
     });
 
     // Upload pet photos if any — fire and forget (don't block success flow)
@@ -232,7 +239,7 @@ export function BookingRequestModal({
     e.preventDefault();
     setTriedSubmit(true);
 
-    if (!petPhotosReady) return;
+    if (!petsAnswered || !petPhotosReady) return;
 
     // Authenticated users don't need to fill name/email (backend takes from profile)
     if (token) {
@@ -256,6 +263,10 @@ export function BookingRequestModal({
   async function handleAuthSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!password) return;
+    if (authMode === "register" && !passwordValid(password)) {
+      setPasswordBlurred(true);
+      return;
+    }
     setAuthError("");
     setAuthLoading(true);
 
@@ -361,7 +372,7 @@ export function BookingRequestModal({
               </div>
               <div className="flex justify-between border-t border-border pt-1 mt-1">
                 <span className="text-fg-muted">Monthly rent</span>
-                <span className="font-semibold text-fg">{formatThb(rate)}/mo</span>
+                <span className="font-semibold text-fg">{formatThb(rate)} per month</span>
               </div>
               <div className="flex justify-between">
                 <div>
@@ -398,7 +409,7 @@ export function BookingRequestModal({
                 <p className="text-fg-muted">
                   {moveInFormatted} → {moveOut} · {durationMonths} month{durationMonths !== 1 ? "s" : ""}
                 </p>
-                <p className="text-fg font-semibold pt-0.5">{formatThb(rate)}/mo</p>
+                <p className="text-fg font-semibold pt-0.5">{formatThb(rate)} per month</p>
               </div>
             </div>
 
@@ -449,22 +460,85 @@ export function BookingRequestModal({
                   />
                 </div>
 
-                {/* Pets selector */}
-                <PetsSelector
-                  value={pets}
-                  onChange={(v) => {
-                    setPets(v);
-                    if (totalPets(v) === 0) setTriedSubmit(false);
-                  }}
-                />
+                {/* Pets — explicit yes/no required */}
+                <div className={cn(
+                  "rounded-2xl border overflow-hidden",
+                  triedSubmit && !petsAnswered ? "border-danger" : "border-border"
+                )}>
+                  <div className="px-4 py-3 bg-bg-subtle flex items-start gap-3">
+                    <span className="text-xl mt-0.5">🐾</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-fg">Travelling with pets?</p>
+                      {petsAllowed === false ? (
+                        <p className="text-xs text-danger mt-0.5">Pets are not allowed at this property.</p>
+                      ) : petsAllowed === true ? (
+                        <p className="text-xs text-fg-muted mt-0.5">
+                          Pets welcome{petDeposit ? ` · ${formatThb(petDeposit)} pet deposit` : ""}.
+                          Having pets may affect the landlord's decision.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-fg-muted mt-0.5">
+                          Having pets may affect the landlord's decision.
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-                {/* Pet photos — required when pets selected */}
-                <PetPhotoUpload
-                  pets={pets}
-                  photos={petPhotos}
-                  onChange={setPetPhotos}
-                  showErrors={triedSubmit}
-                />
+                  <div className="flex border-t border-border divide-x divide-border">
+                    <button
+                      type="button"
+                      onClick={() => { setPetsExplicit(false); setPets(EMPTY_PETS); }}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-medium transition-colors",
+                        petsExplicit === false
+                          ? "bg-brand text-white"
+                          : "text-fg-muted hover:bg-bg-subtle"
+                      )}
+                    >
+                      No pets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPetsExplicit(true)}
+                      disabled={petsAllowed === false}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-medium transition-colors",
+                        petsExplicit === true
+                          ? "bg-brand text-white"
+                          : petsAllowed === false
+                            ? "text-fg-muted opacity-40 cursor-not-allowed"
+                            : "text-fg-muted hover:bg-bg-subtle"
+                      )}
+                    >
+                      I have pets
+                    </button>
+                  </div>
+
+                  {triedSubmit && !petsAnswered && (
+                    <div className="px-4 py-2 bg-danger/5 border-t border-danger/20">
+                      <p className="text-xs text-danger">Please indicate whether you're travelling with pets.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pet details — only when user said yes */}
+                {petsExplicit === true && (
+                  <>
+                    <PetsSelector
+                      value={pets}
+                      onChange={(v) => {
+                        setPets(v);
+                        if (totalPets(v) === 0) setTriedSubmit(false);
+                      }}
+                    />
+                    <PetPhotoUpload
+                      pets={pets}
+                      photos={petPhotos}
+                      onChange={setPetPhotos}
+                      showErrors={triedSubmit}
+                    />
+                  </>
+                )}
               </div>
             </div>
 
@@ -473,7 +547,7 @@ export function BookingRequestModal({
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || (hasPets && !petPhotosReady)}
+                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || !petsAnswered || (hasPets && !petPhotosReady)}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>
@@ -493,7 +567,7 @@ export function BookingRequestModal({
               <div className="bg-bg-subtle rounded-xl px-4 py-3 text-sm space-y-0.5">
                 <p className="font-medium text-fg line-clamp-1">{listingTitle}</p>
                 <p className="text-fg-muted">
-                  {moveInFormatted} · {durationMonths} month{durationMonths !== 1 ? "s" : ""} · <span className="text-fg font-semibold">{formatThb(rate)}/mo</span>
+                  {moveInFormatted} · {durationMonths} month{durationMonths !== 1 ? "s" : ""} · <span className="text-fg font-semibold">{formatThb(rate)} per month</span>
                 </p>
               </div>
 
@@ -529,6 +603,7 @@ export function BookingRequestModal({
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setAuthError(""); }}
+                    onBlur={() => setPasswordBlurred(true)}
                     placeholder="••••••••"
                     required
                     className="pr-10"
@@ -544,7 +619,7 @@ export function BookingRequestModal({
                 </div>
                 {authError
                   ? <p className="text-xs text-destructive">{authError}</p>
-                  : authMode === "register" && <PasswordHints password={password} />}
+                  : authMode === "register" && <PasswordHints password={password} showErrors={passwordBlurred} />}
               </div>
             </div>
             </div>
@@ -553,7 +628,7 @@ export function BookingRequestModal({
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={!password || authLoading}
+                disabled={!password || authLoading || (authMode === "register" && !passwordValid(password))}
               >
                 {authLoading
                   ? "Please wait…"

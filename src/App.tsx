@@ -23,6 +23,7 @@ import { MeDashboard } from "@/features/me/me-dashboard";
 import { GuestHome } from "@/features/me/guest/guest-home";
 import { GuestBookingsPage } from "@/features/me/guest/bookings/list-page";
 import { GuestBookingDetailPage } from "@/features/me/guest/bookings/detail-page";
+import { GuestContractSignPage } from "@/features/me/guest/bookings/contract-sign-page";
 
 import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
 import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
@@ -34,7 +35,7 @@ import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
 // Host properties
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
-import { PropertyCreateWizard } from "@/features/me/host/properties/create-wizard";
+import { PropertyCreatePage } from "@/features/me/host/properties/create-page";
 import { PropertyDetailPage } from "@/features/me/host/properties/detail-page";
 
 // Host requests
@@ -110,6 +111,7 @@ export default function App() {
         <Route path="/me/guest" element={<GuestHome />} />
         <Route path="/me/guest/bookings" element={<GuestBookingsPage />} />
         <Route path="/me/guest/bookings/:id" element={<GuestBookingDetailPage />} />
+        <Route path="/me/guest/bookings/:id/contract" element={<GuestContractSignPage />} />
         <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
         <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
@@ -124,7 +126,7 @@ export default function App() {
         {/* Host context */}
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
-        <Route path="/me/host/properties/new" element={<PropertyCreateWizard />} />
+        <Route path="/me/host/properties/new" element={<PropertyCreatePage />} />
         <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
         <Route path="/me/host/requests" element={<HostRequestsPage />} />
         <Route path="/me/host/requests/:id" element={<HostRequestDetailPage />} />

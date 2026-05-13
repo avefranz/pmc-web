@@ -83,7 +83,7 @@ export function GatewayOverlay({
             </div>
             <div>
               <p className="text-base font-semibold text-gray-900 dark:text-white">Payment successful!</p>
-              <p className="text-sm text-gray-400 mt-1">Your booking is now active</p>
+              <p className="text-sm text-gray-400 mt-1">Redirecting…</p>
             </div>
           </div>
         )}

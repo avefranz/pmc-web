@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, BookingCancellationDto } from "../types";
+import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, BookingCancellationDto, ContractDto } from "../types";
 import type { BookingStatus } from "../types/enums";
 
 export const bookingsApi = {
@@ -30,13 +30,39 @@ export const bookingsApi = {
     apiClient.patch(`/api/bookings/${id}/status`, { newStatus }),
 
   getContract: (id: string) =>
-    apiClient.get<{ url: string }>(`/api/bookings/${id}/contract`).then((r) => r.data),
+    apiClient.get<ContractDto>(`/api/bookings/${id}/contract`).then((r) => r.data),
 
   uploadContract: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
     return apiClient
       .post<{ url: string }>(`/api/bookings/${id}/contract`, form)
+      .then((r) => r.data);
+  },
+
+  tenantSignContract: (id: string, typedName: string, signatureImage?: File) => {
+    const form = new FormData();
+    form.append("typedName", typedName);
+    if (signatureImage) form.append("signatureImage", signatureImage);
+    return apiClient
+      .post<ContractDto>(`/api/bookings/${id}/contract/tenant-sign`, form)
+      .then((r) => r.data);
+  },
+
+  landlordSignContract: (
+    id: string,
+    typedName: string,
+    signingCapacity: string,
+    companyName?: string,
+    signatureImage?: File,
+  ) => {
+    const form = new FormData();
+    form.append("typedName", typedName);
+    form.append("signingCapacity", signingCapacity);
+    if (companyName) form.append("companyName", companyName);
+    if (signatureImage) form.append("signatureImage", signatureImage);
+    return apiClient
+      .post<ContractDto>(`/api/bookings/${id}/contract/landlord-sign`, form)
       .then((r) => r.data);
   },
 
@@ -51,6 +77,12 @@ export const bookingsApi = {
 
   updatePassport: (bookingId: string, guestId: string, data: UpsertPassportRequest) =>
     apiClient.put(`/api/bookings/${bookingId}/guests/${guestId}/passport`, data),
+
+  uploadPassportPhotos: (bookingId: string, guestId: string, photos: File[]) => {
+    const form = new FormData();
+    photos.forEach((f) => form.append("photos", f));
+    return apiClient.post<string[]>(`/api/bookings/${bookingId}/guests/${guestId}/passport/photos`, form);
+  },
 
   unlinkTenant: (id: string) => apiClient.delete(`/api/bookings/${id}/tenant`),
 
@@ -80,6 +112,11 @@ export const bookingsApi = {
   confirmReceipt: (bookingId: string, paymentId: string) =>
     apiClient
       .post<{ data: PaymentInstructionsDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/receipt`, {})
+      .then((r) => r.data.data),
+
+  sandboxConfirm: (bookingId: string, paymentId: string) =>
+    apiClient
+      .post<{ data: PaymentInstructionsDto }>(`/api/bookings/${bookingId}/payment/${paymentId}/sandbox-confirm`, {})
       .then((r) => r.data.data),
 
   // ─── Cancellation ─────────────────────────────────────────────────────────

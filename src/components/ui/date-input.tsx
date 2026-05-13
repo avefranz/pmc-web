@@ -1,50 +1,100 @@
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
-/** Normalise any ISO / partial date string → "YYYY-MM-DD" for <input type="date"> */
-function toInputDate(value: string | undefined | null): string {
+/** Normalise any ISO / partial date string → "YYYY-MM-DD" */
+function toIso(value: string | undefined | null): string {
   if (!value) return "";
-  // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  // ISO with time component, e.g. "2024-01-15T00:00:00Z"
   const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : "";
 }
 
-interface DateInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> {
-  value?: string | null;
-  onChange?: (value: string) => void;
-  placeholder?: string;
+/** "YYYY-MM-DD" → "DD/MM/YYYY" for display */
+function isoToDisplay(iso: string): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/** "DD/MM/YYYY" → "YYYY-MM-DD" (returns "" if incomplete) */
+function displayToIso(display: string): string {
+  const digits = display.replace(/\D/g, "");
+  if (digits.length !== 8) return "";
+  const d = digits.slice(0, 2);
+  const m = digits.slice(2, 4);
+  const y = digits.slice(4, 8);
+  // basic sanity
+  if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return "";
+  return `${y}-${m}-${d}`;
+}
+
+/** Insert slashes as the user types to produce DD/MM/YYYY */
+function maskInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  let result = "";
+  for (let i = 0; i < digits.length; i++) {
+    if (i === 2 || i === 4) result += "/";
+    result += digits[i];
+  }
+  return result;
+}
+
+interface DateInputProps {
+  value?: string | null;        // ISO "YYYY-MM-DD"
+  onChange?: (value: string) => void;  // emits ISO or ""
+  className?: string;
+  disabled?: boolean;
+  minYear?: number;
+  maxYear?: number;
 }
 
 const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
-  ({ className, value, onChange, placeholder, ...props }, ref) => {
+  ({ value, onChange, className, disabled }, ref) => {
+    const iso = toIso(value);
+    const [display, setDisplay] = React.useState(() => isoToDisplay(iso));
+    const [focused, setFocused] = React.useState(false);
+
+    // Sync when value changes externally
+    React.useEffect(() => {
+      if (!focused) setDisplay(isoToDisplay(toIso(value)));
+    }, [value, focused]);
+
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const masked = maskInput(e.target.value);
+      setDisplay(masked);
+      const newIso = displayToIso(masked);
+      onChange?.(newIso);
+    }
+
+    function handleBlur() {
+      setFocused(false);
+      // Re-sync display from canonical value on blur
+      const newIso = displayToIso(display);
+      if (newIso) {
+        setDisplay(isoToDisplay(newIso));
+      }
+    }
+
     return (
       <div className={cn("relative", className)}>
         <input
-          type="date"
           ref={ref}
-          value={toInputDate(value)}
-          onChange={(e) => onChange?.(e.target.value)}
+          type="text"
+          inputMode="numeric"
+          value={display}
+          placeholder="DD/MM/YYYY"
+          disabled={disabled}
+          onChange={handleChange}
+          onFocus={() => setFocused(true)}
+          onBlur={handleBlur}
+          maxLength={10}
           className={cn(
-            // match the standard Input styles exactly
-            "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-            "ring-offset-background",
+            "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm tabular-nums",
+            "ring-offset-background placeholder:text-muted-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            // force calendar icon colour to match theme
-            "[color-scheme:light] dark:[color-scheme:dark]",
-            // placeholder-like state when empty
-            !toInputDate(value) && "text-muted-foreground",
           )}
-          {...props}
         />
-        {placeholder && !toInputDate(value) && (
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground select-none">
-            {placeholder}
-          </span>
-        )}
       </div>
     );
   }

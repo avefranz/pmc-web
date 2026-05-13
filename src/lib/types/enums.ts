@@ -85,10 +85,7 @@ export enum BookingStatus {
 
 export enum InvoiceStatus {
   Pending = "Pending",
-  PartiallyPaid = "PartiallyPaid",
   Paid = "Paid",
-  Overdue = "Overdue",
-  Cancelled = "Cancelled",
 }
 
 export enum InvoiceType {

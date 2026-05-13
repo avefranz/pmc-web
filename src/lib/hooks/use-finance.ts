@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { financeApi } from "../api/finance.api";
-import type { AssetAnalyticsDto, CreateInvoiceRequest, RegisterPaymentRequest } from "../types";
+import type { AssetAnalyticsDto, CreateInvoiceRequest } from "../types";
 
 const keys = {
   overview: () => ["finance", "overview"] as const,
@@ -8,7 +8,6 @@ const keys = {
   analytics: (period: string) => ["finance", "analytics", period] as const,
   assetAnalytics: (assetId: string, period: string) =>
     ["finance", "analytics", assetId, period] as const,
-  cashOnHand: () => ["finance", "cash-on-hand"] as const,
 };
 
 export const useFinanceOverview = () =>
@@ -35,22 +34,13 @@ export const useAssetAnalytics = (assetId: string, period = "1m") =>
     staleTime: 60_000,
   });
 
-export const useCashOnHand = () =>
-  useQuery({
-    queryKey: keys.cashOnHand(),
-    queryFn: financeApi.getCashOnHand,
-    staleTime: 60_000,
-  });
-
-export const usePayInvoice = () => {
+export const useMarkInvoicePaid = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ invoiceId, data }: { invoiceId: string; data: RegisterPaymentRequest }) =>
-      financeApi.pay(invoiceId, data),
+    mutationFn: (invoiceId: string) => financeApi.markInvoicePaid(invoiceId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bookings"] });
       qc.invalidateQueries({ queryKey: keys.overview() });
-      qc.invalidateQueries({ queryKey: keys.cashOnHand() });
     },
   });
 };
@@ -62,12 +52,3 @@ export const useCreateInvoice = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["bookings"] }),
   });
 };
-
-export const useCreateRemittance = () =>
-  useMutation({ mutationFn: financeApi.createRemittance });
-
-export const useConfirmRemittance = () =>
-  useMutation({
-    mutationFn: ({ batchId, slip }: { batchId: string; slip: File }) =>
-      financeApi.confirmRemittance(batchId, slip),
-  });

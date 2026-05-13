@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
-import { Plus, Building2, ShieldCheck, Wallet, Users } from "lucide-react";
+import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, DoorOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -12,28 +11,64 @@ import { AssetOccupancyStatus } from "@/lib/types/enums";
 import type { AssetDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
-function occupancyLabel(status: AssetOccupancyStatus) {
-  switch (status) {
-    case AssetOccupancyStatus.Vacant: return { label: "Vacant", className: "bg-success/10 text-success border-success/20" };
-    case AssetOccupancyStatus.Occupied: return { label: "Occupied", className: "bg-blue-50 text-blue-700 border-blue-200" };
-    case AssetOccupancyStatus.ActionRequired: return { label: "Action needed", className: "bg-warning/10 text-warning border-warning/20" };
-    default: return { label: status, className: "" };
+function statusConfig(asset: AssetDto): {
+  dot: string;
+  label: string;
+  sub: string;
+  border: string;
+  Icon: React.ElementType;
+  iconCls: string;
+} {
+  const name = asset.currentTenantName;
+
+  switch (asset.occupancyStatus) {
+    case AssetOccupancyStatus.Occupied:
+      return {
+        dot:     "bg-blue-500",
+        label:   name ?? "Occupied",
+        sub:     name ? "Active tenant" : "Active lease",
+        border:  "border-l-blue-400",
+        Icon:    UserCheck,
+        iconCls: "text-blue-500",
+      };
+    case AssetOccupancyStatus.ActionRequired:
+      return {
+        dot:     "bg-warning",
+        label:   "Action needed",
+        sub:     "Something requires your attention",
+        border:  "border-l-warning",
+        Icon:    AlertTriangle,
+        iconCls: "text-warning",
+      };
+    default: // Vacant
+      return {
+        dot:     "bg-success",
+        label:   "Vacant",
+        sub:     "No active tenant",
+        border:  "border-l-success/50",
+        Icon:    DoorOpen,
+        iconCls: "text-success",
+      };
   }
 }
 
 function PropertyCard({ asset }: { asset: AssetDto }) {
-  const badge = occupancyLabel(asset.occupancyStatus);
+  const cfg = statusConfig(asset);
   const specs = [
-    asset.bedrooms && `${asset.bedrooms} bed`,
-    asset.bathrooms && `${asset.bathrooms} bath`,
-    asset.maxOccupancy && `${asset.maxOccupancy} guests`,
+    asset.bedrooms    && `${asset.bedrooms} bed`,
+    asset.bathrooms   && `${asset.bathrooms} bath`,
+    asset.areaSqm     && `${asset.areaSqm} m²`,
   ].filter(Boolean).join(" · ");
 
   return (
     <Link
       to={`/me/host/properties/${asset.id}`}
-      className="group bg-bg-card rounded-xl shadow-card hover:shadow-hover transition-shadow overflow-hidden flex flex-col"
+      className={cn(
+        "group bg-bg-card rounded-xl shadow-card hover:shadow-hover transition-all overflow-hidden flex flex-col border-l-[3px]",
+        cfg.border,
+      )}
     >
+      {/* Photo */}
       <div className="aspect-[4/3] bg-bg-subtle overflow-hidden">
         {asset.primaryImageUrl ? (
           <img
@@ -47,17 +82,20 @@ function PropertyCard({ asset }: { asset: AssetDto }) {
           </div>
         )}
       </div>
-      <div className="p-4 flex flex-col gap-1.5">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-fg text-sm leading-snug line-clamp-1">{asset.internalName}</h3>
-          <span className={cn("text-xs px-2 py-0.5 rounded-full border font-medium shrink-0", badge.className)}>
-            {badge.label}
-          </span>
-        </div>
+
+      {/* Content */}
+      <div className="p-4 flex flex-col gap-2">
+        <h3 className="font-semibold text-fg text-sm leading-snug line-clamp-1">{asset.internalName}</h3>
         {specs && <p className="text-xs text-fg-muted">{specs}</p>}
-        {asset.currentTenantName && (
-          <p className="text-xs text-fg-muted">Tenant: {asset.currentTenantName}</p>
-        )}
+
+        {/* Status row */}
+        <div className="flex items-center gap-2 pt-1 border-t border-border mt-0.5">
+          <cfg.Icon size={13} className={cn("shrink-0", cfg.iconCls)} />
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-fg">{cfg.label}</span>
+            <span className="text-xs text-fg-muted"> · {cfg.sub}</span>
+          </div>
+        </div>
       </div>
     </Link>
   );
@@ -151,7 +189,8 @@ export function PropertiesListPage() {
     );
   }
 
-  const list = assets ?? [];
+  // TODO: sort by createdAt desc once backend adds the field — using refNo as proxy for now
+  const list = [...(assets ?? [])].sort((a, b) => b.refNo - a.refNo);
   const ownedAssets = me ? list.filter((a) => a.ownerId === me.id) : list;
   const managedAssets = me ? list.filter((a) => a.ownerId !== me.id) : [];
 

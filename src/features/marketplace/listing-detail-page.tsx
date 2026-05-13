@@ -782,6 +782,8 @@ export function ListingDetailPage() {
           durationMonths={bookingModal.months}
           monthlyRate={monthlyRate}
           discountTiers={discountTiers}
+          petsAllowed={listing.petsAllowed}
+          petDeposit={listing.petDeposit}
           onClose={() => setBookingModal(null)}
         />
       )}

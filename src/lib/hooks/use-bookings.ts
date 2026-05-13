@@ -56,13 +56,50 @@ export const useBookingTickets = (id: string) =>
     staleTime: 30_000,
   });
 
-export const useBookingContract = (bookingId: string, enabled: boolean) =>
+export const useBookingContract = (bookingId: string) =>
   useQuery({
     queryKey: keys.contract(bookingId),
     queryFn: () => bookingsApi.getContract(bookingId),
-    enabled,
     staleTime: 30_000,
+    retry: (count, err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return false;
+      return count < 1;
+    },
   });
+
+export const useTenantSignContract = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ typedName, signatureImage }: { typedName: string; signatureImage?: File }) =>
+      bookingsApi.tenantSignContract(bookingId, typedName, signatureImage),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.contract(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useLandlordSignContract = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      typedName,
+      signingCapacity,
+      companyName,
+      signatureImage,
+    }: {
+      typedName: string;
+      signingCapacity: string;
+      companyName?: string;
+      signatureImage?: File;
+    }) => bookingsApi.landlordSignContract(bookingId, typedName, signingCapacity, companyName, signatureImage),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.contract(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
 
 export const useBookingTm30 = (bookingId: string, guestId: string | null) =>
   useQuery({

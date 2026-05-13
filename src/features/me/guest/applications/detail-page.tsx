@@ -241,7 +241,7 @@ export function GuestApplicationDetailPage() {
               <Coins size={15} className="text-fg-muted shrink-0" />
               <div className="flex-1 flex justify-between text-sm">
                 <span className="text-fg-muted">Monthly rent</span>
-                <span className="font-medium text-fg">{formatThb(app.monthlyRate)}/mo</span>
+                <span className="font-medium text-fg">{formatThb(app.monthlyRate)} per month</span>
               </div>
             </div>
             <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">

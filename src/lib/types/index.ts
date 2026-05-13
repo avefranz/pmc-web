@@ -16,7 +16,6 @@ import type {
   CalendarStatus,
   UtilityType,
   InviteType,
-  PaymentMethod,
   AssetOccupancyStatus,
 } from "./enums";
 
@@ -77,23 +76,21 @@ export interface UpdateProfileRequest {
 
 // ─── Payment ──────────────────────────────────────────────────────────────────
 
-export type PaymentRecordStatus = "Pending" | "TenantConfirmed" | "LandlordConfirmed";
-export type PaymentRecordType = "Deposit" | "FirstMonth" | "EarlyExitPenalty";
+export type PaymentRecordStatus = "Pending" | "Paid";
+export type PaymentRecordType = "Deposit" | "MonthlyRent" | "EarlyExitPenalty";
 
 export interface PaymentRecordDto {
   id: string;
   type: PaymentRecordType;
+  monthIndex: number | null;
   amount: number;
   status: PaymentRecordStatus;
-  tenantNote: string | null;
-  tenantConfirmedAt: string | null;
-  landlordConfirmedAt: string | null;
+  dueDate: string | null;
+  paidAt: string | null;
 }
 
 export interface PaymentInstructionsDto {
   bookingId: string;
-  depositAmount: number;
-  firstMonthAmount: number;
   totalDue: number;
   promptPayId: string | null;
   bankName: string | null;
@@ -404,6 +401,7 @@ export interface InvoiceDto {
   status: InvoiceStatus;
   amount?: number;
   dueDate?: string;
+  monthIndex?: number | null;
   bookingId?: string;
   ticketId?: string;
   description?: string;
@@ -430,10 +428,6 @@ export interface LandlordOverviewDto {
   currency: string;
 }
 
-export interface CashOnHandResponse {
-  amount: number;
-  currency: string;
-}
 
 export interface ExpenseCategoryDto {
   category: string;
@@ -615,10 +609,6 @@ export interface GenerateInviteRequest {
   guestId?: string;
 }
 
-export interface RegisterPaymentRequest {
-  method: PaymentMethod;
-  amount: number;
-}
 
 export interface CreateInvoiceRequest {
   assetId: string;
@@ -659,4 +649,39 @@ export interface CreateUtilityContractRequest {
   utilityType: UtilityType;
   providerName: string;
   accountNumber: string;
+}
+
+// ─── Contract ─────────────────────────────────────────────────────────────────
+
+export type ContractStatus = 'PendingTenantSignature' | 'PendingLandlordSignature' | 'FullySigned' | 'Voided';
+
+export interface ContractDto {
+  id: string;
+  bookingId: string;
+  status: ContractStatus;
+  propertyAddress: string;
+  startDate: string;
+  endDate: string;
+  totalRent: number;
+  monthlyRate: number;
+  depositAmount: number;
+  durationMonths: number;
+  tenantFullName: string;
+  tenantEmail: string;
+  tenantPassportNumber?: string;
+  landlordFullName: string;
+  landlordEmail: string;
+  landlordSigningCapacity?: string;
+  landlordCompanyName?: string;
+  draftPdfUrl?: string;
+  finalPdfUrl?: string;
+  finalPdfSha256?: string;
+  tenantSignedAt?: string;
+  tenantTypedName?: string;
+  tenantSignatureImageUrl?: string;
+  landlordSignedAt?: string;
+  landlordTypedName?: string;
+  landlordSignatureImageUrl?: string;
+  finalizedAt?: string;
+  createdAt: string;
 }
