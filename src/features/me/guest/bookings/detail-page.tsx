@@ -471,17 +471,47 @@ export function GuestBookingDetailPage() {
                       />
                     )}
                   </div>
-                ) : isCancelled ? (
-                  <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-fg-subtle/20 flex items-center justify-center shrink-0">
-                      <DoorOpen size={16} className="text-fg-muted" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-fg">Booking cancelled</p>
-                      <p className="text-xs text-fg-muted mt-0.5">This stay has been ended.</p>
+                ) : isCancelled ? (() => {
+                  const c = cancellation;
+                  const voided = contract?.status === "Voided";
+                  let headline = "Booking cancelled";
+                  let detail = "This stay has been ended.";
+                  if (voided) {
+                    headline = "Booking cancelled — contract expired";
+                    detail = "The 72h signing window passed without both parties signing. Any payments will be refunded.";
+                  } else if (c?.reason === "NonPayment") {
+                    headline = "Booking terminated — unpaid rent";
+                    detail = "The cure deadline passed without payment. Your deposit was applied to the outstanding rent.";
+                  } else if (c?.reason === "Breach") {
+                    headline = "Booking terminated — breach of agreement";
+                    detail = "Contact Siamo support if you believe this was wrong.";
+                  } else if (c?.reason === "TenantEarlyExit") {
+                    headline = "Booking ended early";
+                    detail = "Your early-exit request was confirmed. The 1-month penalty applies.";
+                  } else if (c?.reason === "MutualAgreement") {
+                    headline = "Booking cancelled by mutual agreement";
+                    detail = "Your full deposit will be returned after the deposit-settlement window.";
+                  }
+                  return (
+                    <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <span className="w-8 h-8 rounded-full bg-fg-subtle/20 flex items-center justify-center shrink-0">
+                          <DoorOpen size={16} className="text-fg-muted" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-fg">{headline}</p>
+                          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{detail}</p>
+                          {c?.initiatorNote && (
+                            <p className="text-xs text-fg mt-2 italic">"{c.initiatorNote}"</p>
+                          )}
+                        </div>
+                      </div>
+                      <Button asChild variant="outline" size="sm" className="w-full rounded-lg h-9 text-xs">
+                        <Link to="/listings">Browse other properties</Link>
+                      </Button>
                     </div>
-                  </div>
-                ) : (
+                  );
+                })() : (
                   <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center gap-3">
                     <span className="w-8 h-8 rounded-full bg-success flex items-center justify-center shrink-0">
                       <Check size={16} className="text-white" />
