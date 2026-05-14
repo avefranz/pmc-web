@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone } from "lucide-react";
+import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -747,6 +747,28 @@ export function GuestBookingDetailPage() {
                       </a>
                     )}
                   </div>
+                </div>
+              )}
+
+              {contract.status === "Voided" && (
+                <div className="bg-danger/10 border border-danger/20 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <XCircle size={18} className="text-danger shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-fg">Agreement was voided</p>
+                      <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                        The signing window closed before both parties signed.
+                        This booking is cancelled and any payments will be refunded automatically.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="w-full rounded-xl h-9 text-sm font-medium"
+                  >
+                    <Link to="/listings">Browse other properties</Link>
+                  </Button>
                 </div>
               )}
             </>

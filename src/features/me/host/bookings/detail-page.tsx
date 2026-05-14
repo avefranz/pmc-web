@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Trash2, FileText, Upload,
   Eye,
-  PenLine, CheckCircle2, Clock, AlertCircle, Download, ExternalLink, Globe, FileCheck,
+  PenLine, CheckCircle2, Clock, AlertCircle, Download, ExternalLink, Globe, FileCheck, XCircle,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -399,6 +399,20 @@ export function BookingDetailPage() {
         </div>
       )}
 
+      {/* ── Contract voided notice ── */}
+      {contractData?.status === "Voided" && (
+        <div className="bg-danger/10 border border-danger/20 rounded-2xl p-4 flex items-start gap-3">
+          <XCircle size={18} className="text-danger shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Contract was voided</p>
+            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+              The signing window closed before both parties signed.
+              This booking is cancelled and the tenant will be refunded automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── URGENT: Landlord must sign ── */}
       {contractData?.status === "PendingLandlordSignature" && (
         <div className="bg-brand rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-lg">
@@ -546,6 +560,8 @@ export function BookingDetailPage() {
                   </p>
                 )}
               </div>
+            ) : contractData.status === "Voided" ? (
+              <span className="flex items-center gap-1 text-xs font-medium text-danger"><XCircle size={11} />Voided</span>
             ) : (
               <div className="flex items-center gap-2">
                 {booking.hasContract

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera } from "lucide-react";
+import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -121,6 +121,8 @@ export function GuestContractSignPage() {
   }
 
   if (error || !contract) {
+    const status = (error as { response?: { status?: number } } | null)?.response?.status;
+    const isMissing = status === 404;
     return (
       <div className="max-w-2xl mx-auto px-4 py-6">
         <Link
@@ -134,7 +136,9 @@ export function GuestContractSignPage() {
           <div>
             <p className="text-sm font-semibold text-fg">Contract not available</p>
             <p className="text-xs text-fg-muted mt-1">
-              Your rental agreement isn't ready yet. Your host is preparing it — please check back shortly.
+              {isMissing
+                ? "Your rental agreement isn't ready yet. Your host is preparing it — please check back shortly."
+                : "We couldn't load your agreement. Check your connection and try again."}
             </p>
           </div>
         </div>
@@ -142,7 +146,40 @@ export function GuestContractSignPage() {
     );
   }
 
-  const alreadySigned = contract.status !== "PendingTenantSignature";
+  if (contract.status === "Voided") {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <Link
+          to={`/me/guest/bookings/${id}`}
+          className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg transition-colors mb-6"
+        >
+          <ArrowLeft size={16} />Back to booking
+        </Link>
+        <div className="bg-danger/10 border border-danger/20 rounded-2xl p-5 space-y-3">
+          <div className="flex items-start gap-3">
+            <XCircle size={18} className="text-danger shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-fg">This agreement was voided</p>
+              <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                The signing window closed before both parties signed, so the contract was cancelled.
+                Any payments you made will be refunded — no action needed from you.
+              </p>
+            </div>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full rounded-xl h-9 text-sm font-medium"
+          >
+            <Link to="/listings">Browse other properties</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const alreadySigned =
+    contract.status === "PendingLandlordSignature" || contract.status === "FullySigned";
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5 pb-12">
