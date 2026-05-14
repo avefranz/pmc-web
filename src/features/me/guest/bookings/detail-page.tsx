@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle } from "lucide-react";
+import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30 } from "@/lib/hooks/use-bookings";
+import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets } from "@/lib/hooks/use-bookings";
+import { useCreateTicket } from "@/lib/hooks/use-tickets";
+import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
+import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
 import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
@@ -233,6 +236,8 @@ export function GuestBookingDetailPage() {
   const { refetch: refetchBooking } = useBooking(id!);
   const { data: contract } = useBookingContract(id!);
   const { data: guests } = useBookingGuests(id!);
+  const { data: bookingTickets } = useBookingTickets(id!);
+  const createTicket = useCreateTicket();
   const addGuest = useAddGuest(id!);
   const removeGuest = useRemoveGuest(id!);
   const updatePassport = useUpdatePassport(id!);
@@ -258,6 +263,11 @@ export function GuestBookingDetailPage() {
   const [addGuestOpen, setAddGuestOpen] = useState(false);
   const [newResident, setNewResident] = useState<UpsertPassportRequest>({});
   const [residentPhotos, setResidentPhotos] = useState<File[]>([]);
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [issueType, setIssueType] = useState<TicketType>(TicketType.Maintenance);
+  const [issuePriority, setIssuePriority] = useState<TicketPriority>(TicketPriority.Normal);
 
   // Co-residents must be confirmed before signing — stored in localStorage so it survives refresh
   const guestsStorageKey = `siamo_guests_confirmed_${id}`;
@@ -1310,6 +1320,66 @@ export function GuestBookingDetailPage() {
             <LandlordContactCard contact={booking.landlordContact} />
           )}
 
+          {/* Open issues (tickets) */}
+          {(isActive || isConfirmed) && (() => {
+            const tickets = bookingTickets ?? [];
+            const openTickets = tickets.filter(
+              (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
+            );
+            return (
+              <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+                <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Wrench size={14} className="text-fg-muted" />
+                    <h3 className="text-sm font-semibold text-fg">
+                      Issues {openTickets.length > 0 && <span className="text-fg-muted">· {openTickets.length} open</span>}
+                    </h3>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-8 text-xs"
+                    onClick={() => setReportIssueOpen(true)}
+                  >
+                    <Plus size={12} className="mr-1" />Report
+                  </Button>
+                </div>
+                {tickets.length === 0 ? (
+                  <p className="px-5 py-4 text-xs text-fg-muted leading-relaxed">
+                    Anything broken, dirty, or unsafe? Report it here and your host gets notified.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {tickets.slice(0, 5).map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/me/guest/tickets/${t.id}`}
+                        className="flex items-start gap-3 px-5 py-3 hover:bg-bg-subtle transition-colors"
+                      >
+                        <span className="text-base shrink-0 mt-0.5">{ticketKindIcon(t.kind)}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-fg line-clamp-1">{t.title}</p>
+                          <p className="text-[11px] text-fg-muted mt-0.5">{formatDate(t.createdAt)}</p>
+                        </div>
+                        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
+                          {t.status}
+                        </span>
+                      </Link>
+                    ))}
+                    {tickets.length > 5 && (
+                      <Link
+                        to="/me/guest/tickets"
+                        className="block px-5 py-2.5 text-xs text-brand hover:underline text-center"
+                      >
+                        View all {tickets.length} issues →
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* PEA electricity */}
           {(isActive || isConfirmed) && (
             <GuestPeaBillCard bookingId={id!} />
@@ -1577,6 +1647,115 @@ export function GuestBookingDetailPage() {
               }}
             >
               {requestCancellation.isPending ? "Submitting…" : "Submit request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report issue dialog */}
+      <Dialog
+        open={reportIssueOpen}
+        onOpenChange={(v) => {
+          setReportIssueOpen(v);
+          if (!v) {
+            setIssueTitle("");
+            setIssueDescription("");
+            setIssueType(TicketType.Maintenance);
+            setIssuePriority(TicketPriority.Normal);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Report an issue</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-fg-muted leading-relaxed">
+              Describe what's wrong. Your host gets notified and you can track progress here.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-fg-muted">Title</Label>
+              <Input
+                value={issueTitle}
+                onChange={(e) => setIssueTitle(e.target.value)}
+                placeholder="e.g. AC not cooling in bedroom"
+                maxLength={120}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-fg-muted">Category</Label>
+                <Select value={issueType} onValueChange={(v) => setIssueType(v as TicketType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TicketType.Maintenance}>Maintenance / repair</SelectItem>
+                    <SelectItem value={TicketType.Cleaning}>Cleaning</SelectItem>
+                    <SelectItem value={TicketType.Utilities}>Utilities</SelectItem>
+                    <SelectItem value={TicketType.Complaint}>Complaint</SelectItem>
+                    <SelectItem value={TicketType.Request}>Request</SelectItem>
+                    <SelectItem value={TicketType.Other}>Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-fg-muted">Priority</Label>
+                <Select value={issuePriority} onValueChange={(v) => setIssuePriority(v as TicketPriority)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TicketPriority.Low}>Low</SelectItem>
+                    <SelectItem value={TicketPriority.Normal}>Normal</SelectItem>
+                    <SelectItem value={TicketPriority.High}>High</SelectItem>
+                    <SelectItem value={TicketPriority.Urgent}>Urgent (safety / can't live without it)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-fg-muted">Details</Label>
+              <Textarea
+                value={issueDescription}
+                onChange={(e) => setIssueDescription(e.target.value)}
+                placeholder="When did it start? What have you tried?"
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReportIssueOpen(false)}
+              disabled={createTicket.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              disabled={
+                createTicket.isPending ||
+                issueTitle.trim().length < 3 ||
+                issueDescription.trim().length < 5
+              }
+              onClick={async () => {
+                try {
+                  await createTicket.mutateAsync({
+                    assetId: booking.assetId,
+                    bookingId: id!,
+                    title: issueTitle.trim(),
+                    description: issueDescription.trim(),
+                    type: issueType,
+                    kind: TicketKind.Incident,
+                    priority: issuePriority,
+                    estimatedCost: 0,
+                  });
+                  toast.success("Issue reported — your host has been notified");
+                  setReportIssueOpen(false);
+                } catch {
+                  toast.error("Failed to report issue");
+                }
+              }}
+            >
+              {createTicket.isPending ? "Submitting…" : "Report issue"}
             </Button>
           </DialogFooter>
         </DialogContent>

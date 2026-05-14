@@ -27,6 +27,8 @@ import { GuestContractSignPage } from "@/features/me/guest/bookings/contract-sig
 
 import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
 import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
+import { GuestTicketsListPage } from "@/features/me/guest/tickets/list-page";
+import { GuestTicketDetailPage } from "@/features/me/guest/tickets/detail-page";
 
 // Host managed
 import { ManagedListPage } from "@/features/me/host/managed/list-page";
@@ -115,6 +117,8 @@ export default function App() {
         <Route path="/me/guest/bookings/:id/contract" element={<GuestContractSignPage />} />
         <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
         <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
+        <Route path="/me/guest/tickets" element={<GuestTicketsListPage />} />
+        <Route path="/me/guest/tickets/:id" element={<GuestTicketDetailPage />} />
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
 
         {/* Onboarding */}
