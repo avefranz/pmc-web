@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Banknote, AlertCircle, CheckCircle2, Shield } from "lucide-react";
+import { Banknote, AlertCircle, CheckCircle2, Shield, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Lightbox } from "@/components/ui/lightbox";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { CountdownPill } from "@/components/shared/countdown-pill";
 import {
@@ -259,12 +260,43 @@ function TenantWaitingState({ depositAmount }: { depositAmount: number }) {
   );
 }
 
+function EvidencePhotos({ urls }: { urls: string[] }) {
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  if (!urls.length) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] font-semibold text-fg-muted uppercase tracking-wide flex items-center gap-1.5">
+        <Camera size={11} />Host's evidence ({urls.length})
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {urls.map((url, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setLightboxIdx(i)}
+            className="w-16 h-16 rounded-lg overflow-hidden bg-bg-subtle shrink-0 hover:opacity-90 hover:scale-[1.03] transition-all"
+          >
+            <img src={url} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
+          </button>
+        ))}
+      </div>
+      <Lightbox
+        images={urls.map((url, i) => ({ url, name: `Evidence ${i + 1}` }))}
+        initialIndex={lightboxIdx ?? 0}
+        open={lightboxIdx !== null}
+        onClose={() => setLightboxIdx(null)}
+      />
+    </div>
+  );
+}
+
 function TenantHoldResponseState({
   settlement, bookingId,
 }: { settlement: DepositSettlementDto; bookingId: string }) {
   const [disputeOpen, setDisputeOpen] = useState(false);
   const accept = useAcceptDepositSettlement(bookingId);
   const deadline = settlement.tenantResponseDeadline ?? null;
+  const photos = settlement.photoUrls ?? [];
 
   return (
     <>
@@ -294,6 +326,7 @@ function TenantHoldResponseState({
               <p className="text-xs text-fg mt-1 leading-relaxed italic">"{settlement.holdReason}"</p>
             </div>
           )}
+          <EvidencePhotos urls={photos} />
           <p className="text-[11px] text-fg-muted leading-relaxed">
             If the reason seems fair, accept and the funds will be released. If you disagree, dispute and
             Siamo's support team will mediate.
@@ -398,21 +431,29 @@ function SettlementCompleteState({ settlement }: { settlement: DepositSettlement
 }
 
 function DisputedState({ settlement }: { settlement: DepositSettlementDto }) {
+  const photos = settlement.photoUrls ?? [];
   return (
-    <div className="bg-bg-card border border-border rounded-2xl px-5 py-4 flex items-start gap-3">
-      <AlertCircle size={18} className="text-warning shrink-0 mt-0.5" />
-      <div className="flex-1">
-        <p className="text-sm font-semibold text-fg">Deposit dispute under review</p>
-        <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-          Siamo's support team is reviewing the case. You'll be notified once a decision is made.
-          {settlement.disputeReason && (
-            <> Reason on record: <span className="italic">"{settlement.disputeReason}"</span></>
-          )}
-        </p>
-        <p className="text-[11px] text-fg-muted mt-1.5">
-          Submitted {settlement.tenantResponseAt && formatDate(settlement.tenantResponseAt)}
-        </p>
+    <div className="bg-bg-card border border-border rounded-2xl px-5 py-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <AlertCircle size={18} className="text-warning shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-fg">Deposit dispute under review</p>
+          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+            Siamo's support team is reviewing the case. You'll be notified once a decision is made.
+            {settlement.disputeReason && (
+              <> Reason on record: <span className="italic">"{settlement.disputeReason}"</span></>
+            )}
+          </p>
+          <p className="text-[11px] text-fg-muted mt-1.5">
+            Submitted {settlement.tenantResponseAt && formatDate(settlement.tenantResponseAt)}
+          </p>
+        </div>
       </div>
+      {photos.length > 0 && (
+        <div className="pl-7">
+          <EvidencePhotos urls={photos} />
+        </div>
+      )}
     </div>
   );
 }
