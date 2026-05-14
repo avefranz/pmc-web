@@ -54,7 +54,7 @@ export function DepositSettlementCard({
     return role === "host" ? (
       <HostInspectionPrompt bookingId={bookingId} depositAmount={depositAmount} checkOutDate={checkOutDate} />
     ) : (
-      <TenantWaitingState depositAmount={depositAmount} />
+      <TenantWaitingState depositAmount={depositAmount} checkOutDate={checkOutDate} />
     );
   }
 
@@ -89,6 +89,23 @@ function HostInspectionPrompt({
   const inspect = useSubmitCheckoutInspection(bookingId);
   // Inspection deadline: checkOutDate + 7 days (informational fallback if backend doesn't compute it)
   const deadline = new Date(new Date(checkOutDate).getTime() + 7 * 86_400_000).toISOString();
+  const deadlinePassed = new Date(deadline).getTime() < Date.now();
+
+  if (deadlinePassed) {
+    return (
+      <div className="bg-success/5 border border-success/20 rounded-2xl px-5 py-4 flex items-start gap-3">
+        <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-fg">Inspection window closed</p>
+          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+            The 7-day inspection window has passed. The deposit of{" "}
+            <span className="font-medium text-fg">{formatThb(depositAmount)}</span> is being auto-released
+            to the tenant — this can take a few minutes to reflect. If it doesn't update soon, contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -230,6 +247,24 @@ function PartialHoldDialog({
 
 function HostPendingTenantResponseState({ settlement }: { settlement: DepositSettlementDto }) {
   const deadline = settlement.tenantResponseDeadline ?? null;
+  const deadlinePassed = deadline != null && new Date(deadline).getTime() < Date.now();
+
+  if (deadlinePassed) {
+    return (
+      <div className="bg-success/5 border border-success/20 rounded-2xl px-5 py-4 flex items-start gap-3">
+        <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-fg">Hold auto-accepted</p>
+          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+            The tenant didn't respond within 7 days, so your hold of{" "}
+            <span className="font-medium text-fg">{formatThb(settlement.holdAmount)}</span> is being
+            processed. Allow a few minutes for it to reflect.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-warning/5 border border-warning/20 rounded-2xl px-5 py-4 space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -244,16 +279,35 @@ function HostPendingTenantResponseState({ settlement }: { settlement: DepositSet
   );
 }
 
-function TenantWaitingState({ depositAmount }: { depositAmount: number }) {
+function TenantWaitingState({ depositAmount, checkOutDate }: { depositAmount: number; checkOutDate: string }) {
+  const deadline = new Date(new Date(checkOutDate).getTime() + 7 * 86_400_000);
+  const deadlinePassed = deadline.getTime() < Date.now();
+
+  if (deadlinePassed) {
+    return (
+      <div className="bg-success/5 border border-success/20 rounded-2xl px-5 py-4 flex items-start gap-3">
+        <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-fg">Deposit auto-released</p>
+          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+            Your host's inspection window closed without action. Your full deposit of{" "}
+            <span className="font-semibold text-fg">{formatThb(depositAmount)}</span> is being released —
+            allow a few minutes for it to reflect. If it doesn't update soon, contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-bg-card rounded-2xl shadow-card px-5 py-4 flex items-start gap-3">
       <Shield size={18} className="text-fg-muted shrink-0 mt-0.5" />
       <div>
         <p className="text-sm font-semibold text-fg">Deposit settlement pending</p>
         <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-          Your host has 7 days to inspect the property and confirm the deposit return. If no issues are
-          raised, your full deposit of <span className="font-semibold text-fg">{formatThb(depositAmount)}</span> is released
-          automatically.
+          Your host has until <span className="font-medium text-fg">{formatDate(deadline.toISOString())}</span> to
+          inspect the property and confirm the deposit return. If no issues are raised, your full deposit of{" "}
+          <span className="font-semibold text-fg">{formatThb(depositAmount)}</span> is released automatically.
         </p>
       </div>
     </div>
@@ -296,7 +350,33 @@ function TenantHoldResponseState({
   const [disputeOpen, setDisputeOpen] = useState(false);
   const accept = useAcceptDepositSettlement(bookingId);
   const deadline = settlement.tenantResponseDeadline ?? null;
+  const deadlinePassed = deadline != null && new Date(deadline).getTime() < Date.now();
   const photos = settlement.photoUrls ?? [];
+
+  if (deadlinePassed) {
+    return (
+      <div className="bg-bg-card border border-border rounded-2xl px-5 py-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <AlertCircle size={18} className="text-warning shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-fg">Response window closed — hold auto-accepted</p>
+            <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+              You didn't respond in 7 days, so the host's hold of{" "}
+              <span className="font-medium text-fg">{formatThb(settlement.holdAmount)}</span> was
+              automatically accepted. You'll receive{" "}
+              <span className="font-medium text-fg">{formatThb(settlement.returnAmount)}</span>.
+              If you believe this is wrong, contact Siamo support — recourse may still be possible.
+            </p>
+          </div>
+        </div>
+        {photos.length > 0 && (
+          <div className="pl-7">
+            <EvidencePhotos urls={photos} />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
