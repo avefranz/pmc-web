@@ -32,15 +32,24 @@ export function GatewayOverlay({
   }
 
   async function handlePay() {
+    if (step !== "select") return; // guard against double-click while processing
     setStep("processing");
     setError(null);
     try {
       await new Promise((r) => setTimeout(r, 1800));
-      await onSuccess();
+      // Cap the success callback so a hung backend doesn't strand the user
+      // on a perpetual "Processing…" screen with no recourse.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Timed out waiting for confirmation")), 30_000),
+      );
+      await Promise.race([onSuccess(), timeout]);
       setStep("success");
       setTimeout(onClose, 2200);
-    } catch {
-      setError("Payment could not be processed. Please try again.");
+    } catch (e) {
+      const msg = e instanceof Error && e.message.includes("Timed out")
+        ? "We didn't get confirmation in time. Your payment may still go through — check your booking in a minute before retrying."
+        : "Payment could not be processed. Please try again.";
+      setError(msg);
       setStep("select");
     }
   }

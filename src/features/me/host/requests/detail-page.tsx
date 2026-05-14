@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { totalPets } from "@/components/shared/pets-selector";
 import {
@@ -13,6 +14,11 @@ import { useHostRequest, useApproveRequest, useRejectRequest } from "@/lib/hooks
 import { formatThb } from "@/lib/utils/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
+
+function isConflict(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 409 || status === 410 || status === 422;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -140,6 +146,7 @@ export function HostRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const qc = useQueryClient();
   const { data: req, isLoading } = useHostRequest(id!);
   const approve = useApproveRequest(id!);
   const reject  = useRejectRequest(id!);
@@ -152,8 +159,15 @@ export function HostRequestDetailPage() {
       await approve.mutateAsync();
       toast.success("Request approved");
       navigate("/me/host/requests");
-    } catch {
-      toast.error("Failed to approve request");
+    } catch (err) {
+      // Refetch so the UI reflects current state (another tab may have already
+      // approved or rejected, or the request expired between page load and click).
+      await qc.invalidateQueries({ queryKey: ["host-booking-requests", id] });
+      if (isConflict(err)) {
+        toast.error("This request was already handled — refreshing");
+      } else {
+        toast.error("Failed to approve request");
+      }
     }
   }
 
@@ -162,8 +176,13 @@ export function HostRequestDetailPage() {
       await reject.mutateAsync(rejectReason.trim() || undefined);
       toast.success("Request rejected");
       navigate("/me/host/requests");
-    } catch {
-      toast.error("Failed to reject request");
+    } catch (err) {
+      await qc.invalidateQueries({ queryKey: ["host-booking-requests", id] });
+      if (isConflict(err)) {
+        toast.error("This request was already handled — refreshing");
+      } else {
+        toast.error("Failed to reject request");
+      }
     }
   }
 

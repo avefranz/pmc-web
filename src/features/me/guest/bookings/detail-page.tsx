@@ -1589,15 +1589,13 @@ export function GuestBookingDetailPage() {
           promptPayId={payment?.promptPayId}
           onSuccess={async () => {
             const isInitialPayment = !gatewayPaymentId;
-            if (gatewayPaymentId) {
-              // Monthly rent — confirm specific payment; backend closes matching invoice
-              try { await bookingsApi.sandboxConfirm(id!, gatewayPaymentId); } catch { /* noop */ }
-            } else {
-              // Initial payment — one confirm closes Deposit + MonthlyRent[1] atomically
-              const firstUnpaid = (payment?.payments ?? []).find((p) => p.status !== "Paid");
-              if (firstUnpaid) {
-                try { await bookingsApi.sandboxConfirm(id!, firstUnpaid.id); } catch { /* noop */ }
-              }
+            // Confirm the specific payment. If sandboxConfirm fails, surface it —
+            // a silent swallow here let users believe they'd paid when the
+            // invoice was still Pending, and they could be charged again on retry.
+            const paymentIdToConfirm = gatewayPaymentId
+              ?? (payment?.payments ?? []).find((p) => p.status !== "Paid")?.id;
+            if (paymentIdToConfirm) {
+              await bookingsApi.sandboxConfirm(id!, paymentIdToConfirm);
             }
             await refetchPayment();
             await refetchBooking();
