@@ -105,6 +105,7 @@ export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
   transportInfo?: string | null;
   nearbyPlaces?: string | null;
   wifiName?: string | null;
+  googleMapsUrl?: string | null;
 }
 
 export interface MarketplaceCityDto {

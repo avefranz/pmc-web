@@ -1,4 +1,4 @@
-import { LogOut, ChevronRight, FileText, Shield, CreditCard } from "lucide-react";
+import { LogOut, ChevronRight, FileText, Shield, CreditCard, Phone } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -80,12 +80,20 @@ export default function ProfilePage() {
           description="View your immigration filings"
         />
         {me?.roles?.some((r) => r === "Landlord" || r === "Admin") && (
-          <ProfileLink
-            to="/me/host/settings/payment"
-            icon={CreditCard}
-            label="Payment details"
-            description="PromptPay and bank transfer info for tenants"
-          />
+          <>
+            <ProfileLink
+              to="/me/host/settings/payment"
+              icon={CreditCard}
+              label="Payment details"
+              description="PromptPay and bank transfer info for tenants"
+            />
+            <ProfileLink
+              to="/me/host/settings/contact"
+              icon={Phone}
+              label="Contact details"
+              description="Phone number and messaging apps shown after booking"
+            />
+          </>
         )}
       </div>
 

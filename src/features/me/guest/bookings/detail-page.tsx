@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera } from "lucide-react";
+import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -12,14 +12,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport } from "@/lib/hooks/use-bookings";
+import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30 } from "@/lib/hooks/use-bookings";
+import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
+import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
+import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
+import { LandlordTerminationBanner } from "@/components/shared/landlord-termination-banner";
+import { GuestPeaBillCard } from "@/components/shared/pea-bill-card";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { useListing } from "@/lib/hooks/use-listings";
+import { useAsset } from "@/lib/hooks/use-assets";
 import { GatewayOverlay } from "./gateway-overlay";
-import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus, InvoiceStatus, VisaType } from "@/lib/types/enums";
-import type { CheckInMethod, UpsertPassportRequest } from "@/lib/types";
+import type { CheckInMethod, UpsertPassportRequest, LandlordContact, ContactChannel } from "@/lib/types";
+import { contractSigningDeadline } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
@@ -65,6 +71,145 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+// ─── Per-guest TM-30 status row ───────────────────────────────────────────────
+
+function GuestTm30Row({ bookingId, guestId, guestName, isMain }: {
+  bookingId: string;
+  guestId: string;
+  guestName: string;
+  isMain: boolean;
+}) {
+  const { data: tm30, isLoading } = useBookingTm30(bookingId, guestId);
+  const filed = tm30?.status === "Filed";
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-border last:border-none">
+      <div className="min-w-0">
+        <p className="text-sm text-fg truncate">
+          {guestName}
+          {isMain && <span className="ml-2 text-[11px] text-fg-muted font-medium">(you)</span>}
+        </p>
+        {filed && tm30?.filedAt && (
+          <p className="text-xs text-fg-muted mt-0.5">Filed {formatDate(tm30.filedAt)}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {isLoading ? (
+          <span className="text-xs text-fg-muted">…</span>
+        ) : filed ? (
+          <>
+            <span className="text-xs font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">✓ Filed</span>
+            {tm30?.documentUrl && (
+              <a
+                href={tm30.documentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-brand hover:underline"
+              >
+                PDF
+              </a>
+            )}
+          </>
+        ) : (
+          <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2 py-0.5 rounded-full">Pending</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Landlord contact ─────────────────────────────────────────────────────────
+
+const CHANNEL_META: Record<ContactChannel, { label: string; emoji: string }> = {
+  Call:     { label: "Call",      emoji: "📞" },
+  Sms:      { label: "SMS",       emoji: "💬" },
+  WhatsApp: { label: "WhatsApp",  emoji: "🟢" },
+  Telegram: { label: "Telegram",  emoji: "✈️" },
+  Line:     { label: "LINE",      emoji: "🟩" },
+  WeChat:   { label: "WeChat",    emoji: "🟢" },
+};
+
+function getContactLink(channel: ContactChannel, contact: LandlordContact): string | null {
+  // LINE doesn't need a phone number — it uses the handle
+  if (channel === "Line") return contact.lineHandle ? `https://line.me/ti/p/~${contact.lineHandle}` : null;
+  if (channel === "WeChat") return null;
+  // All remaining channels require a phone number
+  if (!contact.phone) return null;
+  const phone = `${contact.phoneCountryCode}${contact.phone}`.replace(/\+/g, "");
+  const phoneWithPlus = `${contact.phoneCountryCode}${contact.phone}`;
+  switch (channel) {
+    case "Call":     return `tel:${phoneWithPlus}`;
+    case "Sms":      return `sms:${phoneWithPlus}`;
+    case "WhatsApp": return `https://wa.me/${phone}`;
+    case "Telegram": return `https://t.me/${phoneWithPlus}`;
+    default:         return null;
+  }
+}
+
+function LandlordContactCard({ contact }: { contact: LandlordContact }) {
+  const hasChannels = contact.contactChannels.length > 0;
+  const hasPhone = !!contact.phone;
+  const phoneDisplay = `${contact.phoneCountryCode} ${contact.phone}`;
+
+  return (
+    <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+      <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+        <Phone size={15} className="text-fg-muted" />
+        <h3 className="text-sm font-semibold text-fg">Contact your host</h3>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        {/* Phone number — only shown if landlord has set one */}
+        {hasPhone && (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-fg-muted">Phone</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-fg font-mono">{phoneDisplay}</span>
+              <CopyBtn text={`${contact.phoneCountryCode}${contact.phone}`} />
+            </div>
+          </div>
+        )}
+
+        {/* Channel buttons */}
+        {hasChannels && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {contact.contactChannels.map((ch) => {
+              const meta = CHANNEL_META[ch];
+              const href = getContactLink(ch, contact);
+              const isWeChat = ch === "WeChat";
+
+              if (isWeChat) {
+                // WeChat: no deep link, just show as info chip
+                return (
+                  <span
+                    key={ch}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-border bg-bg-subtle text-fg-muted"
+                  >
+                    {meta.emoji} {meta.label}
+                  </span>
+                );
+              }
+
+              if (!href) return null;
+
+              return (
+                <a
+                  key={ch}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-colors"
+                >
+                  {meta.emoji} {meta.label}
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const CHECK_IN_METHOD_LABEL: Record<CheckInMethod, { label: string; Icon: React.ElementType }> = {
   KeyHandover: { label: "Key handover", Icon: Key },
   Smartlock:   { label: "Smart lock",   Icon: Lock },
@@ -79,11 +224,11 @@ export function GuestBookingDetailPage() {
   const { data: booking, isLoading } = useBooking(id!);
   const { data: invoices } = useBookingInvoices(id!);
   const { data: listing } = useListing(booking?.listingId);
+  const { data: asset } = useAsset(booking?.assetId ?? "");
   const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
   const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
   const requestCancellation = useRequestCancellation(id!);
-  const { data: tm30Records } = useMyTm30();
-  const tm30 = tm30Records?.find((r) => r.bookingId === id);
+  const withdrawCancellation = useWithdrawCancellation(id!);
   const { data: payment, refetch: refetchPayment } = useBookingPayment(id!);
   const { refetch: refetchBooking } = useBooking(id!);
   const { data: contract } = useBookingContract(id!);
@@ -182,6 +327,18 @@ export function GuestBookingDetailPage() {
         )}
       </div>
 
+      {/* CRITICAL: landlord-initiated termination notice */}
+      {cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord" && (
+        <LandlordTerminationBanner
+          cancellation={cancellation}
+          bookingId={id!}
+          onPay={() => {
+            const target = document.getElementById("monthly-rent-section");
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
+      )}
+
       {/* Hero photo — full width, links to listing */}
       {listing?.slug ? (
         <Link
@@ -270,16 +427,61 @@ export function GuestBookingDetailPage() {
 
             return (
               <>
-                {/* "Booking confirmed" banner */}
-                <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-full bg-success flex items-center justify-center shrink-0">
-                    <Check size={16} className="text-white" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-success">Booking confirmed</p>
-                    <p className="text-xs text-fg-muted mt-0.5">Your stay is secured. See your check-in plan below.</p>
+                {/* Status hero — adapts to booking phase */}
+                {isCompleted ? (
+                  <div className="space-y-3">
+                    <div className="bg-bg-card rounded-2xl shadow-card px-5 py-6 text-center space-y-2">
+                      <div className="w-12 h-12 rounded-full bg-success/10 mx-auto flex items-center justify-center">
+                        <Check size={22} className="text-success" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-fg">Lease completed</p>
+                        <p className="text-xs text-fg-muted mt-1">
+                          Your stay ended on {formatDate(booking.checkOutDate)}. Thank you!
+                        </p>
+                      </div>
+                    </div>
+                    {payment?.payments?.find((p) => p.type === "Deposit" && p.status === "Paid") && (
+                      <DepositSettlementCard
+                        bookingId={id!}
+                        role="tenant"
+                        depositAmount={booking.depositAmount}
+                        checkOutDate={booking.checkOutDate}
+                      />
+                    )}
                   </div>
-                </div>
+                ) : isCancelled ? (
+                  <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-full bg-fg-subtle/20 flex items-center justify-center shrink-0">
+                      <DoorOpen size={16} className="text-fg-muted" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-fg">Booking cancelled</p>
+                      <p className="text-xs text-fg-muted mt-0.5">This stay has been ended.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-full bg-success flex items-center justify-center shrink-0">
+                      <Check size={16} className="text-white" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-success">Booking confirmed</p>
+                      <p className="text-xs text-fg-muted mt-0.5">Your stay is secured. See your check-in plan below.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment status banner — only shown when there's something to surface */}
+                {(isActive || isConfirmed) && payment?.payments && (
+                  <TenantPaymentBanner
+                    health={computePaymentHealth(payment.payments)}
+                    onPay={() => {
+                      const target = document.getElementById("monthly-rent-section");
+                      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  />
+                )}
 
                 {/* Check-in plan card */}
                 <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
@@ -336,14 +538,33 @@ export function GuestBookingDetailPage() {
                 </div>
 
                 {/* Getting there */}
-                {(listing?.transportInfo || listing?.nearbyPlaces) && (
+                {(listing?.transportInfo || listing?.nearbyPlaces || asset?.googleMapsUrl || asset?.legalAddress) && (
                   <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
                     <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
                       <MapPin size={14} className="text-fg-muted" />
                       <h3 className="text-sm font-semibold text-fg">Getting there</h3>
                     </div>
                     <div className="divide-y divide-border">
-                      {listing.transportInfo && (
+                      {asset?.legalAddress && (
+                        <div className="flex items-start gap-3 px-5 py-3.5">
+                          <FileText size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                          <p className="text-sm text-fg-muted leading-relaxed">{asset.legalAddress}</p>
+                        </div>
+                      )}
+                      {asset?.googleMapsUrl && (
+                        <div className="flex items-start gap-3 px-5 py-3.5">
+                          <ExternalLink size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                          <a
+                            href={asset.googleMapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-brand hover:underline"
+                          >
+                            View on Google Maps
+                          </a>
+                        </div>
+                      )}
+                      {listing?.transportInfo && (
                         <div className="flex items-start gap-3 px-5 py-3.5">
                           <Bus size={14} className="text-fg-muted shrink-0 mt-0.5" />
                           <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
@@ -351,7 +572,7 @@ export function GuestBookingDetailPage() {
                           </p>
                         </div>
                       )}
-                      {listing.nearbyPlaces && (
+                      {listing?.nearbyPlaces && (
                         <div className="flex items-start gap-3 px-5 py-3.5">
                           <Building2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
                           <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
@@ -441,34 +662,62 @@ export function GuestBookingDetailPage() {
           {/* ── Contract status banner ── */}
           {(isPendingPayment || isConfirmed) && contract && (
             <>
-              {contract.status === "PendingTenantSignature" && (
-                <div className="bg-warning/10 border border-warning/20 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <FileText size={18} className="text-warning shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-warning">Sign your rental agreement</p>
-                      <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-                        {guestsReady
-                          ? "Before making payment, you need to sign the rental agreement."
-                          : "Confirm who will be living at the property above, then sign the agreement."}
-                      </p>
+              {contract.status === "PendingTenantSignature" && (() => {
+                const deadline = contractSigningDeadline(contract);
+                const msLeft = new Date(deadline).getTime() - Date.now();
+                const hoursLeft = msLeft / 3600_000;
+                // Visual escalation: <12h → danger, <36h → warning, else neutral
+                const isUrgent = hoursLeft < 12;
+                const isElevated = hoursLeft < 36;
+                const palette = isUrgent
+                  ? "bg-danger/10 border-danger/30"
+                  : isElevated
+                    ? "bg-warning/15 border-warning/30"
+                    : "bg-warning/10 border-warning/20";
+                const accent = isUrgent ? "text-danger" : "text-warning";
+                return (
+                  <div className={cn("rounded-2xl border p-4 space-y-3", palette)}>
+                    <div className="flex items-start gap-3">
+                      <FileText size={18} className={cn("shrink-0 mt-0.5", accent)} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <p className={cn("text-sm font-semibold", accent)}>
+                            {isUrgent ? "Sign now — booking expires soon" : "Sign your rental agreement"}
+                          </p>
+                          <CountdownPill deadline={deadline} prefix="Expires in" expiredLabel="Expired — booking cancelled" />
+                        </div>
+                        <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                          {guestsReady
+                            ? "Both signatures are required before your booking is confirmed."
+                            : "Confirm who will be living at the property above, then sign the agreement."}
+                          {" "}
+                          <span className="font-medium text-fg">
+                            If unsigned by the deadline, this booking will be automatically cancelled and any payments refunded.
+                          </span>
+                        </p>
+                      </div>
                     </div>
+                    <Button
+                      disabled={!guestsReady}
+                      asChild={guestsReady}
+                      className={cn(
+                        "w-full rounded-xl h-9 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed",
+                        isUrgent
+                          ? "bg-danger hover:bg-danger/90 text-white"
+                          : "bg-warning hover:bg-warning/90 text-white",
+                      )}
+                    >
+                      {guestsReady ? (
+                        <Link to={`/me/guest/bookings/${id}/contract`}>
+                          Read &amp; sign agreement
+                        </Link>
+                      ) : (
+                        <span>Read &amp; sign agreement</span>
+                      )}
+                    </Button>
                   </div>
-                  <Button
-                    disabled={!guestsReady}
-                    asChild={guestsReady}
-                    className="w-full bg-warning hover:bg-warning/90 text-white rounded-xl h-9 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {guestsReady ? (
-                      <Link to={`/me/guest/bookings/${id}/contract`}>
-                        Read &amp; sign agreement
-                      </Link>
-                    ) : (
-                      <span>Read &amp; sign agreement</span>
-                    )}
-                  </Button>
-                </div>
-              )}
+                );
+              })()}
 
               {contract.status === "PendingLandlordSignature" && (
                 <div className="bg-success/10 border border-success/20 rounded-2xl p-4 flex items-start gap-3">
@@ -550,7 +799,7 @@ export function GuestBookingDetailPage() {
             const lastPmt = rentPayments[rentPayments.length - 1];
 
             return (
-              <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+              <div id="monthly-rent-section" className="bg-bg-card rounded-2xl shadow-card overflow-hidden scroll-mt-24">
 
                 {/* ── Header with segmented progress bar ── */}
                 <div className="px-5 pt-5 pb-4">
@@ -858,24 +1107,70 @@ export function GuestBookingDetailPage() {
             </div>
           )}
 
-          {/* Early exit request */}
-          {(isConfirmed || isActive) && !cancellation && (
+          {/* Early-exit: request button — only when there's no active cancellation; landlord-initiated takes precedence */}
+          {(isConfirmed || isActive) &&
+            (!cancellation || cancellation.status === "Declined" || cancellation.status === "Expired" || cancellation.status === "Withdrawn") &&
+            (cancellation?.initiator ?? "Tenant") === "Tenant" && (
             <Button
               variant="outline"
               className="w-full rounded-xl h-10 text-sm border-border hover:bg-bg-subtle"
               onClick={() => setExitDialogOpen(true)}
             >
-              <DoorOpen size={15} className="mr-2" />Request early exit
+              <DoorOpen size={15} className="mr-2" />
+              {cancellation ? "Submit new request" : "Request early exit"}
             </Button>
           )}
 
-          {cancellation && cancellation.status !== "Confirmed" && cancellation.status !== "Processed" && (
-            <div className="bg-bg-card rounded-xl shadow-card px-4 py-3 flex items-center gap-2">
-              <DoorOpen size={14} className="text-fg-muted shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-fg">Early exit requested</p>
-                <p className="text-xs text-fg-muted">Earliest exit: {formatDate(cancellation.earliestExitDate)}</p>
+          {/* Early-exit: pending response from host (own request only) */}
+          {cancellation && cancellation.status === "Requested" && (cancellation.initiator ?? "Tenant") === "Tenant" && (
+            <div className="bg-bg-card rounded-xl shadow-card overflow-hidden">
+              <div className="px-4 py-3 flex items-start justify-between gap-3 border-b border-border">
+                <div className="flex items-start gap-2 min-w-0">
+                  <DoorOpen size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg">Early exit requested</p>
+                    <p className="text-xs text-fg-muted">Earliest exit: {formatDate(cancellation.earliestExitDate)}</p>
+                  </div>
+                </div>
+                <CountdownPill deadline={cancellationDeadline(cancellation)} prefix="Host responds in" expiredLabel="Expired" />
               </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await withdrawCancellation.mutateAsync(cancellation.id);
+                    toast.success("Request withdrawn");
+                  } catch {
+                    toast.error("Failed to withdraw");
+                  }
+                }}
+                disabled={withdrawCancellation.isPending}
+                className="w-full text-xs text-fg-muted hover:text-fg py-2 transition-colors disabled:opacity-50"
+              >
+                {withdrawCancellation.isPending ? "Withdrawing…" : "Withdraw request"}
+              </button>
+            </div>
+          )}
+
+          {/* Early-exit: declined — host rejected with reason */}
+          {cancellation && cancellation.status === "Declined" && (
+            <div className="bg-danger/5 border border-danger/20 rounded-xl px-4 py-3 space-y-1.5">
+              <p className="text-sm font-medium text-fg">Your request was declined</p>
+              {cancellation.declineReason ? (
+                <p className="text-xs text-fg-muted leading-relaxed">
+                  <span className="font-medium text-fg">Host's reason:</span> {cancellation.declineReason}
+                </p>
+              ) : (
+                <p className="text-xs text-fg-muted">The host declined without providing a reason.</p>
+              )}
+            </div>
+          )}
+
+          {/* Early-exit: expired — no host response */}
+          {cancellation && cancellation.status === "Expired" && (
+            <div className="bg-bg-subtle border border-border rounded-xl px-4 py-3 space-y-1">
+              <p className="text-sm font-medium text-fg">Your request expired</p>
+              <p className="text-xs text-fg-muted">The host didn't respond within 72 hours. You can submit a new request.</p>
             </div>
           )}
         </div>
@@ -958,33 +1253,44 @@ export function GuestBookingDetailPage() {
           {/* TM-30 */}
           {(isActive || isConfirmed || isPendingPayment) && (
             <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
+              <div className="px-5 pt-4 pb-3 border-b border-border">
                 <h3 className="text-sm font-semibold text-fg">TM-30 Registration</h3>
-                {tm30?.status === "Filed" ? (
-                  <span className="text-xs font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">✓ Filed</span>
-                ) : (
-                  <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2 py-0.5 rounded-full">Pending</span>
-                )}
+                <p className="text-xs text-fg-muted mt-0.5">
+                  Your host registers each guest with Thai immigration within 24 hours of check-in.
+                </p>
               </div>
-              <div className="px-5 py-3.5">
-                {tm30?.status === "Filed" ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-fg-muted">
-                      Filed by your host on {tm30.filedAt ? formatDate(tm30.filedAt) : "—"}
-                    </p>
-                    {tm30.documentUrl && (
-                      <a href={tm30.documentUrl} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
-                      >↓ Download TM-30 PDF</a>
-                    )}
-                  </div>
-                ) : (
+              {guests && guests.filter(g => !!g.passportNumber).length > 0 ? (
+                <div className="px-5">
+                  {guests.filter(g => !!g.passportNumber).map((g) => (
+                    <GuestTm30Row
+                      key={g.id}
+                      bookingId={id!}
+                      guestId={g.id}
+                      guestName={[g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest"}
+                      isMain={g.isMainTenant}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="px-5 py-3.5">
                   <p className="text-xs text-fg-muted leading-relaxed">
-                    Your host will register your stay with Thai immigration (TM-30) within 24 hours of check-in. The document will appear here once filed.
+                    Passport details required before TM-30 can be filed. Add them above.
                   </p>
-                )}
-              </div>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Landlord contact */}
+          {(isActive || isConfirmed) && booking.landlordContact && (
+            booking.landlordContact.contactChannels.length > 0 || booking.landlordContact.phone
+          ) && (
+            <LandlordContactCard contact={booking.landlordContact} />
+          )}
+
+          {/* PEA electricity */}
+          {(isActive || isConfirmed) && (
+            <GuestPeaBillCard bookingId={id!} />
           )}
 
           {/* WiFi — shown when active/confirmed */}
@@ -1071,6 +1377,28 @@ export function GuestBookingDetailPage() {
                   <Label className="text-xs text-fg-muted">Last name <span className="text-danger">*</span></Label>
                   <Input value={newResident.lastName ?? ""} onChange={(e) => setNewResident((p) => ({ ...p, lastName: e.target.value }))} placeholder="As on passport" />
                 </div>
+              </div>
+            </div>
+
+            {/* Gender */}
+            <div>
+              <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Gender</p>
+              <div className="flex gap-3">
+                {(["M", "F"] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setNewResident((p) => ({ ...p, gender: g }))}
+                    className={cn(
+                      "flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
+                      newResident.gender === g
+                        ? "border-brand bg-brand/5 text-brand"
+                        : "border-border text-fg-muted hover:border-fg-muted",
+                    )}
+                  >
+                    {g === "M" ? "Male" : "Female"}
+                  </button>
+                ))}
               </div>
             </div>
 

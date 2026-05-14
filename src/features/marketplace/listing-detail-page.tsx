@@ -7,7 +7,7 @@ import {
   FileText, RotateCcw, ClipboardList, Tag,
   Ruler, Car, PawPrint, Train, MapPin as MapPinIcon,
   Key, KeySquare, Building2,
-  ChevronDown, ChevronUp, AlertCircle,
+  ChevronDown, ChevronUp, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { amenityIcon } from "@/lib/utils/amenity-icons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -562,11 +562,23 @@ export function ListingDetailPage() {
               <div className="relative" style={{ height: 340 }}>
                 <PropertyMap lat={listing.fuzzyLatitude} lon={listing.fuzzyLongitude} cityName={listing.cityName} />
               </div>
-              <div className="px-4 py-3.5 border-t border-border flex items-center gap-2 text-[13.5px]">
-                <MapPinIcon size={13} className="text-fg-muted shrink-0" />
-                {listing.cityName && <span className="font-semibold text-fg">{listing.cityName}</span>}
-                <span className="text-fg-muted">·</span>
-                <span className="text-fg-muted">Approximate location — exact address shared after booking</span>
+              <div className="px-4 py-3.5 border-t border-border flex items-center justify-between gap-3 text-[13.5px]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPinIcon size={13} className="text-fg-muted shrink-0" />
+                  {listing.cityName && <span className="font-semibold text-fg">{listing.cityName}</span>}
+                  <span className="text-fg-muted">·</span>
+                  <span className="text-fg-muted">Approximate location — exact address shared after booking</span>
+                </div>
+                {listing.googleMapsUrl && (
+                  <a
+                    href={listing.googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline whitespace-nowrap"
+                  >
+                    <ExternalLink size={12} /> Google Maps
+                  </a>
+                )}
               </div>
             </div>
             {/* Transport & nearby in 2-col grid */}

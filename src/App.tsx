@@ -58,6 +58,7 @@ import { PassportOnboardingStep } from "@/features/me/onboarding/passport-step";
 
 // Host settings
 import { PaymentSettingsPage } from "@/features/me/host/settings/payment-settings-page";
+import { ContactSettingsPage } from "@/features/me/host/settings/contact-settings-page";
 
 // Marketplace
 import { ListingsPage } from "@/features/marketplace/listings-page";
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="/me/host/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/me/host/finance" element={<FinancePage />} />
         <Route path="/me/host/settings/payment" element={<PaymentSettingsPage />} />
+        <Route path="/me/host/settings/contact" element={<ContactSettingsPage />} />
         <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
         <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
           <Route path="/me/host/managed" element={<ManagedListPage />} />

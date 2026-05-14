@@ -31,6 +31,15 @@ export interface UserDto {
   roles: string[];
 }
 
+export type ContactChannel = "Call" | "Sms" | "WhatsApp" | "Telegram" | "Line" | "WeChat";
+
+export interface LandlordContact {
+  phoneCountryCode: string;
+  phone: string;
+  contactChannels: ContactChannel[];
+  lineHandle?: string | null;
+}
+
 export interface UserProfileDto {
   id: string;
   email?: string;
@@ -53,6 +62,9 @@ export interface UserProfileDto {
   bankName?: string | null;
   bankAccountNumber?: string | null;
   bankAccountName?: string | null;
+  // Landlord contact channels
+  contactChannels?: ContactChannel[];
+  lineHandle?: string | null;
 }
 
 export interface UpdateProfileRequest {
@@ -72,6 +84,9 @@ export interface UpdateProfileRequest {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;
+  // Landlord contact channels
+  contactChannels?: ContactChannel[] | null;
+  lineHandle?: string | null;
 }
 
 // ─── Payment ──────────────────────────────────────────────────────────────────
@@ -100,21 +115,78 @@ export interface PaymentInstructionsDto {
   isFullyPaid: boolean;
 }
 
+// ─── Deposit settlement ──────────────────────────────────────────────────────
+
+export type DepositSettlementStatus =
+  | "Pending"        // checkout window is open, host hasn't acted yet
+  | "FullReturn"     // host confirmed full refund
+  | "PartialHold"    // host wants to withhold part of deposit — tenant must accept/dispute
+  | "Disputed"       // tenant disputed the partial hold, escalated to support
+  | "Released";      // funds settled (final state)
+
+export interface DepositSettlementDto {
+  id: string;
+  bookingId: string;
+  status: DepositSettlementStatus;
+  totalDeposit: number;
+  /** Amount the host wants to withhold (0 = full return). */
+  holdAmount: number;
+  /** Amount returned to tenant = totalDeposit - holdAmount. */
+  returnAmount: number;
+  /** Required when holdAmount > 0. */
+  holdReason?: string | null;
+  /** Photos uploaded by host as evidence. */
+  photoUrls?: string[];
+  /** Deadline by which tenant must respond to a partial hold. */
+  tenantResponseDeadline?: string | null;
+  hostActionAt?: string | null;
+  tenantResponseAt?: string | null;
+  /** Tenant's reason for disputing. */
+  disputeReason?: string | null;
+  createdAt: string;
+}
+
 // ─── Cancellation ─────────────────────────────────────────────────────────────
 
-export type CancellationStatus = "Requested" | "Confirmed" | "Processed";
+export type CancellationStatus = "Requested" | "Confirmed" | "Processed" | "Declined" | "Expired" | "Withdrawn";
+
+export type CancellationInitiator = "Tenant" | "Landlord";
+
+/**
+ * Reason for cancellation. Drives financial treatment and cure rights:
+ *  - TenantEarlyExit  → tenant pays 1-month penalty
+ *  - NonPayment       → deposit applied to outstanding rent, tenant has 7-day cure window
+ *  - Breach           → host claims damages from deposit, subject to dispute
+ *  - MutualAgreement  → no penalties, full deposit refund
+ */
+export type CancellationReason = "TenantEarlyExit" | "NonPayment" | "Breach" | "MutualAgreement";
 
 export interface BookingCancellationDto {
   id: string;
   bookingId: string;
+  /** Who initiated the cancellation. Defaults to "Tenant" when missing (legacy data). */
+  initiator?: CancellationInitiator;
+  /** Reason for the cancellation; legacy records may not have it. */
+  reason?: CancellationReason;
   earliestExitDate: string;
   monthlyRent: number;
   penaltyAmount: number;
   depositRefundAmount: number;
   netRefund: number;
+  /** Amount the tenant must pay to cure a NonPayment termination (outstanding rent). */
+  outstandingAmount?: number;
   status: CancellationStatus;
   tenantNote: string | null;
+  /** Note from the cancellation initiator (host's reason for landlord-initiated). */
+  initiatorNote?: string | null;
+  /** Reason supplied by the responder when declining the request. */
+  declineReason?: string | null;
+  /** Deadline for the responder to confirm/decline. Derived from createdAt + 72h client-side if absent. */
+  expiresAt?: string | null;
+  /** Deadline by which tenant must cure a NonPayment termination (default: createdAt + 7d). */
+  cureDeadline?: string | null;
   landlordConfirmedAt: string | null;
+  declinedAt?: string | null;
   createdAt: string;
 }
 
@@ -157,6 +229,8 @@ export interface AssetDto {
   timezone?: string;
   ownerId?: string;
   unitNumber?: string | null;
+  legalAddress?: string | null;
+  googleMapsUrl?: string | null;
   // Physical characteristics
   floor?: number | null;
   totalFloors?: number | null;
@@ -285,6 +359,7 @@ export interface BookingDto {
   listingTitle?: string;
   primaryImageUrl?: string;
   daysRemaining?: number;
+  landlordContact?: LandlordContact | null;
 }
 
 export interface Tm30FilingDto {
@@ -302,6 +377,7 @@ export interface BookingGuestDto {
   isMainTenant: boolean;
   firstName?: string;
   lastName?: string;
+  gender?: "M" | "F";
   dateOfBirth?: string;
   nationality?: string;
   passportNumber?: string;
@@ -584,6 +660,8 @@ export interface UpdateLocationRequest {
   latitude: number;
   longitude: number;
   timezone?: string;
+  legalAddress?: string;
+  googleMapsUrl?: string;
 }
 
 export interface CreateListingRequest {
@@ -623,6 +701,7 @@ export interface CreateInvoiceRequest {
 export interface AddGuestRequest {
   firstName?: string;
   lastName?: string;
+  gender?: "M" | "F";
   dateOfBirth?: string;
   nationality?: string;
   passportNumber?: string;
@@ -635,6 +714,7 @@ export interface AddGuestRequest {
 export interface UpsertPassportRequest {
   firstName?: string;
   lastName?: string;
+  gender?: "M" | "F";
   dateOfBirth?: string;
   nationality?: string;
   passportNumber?: string;
@@ -683,5 +763,19 @@ export interface ContractDto {
   landlordTypedName?: string;
   landlordSignatureImageUrl?: string;
   finalizedAt?: string;
+  /**
+   * Deadline by which the contract must be fully signed before the booking auto-expires.
+   * Backend should set this when the contract is created (typically createdAt + 72h).
+   * If absent, frontend falls back to createdAt + 72h.
+   */
+  signingDeadline?: string;
   createdAt: string;
+}
+
+/**
+ * Compute the effective contract signing deadline. Falls back to createdAt + 72h.
+ */
+export function contractSigningDeadline(c: Pick<ContractDto, "signingDeadline" | "createdAt">): string {
+  if (c.signingDeadline) return c.signingDeadline;
+  return new Date(new Date(c.createdAt).getTime() + 72 * 3600_000).toISOString();
 }

@@ -13,7 +13,7 @@ export const useAssets = () =>
   useQuery({ queryKey: keys.all, queryFn: assetsApi.getAll, staleTime: 30_000 });
 
 export const useAsset = (id: string) =>
-  useQuery({ queryKey: keys.detail(id), queryFn: () => assetsApi.getById(id), staleTime: 30_000 });
+  useQuery({ queryKey: keys.detail(id), queryFn: () => assetsApi.getById(id), staleTime: 30_000, enabled: !!id });
 
 export const useAssetMembers = (id: string) =>
   useQuery({

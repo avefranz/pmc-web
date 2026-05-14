@@ -18,6 +18,7 @@ const keys = {
   contract: (id: string) => ["bookings", id, "contract"] as const,
   payment: (id: string) => ["bookings", id, "payment"] as const,
   cancellation: (id: string) => ["bookings", id, "cancellation"] as const,
+  depositSettlement: (id: string) => ["bookings", id, "deposit-settlement"] as const,
 };
 
 export const useBookings = () =>
@@ -108,6 +109,7 @@ export const useBookingTm30 = (bookingId: string, guestId: string | null) =>
     enabled: !!guestId,
     staleTime: 30_000,
   });
+
 
 export const useCreateBooking = () => {
   const qc = useQueryClient();
@@ -240,6 +242,111 @@ export const useConfirmCancellation = (bookingId: string) => {
       qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
       qc.invalidateQueries({ queryKey: keys.host() });
       qc.invalidateQueries({ queryKey: keys.my() });
+    },
+  });
+};
+
+export const useDeclineCancellation = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ cancellationId, reason }: { cancellationId: string; reason: string }) =>
+      bookingsApi.declineCancellation(cancellationId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useWithdrawCancellation = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cancellationId: string) => bookingsApi.withdrawCancellation(cancellationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useInitiateLandlordTermination = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { reason: "NonPayment" | "Breach" | "MutualAgreement"; note: string }) =>
+      bookingsApi.initiateLandlordTermination(bookingId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.host() });
+    },
+  });
+};
+
+export const useCureCancellation = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cancellationId: string) => bookingsApi.cureCancellation(cancellationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.cancellation(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.payment(bookingId) });
+    },
+  });
+};
+
+// ─── Payment enforcement ───────────────────────────────────────────────────
+
+export const useSendPaymentNotice = (bookingId: string) => {
+  return useMutation({
+    mutationFn: (type: "reminder" | "formal") => bookingsApi.sendPaymentNotice(bookingId, type),
+  });
+};
+
+// ─── Deposit settlement ────────────────────────────────────────────────────
+
+export const useDepositSettlement = (bookingId: string, enabled = true) =>
+  useQuery({
+    queryKey: keys.depositSettlement(bookingId),
+    queryFn: () => bookingsApi.getDepositSettlement(bookingId),
+    staleTime: 30_000,
+    enabled,
+    retry: (count, err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return false;
+      return count < 1;
+    },
+  });
+
+export const useSubmitCheckoutInspection = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { outcome: "full_return" | "partial_hold"; holdAmount?: number; reason?: string; photoUrls?: string[] }) =>
+      bookingsApi.submitCheckoutInspection(bookingId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.depositSettlement(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useAcceptDepositSettlement = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => bookingsApi.acceptDepositSettlement(bookingId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.depositSettlement(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useDisputeDepositSettlement = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (reason: string) => bookingsApi.disputeDepositSettlement(bookingId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.depositSettlement(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
     },
   });
 };

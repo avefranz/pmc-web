@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, BookingCancellationDto, ContractDto } from "../types";
+import type { BookingDto, BookingGuestDto, InvoiceDto, TicketDto, Tm30FilingDto, CreateBookingRequest, AddGuestRequest, UpsertPassportRequest, PaymentInstructionsDto, BookingCancellationDto, ContractDto, DepositSettlementDto } from "../types";
 import type { BookingStatus } from "../types/enums";
 
 export const bookingsApi = {
@@ -99,6 +99,18 @@ export const bookingsApi = {
       .then((r) => r.data);
   },
 
+  downloadTm30Template: async (bookingId: string): Promise<void> => {
+    const response = await apiClient.get(`/api/bookings/${bookingId}/tm30-template`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(response.data as Blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `TM30_${bookingId}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   // ─── Payment ──────────────────────────────────────────────────────────────
 
   getPaymentInstructions: (bookingId: string) =>
@@ -123,16 +135,138 @@ export const bookingsApi = {
 
   requestCancellation: (bookingId: string, note?: string) =>
     apiClient
-      .post<BookingCancellationDto>(`/api/bookings/${bookingId}/cancellation`, { note })
-      .then((r) => r.data),
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/${bookingId}/cancellation`, { note })
+      .then((r) => r.data.data),
 
   getCancellation: (bookingId: string) =>
     apiClient
-      .get<BookingCancellationDto>(`/api/bookings/${bookingId}/cancellation`)
-      .then((r) => r.data),
+      .get<{ data: BookingCancellationDto }>(`/api/bookings/${bookingId}/cancellation`)
+      .then((r) => r.data.data),
 
   confirmCancellation: (cancellationId: string) =>
     apiClient
-      .post<BookingCancellationDto>(`/api/bookings/cancellations/${cancellationId}/confirm`, {})
-      .then((r) => r.data),
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/cancellations/${cancellationId}/confirm`, {})
+      .then((r) => r.data.data),
+
+  /**
+   * Decline a cancellation request as the responder (landlord declining a tenant request,
+   * or tenant declining a landlord termination). Requires a written reason.
+   *
+   * Expected backend: POST /api/bookings/cancellations/{id}/decline with { reason: string }.
+   * Backend should set status="Declined", declinedAt=now, declineReason=reason.
+   */
+  declineCancellation: (cancellationId: string, reason: string) =>
+    apiClient
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/cancellations/${cancellationId}/decline`, { reason })
+      .then((r) => r.data.data),
+
+  /**
+   * Landlord-initiated termination request.
+   *
+   * `reason` determines financial treatment:
+   *  - "NonPayment":      deposit goes to host in lieu of unpaid rent; tenant receives leftover.
+   *                       Requires 14+ days of overdue rent.
+   *  - "Breach":          host claims damages from deposit; subject to dispute.
+   *  - "MutualAgreement": no penalties; deposit refunded in full.
+   *
+   * Expected backend: POST /api/bookings/{id}/cancellation with
+   *   { initiator: "Landlord", reason, note }.
+   */
+  initiateLandlordTermination: (
+    bookingId: string,
+    payload: { reason: "NonPayment" | "Breach" | "MutualAgreement"; note: string },
+  ) =>
+    apiClient
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/${bookingId}/cancellation`, {
+        initiator: "Landlord",
+        reason: payload.reason,
+        note: payload.note,
+      })
+      .then((r) => r.data.data),
+
+  /**
+   * Tenant "cure" action: pay outstanding rent to cancel a NonPayment termination.
+   * Only valid while the cancellation is still "Requested" and reason is "NonPayment".
+   *
+   * Expected backend: POST /api/bookings/cancellations/{id}/cure
+   * Should clear the cancellation and re-set booking status to Active.
+   */
+  cureCancellation: (cancellationId: string) =>
+    apiClient
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/cancellations/${cancellationId}/cure`, {})
+      .then((r) => r.data.data),
+
+  /**
+   * Withdraw a still-pending cancellation request. Only the initiator may withdraw,
+   * and only while status === "Requested".
+   *
+   * Expected backend: POST /api/bookings/cancellations/{id}/withdraw.
+   */
+  withdrawCancellation: (cancellationId: string) =>
+    apiClient
+      .post<{ data: BookingCancellationDto }>(`/api/bookings/cancellations/${cancellationId}/withdraw`, {})
+      .then((r) => r.data.data),
+
+  // ─── Payment enforcement ───────────────────────────────────────────────────
+
+  /**
+   * Send a payment notice to the tenant. Two flavours:
+   *  - `reminder` — friendly nudge, available from day 3 of overdue, rate-limited to once per 3 days
+   *  - `formal`   — formal notice, available from day 7 of overdue, creates a timeline record
+   *
+   * Expected backend: POST /api/bookings/{id}/payment-notice with { type } body.
+   * Should send email/push to tenant and record the action in booking timeline.
+   */
+  sendPaymentNotice: (bookingId: string, type: "reminder" | "formal") =>
+    apiClient
+      .post<{ data: { sentAt: string } }>(`/api/bookings/${bookingId}/payment-notice`, { type })
+      .then((r) => r.data.data),
+
+  // ─── Deposit settlement ────────────────────────────────────────────────────
+
+  /**
+   * Get the deposit-settlement record for a completed booking. Returns null/404 when
+   * the booking hasn't entered the settlement phase yet.
+   *
+   * Expected backend: GET /api/bookings/{id}/deposit-settlement
+   */
+  getDepositSettlement: (bookingId: string) =>
+    apiClient
+      .get<{ data: DepositSettlementDto }>(`/api/bookings/${bookingId}/deposit-settlement`)
+      .then((r) => r.data.data),
+
+  /**
+   * Host action: submit checkout inspection result.
+   *   outcome="full_return" → release the full deposit to the tenant
+   *   outcome="partial_hold" → withhold `holdAmount`, must include reason (and optionally photos)
+   *
+   * Expected backend: POST /api/bookings/{id}/checkout-inspection
+   */
+  submitCheckoutInspection: (
+    bookingId: string,
+    payload: { outcome: "full_return" | "partial_hold"; holdAmount?: number; reason?: string; photoUrls?: string[] },
+  ) =>
+    apiClient
+      .post<{ data: DepositSettlementDto }>(`/api/bookings/${bookingId}/checkout-inspection`, payload)
+      .then((r) => r.data.data),
+
+  /**
+   * Tenant accepts the partial hold proposed by the host.
+   *
+   * Expected backend: POST /api/bookings/{id}/deposit-settlement/accept
+   */
+  acceptDepositSettlement: (bookingId: string) =>
+    apiClient
+      .post<{ data: DepositSettlementDto }>(`/api/bookings/${bookingId}/deposit-settlement/accept`, {})
+      .then((r) => r.data.data),
+
+  /**
+   * Tenant disputes the partial hold. Triggers manual support review.
+   *
+   * Expected backend: POST /api/bookings/{id}/deposit-settlement/dispute
+   */
+  disputeDepositSettlement: (bookingId: string, reason: string) =>
+    apiClient
+      .post<{ data: DepositSettlementDto }>(`/api/bookings/${bookingId}/deposit-settlement/dispute`, { reason })
+      .then((r) => r.data.data),
 };

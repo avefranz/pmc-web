@@ -77,6 +77,7 @@ function BookingCard({ booking }: { booking: BookingDto }) {
 
   // Days remaining in active lease
   const daysLeft = booking.daysRemaining;
+  const daysSinceCheckIn = Math.floor((today.getTime() - checkIn.getTime()) / 86_400_000);
 
   // Sub-label for the status badge
   let statusBadgeText: string;
@@ -147,6 +148,11 @@ function BookingCard({ booking }: { booking: BookingDto }) {
             {urgencyText && (
               <p className={cn("text-[11px] font-semibold mt-0.5", urgencyClass)}>
                 {urgencyText}
+              </p>
+            )}
+            {isActive && daysSinceCheckIn >= 0 && daysSinceCheckIn <= 30 && (
+              <p className="text-[11px] font-semibold mt-0.5 text-danger">
+                {daysSinceCheckIn === 0 ? "📋 File TM-30 now — 24h window" : `📋 TM-30 overdue ${daysSinceCheckIn}d`}
               </p>
             )}
           </div>

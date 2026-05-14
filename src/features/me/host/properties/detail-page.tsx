@@ -13,8 +13,7 @@ import {
   LayoutGrid, FileText, CalendarDays, Wrench, Settings,
   BarChart2, Home, ChevronRight, CheckCircle2, Circle,
   ImageIcon, Megaphone, TrendingUp, MapPin, Ruler, Car,
-  Search, Loader2, Star,
-
+  Search, Loader2, Star, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +35,7 @@ import { useListingsByAsset, useCreateNewVersion, useCreateListing, usePublishLi
 import { useAmenities, useAmenityCategories, useReferences } from "@/lib/hooks/use-references";
 import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
 import { listingsApi } from "@/lib/api/listings.api";
+import { peaApi } from "@/lib/api/pea.api";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
 import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind, BookingStatus } from "@/lib/types/enums";
@@ -681,9 +681,9 @@ export function PropertyDetailPage() {
     !!listing.checkInMethod,
     true, // Utilities — "none included" is a valid explicit choice
     !!(listing.houseRules || listing.wifiName),
-    isSectionSaved("pets"),
+    listing.petsAllowed != null,
     listing.cancellationNoticeDays != null,
-    isSectionSaved("safety"),
+    listing.hasSmokeDetector != null || listing.hasCODetector != null || listing.hasFireExtinguisher != null || listing.hasFirstAidKit != null || listing.hasSecurityCamera != null,
     !!(listing.transportInfo || listing.nearbyPlaces),
   ].filter(Boolean).length : 0;
   const totalListingSections = 9;
@@ -711,13 +711,46 @@ export function PropertyDetailPage() {
   const [utilType, setUtilType] = useState<UtilityType>(UtilityType.Electricity);
   const [providerName, setProviderName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
+  // PEA-specific validation flow
+  const [peaMeterNo, setPeaMeterNo] = useState("");
+  const [peaStep, setPeaStep] = useState<"form" | "confirm">("form");
+  const [peaCustomerName, setPeaCustomerName] = useState("");
+  const [peaValidating, setPeaValidating] = useState(false);
+
+  const UTILITY_PROVIDERS: Record<UtilityType, string[]> = {
+    [UtilityType.Electricity]: ["PEA", "MEA"],
+    [UtilityType.Water]: ["PWA", "MWA"],
+    [UtilityType.Internet]: ["AIS Fibre", "True Online", "NT (TOT)", "3BB", "DTAC"],
+    [UtilityType.CommonAreaFee]: ["Juristic Person"],
+    [UtilityType.Other]: ["Other"],
+  };
+
+  const isPea = utilType === UtilityType.Electricity && providerName === "PEA";
+
+  function resetUtilityDialog() {
+    setProviderName(""); setAccountNumber("");
+    setPeaMeterNo(""); setPeaStep("form"); setPeaCustomerName(""); setPeaValidating(false);
+  }
+
+  async function handlePeaVerify() {
+    setPeaValidating(true);
+    try {
+      const result = await peaApi.validate(accountNumber.trim(), peaMeterNo.trim());
+      setPeaCustomerName(result.customerName);
+      setPeaStep("confirm");
+    } catch {
+      toast.error("Could not verify meter — check CA and PEA No.");
+    } finally {
+      setPeaValidating(false);
+    }
+  }
 
   async function handleAddUtility() {
     try {
-      await createUtility.mutateAsync({ assetId: id!, utilityType: utilType, providerName, accountNumber });
+      await createUtility.mutateAsync({ assetId: id!, utilityType: utilType, providerName: providerName.trim(), accountNumber: accountNumber.trim() });
       toast.success("Utility added");
       setAddUtilityOpen(false);
-      setProviderName(""); setAccountNumber("");
+      resetUtilityDialog();
     } catch { toast.error("Failed to add utility"); }
   }
 
@@ -779,6 +812,8 @@ export function PropertyDetailPage() {
   const [locUnit, setLocUnit] = useState("");
   const [locZip, setLocZip] = useState("");
   const [locCityId, setLocCityId] = useState<number | null>(null);
+  const [locLegalAddress, setLocLegalAddress] = useState("");
+  const [locGoogleMapsUrl, setLocGoogleMapsUrl] = useState("");
   const [locMapZoom, setLocMapZoom] = useState<number>(11);
   const [locSearch, setLocSearch] = useState("");
   const [locResults, setLocResults] = useState<NominatimResult[]>([]);
@@ -951,6 +986,8 @@ export function PropertyDetailPage() {
     setLocUnit(asset.unitNumber ?? "");
     setLocZip(asset.zipCode ?? "");
     setLocCityId(asset.cityId && asset.cityId > 0 ? asset.cityId : 1);
+    setLocLegalAddress(asset.legalAddress ?? "");
+    setLocGoogleMapsUrl(asset.googleMapsUrl ?? "");
     const addrStr = asset.addressLine ? Object.values(asset.addressLine).filter(Boolean).join(", ") : "";
     // Parse "Soi X, Road name" back into separate fields
     const soiMatch = addrStr.match(/^Soi\s+([^,]+),?\s*(.*)/i);
@@ -983,6 +1020,8 @@ export function PropertyDetailPage() {
         zipCode: locZip || undefined,
         latitude: locLat,
         longitude: locLng,
+        legalAddress: locLegalAddress || undefined,
+        googleMapsUrl: locGoogleMapsUrl || undefined,
       });
       toast.success("Location saved");
       setLocationOpen(false);
@@ -1111,7 +1150,7 @@ export function PropertyDetailPage() {
       },
       {
         id: "pets",
-        done: isSectionSaved("pets"),
+        done: listing.petsAllowed != null,
         open: () => { setEditPetsAllowed(listing.petsAllowed ?? false); setEditPetDeposit(listing.petDeposit ?? 0); setPetsOpen(true); },
       },
       {
@@ -1121,16 +1160,16 @@ export function PropertyDetailPage() {
       },
       {
         id: "safety",
-        done: isSectionSaved("safety"),
+        done: listing.hasSmokeDetector != null || listing.hasCODetector != null || listing.hasFireExtinguisher != null || listing.hasFirstAidKit != null || listing.hasSecurityCamera != null,
         open: () => {
           setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
           setEditHasCODetector(listing.hasCODetector ?? false);
           setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
           setEditHasFirstAid(listing.hasFirstAidKit ?? false);
           setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
-          // Only pre-check "none" if this section was previously saved with all-false values
-          const wasSaved = isSectionSaved("safety");
-          setEditNoneOfAbove(wasSaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
+          // Pre-check "none of above" if section was saved with all-false values
+          const safetySaved = listing.hasSmokeDetector != null || listing.hasCODetector != null || listing.hasFireExtinguisher != null || listing.hasFirstAidKit != null || listing.hasSecurityCamera != null;
+          setEditNoneOfAbove(safetySaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
           setSafetyOpen(true);
         },
       },
@@ -1157,20 +1196,8 @@ export function PropertyDetailPage() {
     if (next) setTimeout(() => next.open(), 120); // small delay so previous dialog can close
   }
 
-  /** Mark a listing section as explicitly saved by the user (localStorage). */
-  function markSectionSaved(sectionId: string) {
-    if (!listing) return;
-    try { localStorage.setItem(`listing-${listing.id}-${sectionId}-saved`, "1"); } catch { /* ignore */ }
-  }
-  /** Check if a section was explicitly saved by the user. */
-  function isSectionSaved(sectionId: string): boolean {
-    if (!listing) return false;
-    try { return localStorage.getItem(`listing-${listing.id}-${sectionId}-saved`) === "1"; } catch { return false; }
-  }
-
   /** Close dialog and advance to next incomplete listing section. */
   function saveAndNext(patch: Record<string, unknown>, closeFn: () => void, currentSectionId: string) {
-    markSectionSaved(currentSectionId);
     void saveListingSection(patch, () => { closeFn(); openNextListingSection(currentSectionId); });
   }
 
@@ -1840,6 +1867,22 @@ export function PropertyDetailPage() {
                           </div>
                         </div>
                       )}
+                      {asset.legalAddress && (
+                        <div className="mt-1.5 text-xs text-fg-muted flex items-start gap-1.5">
+                          <FileText size={11} className="shrink-0 mt-0.5" />
+                          <span className="leading-relaxed">{asset.legalAddress}</span>
+                        </div>
+                      )}
+                      {asset.googleMapsUrl && (
+                        <a
+                          href={asset.googleMapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1.5 inline-flex items-center gap-1 text-xs text-brand hover:underline"
+                        >
+                          <ExternalLink size={10} /> View on Google Maps
+                        </a>
+                      )}
                     </div>
                   ) : (
                     <button
@@ -2103,7 +2146,7 @@ export function PropertyDetailPage() {
                       {/* 6. Pets */}
                       <ListingSectionCard
                         title="Pets"
-                        done={isSectionSaved("pets")}
+                        done={listing.petsAllowed != null}
                         onEdit={() => {
                           setEditPetsAllowed(listing.petsAllowed ?? false);
                           setEditPetDeposit(listing.petDeposit ?? 0);
@@ -2144,24 +2187,24 @@ export function PropertyDetailPage() {
                         return (
                           <ListingSectionCard
                             title="Safety features"
-                            done={isSectionSaved("safety")}
+                            done={listing.hasSmokeDetector != null || listing.hasCODetector != null || listing.hasFireExtinguisher != null || listing.hasFirstAidKit != null || listing.hasSecurityCamera != null}
                             onEdit={() => {
                               setEditHasSmokeDetector(listing.hasSmokeDetector ?? false);
                               setEditHasCODetector(listing.hasCODetector ?? false);
                               setEditHasFireExtinguisher(listing.hasFireExtinguisher ?? false);
                               setEditHasFirstAid(listing.hasFirstAidKit ?? false);
                               setEditHasSecurityCamera(listing.hasSecurityCamera ?? false);
-                              const wasSaved = isSectionSaved("safety");
-                              setEditNoneOfAbove(wasSaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
+                              const safetySaved = listing.hasSmokeDetector != null || listing.hasCODetector != null || listing.hasFireExtinguisher != null || listing.hasFirstAidKit != null || listing.hasSecurityCamera != null;
+                              setEditNoneOfAbove(safetySaved && !listing.hasSmokeDetector && !listing.hasCODetector && !listing.hasFireExtinguisher && !listing.hasFirstAidKit && !listing.hasSecurityCamera);
                               setSafetyOpen(true);
                             }}
                           >
                             <div className="flex flex-wrap gap-1.5">
                               {safety.length > 0 ? safety.map((s) => (
                                 <span key={s} className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full border border-success/20">{s}</span>
-                              )) : isSectionSaved("safety") ? (
+                              )) : (
                                 <span className="text-sm text-fg-muted">None</span>
-                              ) : null}
+                              )}
                             </div>
                           </ListingSectionCard>
                         );
@@ -2389,11 +2432,11 @@ export function PropertyDetailPage() {
       </Dialog>
 
       <Dialog open={locationOpen} onOpenChange={(open) => { setLocationOpen(open); if (!open) setLocResults([]); }}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <DialogTitle>Set location</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-1">
+          <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
 
             {/* ── Step 1: City ── */}
             <div className="space-y-1.5">
@@ -2530,9 +2573,31 @@ export function PropertyDetailPage() {
               </div>
             </div>
 
+            {/* Legal address & Maps URL */}
+            <div className="space-y-2.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Legal address</Label>
+                <Textarea
+                  placeholder="Full legal address as it appears on TM-30 forms (Thai or English)"
+                  value={locLegalAddress}
+                  onChange={(e) => setLocLegalAddress(e.target.value)}
+                  rows={2}
+                  className="resize-none text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Google Maps URL</Label>
+                <Input
+                  placeholder="https://maps.app.goo.gl/…"
+                  value={locGoogleMapsUrl}
+                  onChange={(e) => setLocGoogleMapsUrl(e.target.value)}
+                />
+              </div>
+            </div>
+
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
             <Button variant="outline" onClick={() => setLocationOpen(false)}>Cancel</Button>
             <Button
               className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
@@ -3447,25 +3512,105 @@ export function PropertyDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addUtilityOpen} onOpenChange={setAddUtilityOpen}>
+      <Dialog open={addUtilityOpen} onOpenChange={(v) => { setAddUtilityOpen(v); if (!v) resetUtilityDialog(); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add utility</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={utilType} onValueChange={(v) => setUtilType(v as UtilityType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.values(UtilityType).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
+          <DialogHeader>
+            <DialogTitle>{peaStep === "confirm" ? "Confirm meter" : "Add utility"}</DialogTitle>
+          </DialogHeader>
+
+          {peaStep === "confirm" ? (
+            /* ── Step 2: PEA confirmation ── */
+            <div className="py-2 space-y-4">
+              <div className="rounded-xl bg-bg-subtle border border-border px-4 py-3 space-y-2">
+                <p className="text-xs text-fg-muted">Meter registered to</p>
+                <p className="text-base font-semibold text-fg">{peaCustomerName}</p>
+                <div className="pt-1 space-y-1 text-xs font-mono text-fg-muted">
+                  <p>CA {accountNumber.trim()}</p>
+                  <p>PEA No. {peaMeterNo.trim()}</p>
+                </div>
+              </div>
+              <p className="text-xs text-fg-muted leading-relaxed">
+                Is this the correct meter for this property? Only the CA number will be stored — PEA No. is used for verification only.
+              </p>
             </div>
-            <div className="space-y-1.5"><Label>Provider name</Label><Input value={providerName} onChange={(e) => setProviderName(e.target.value)} placeholder="e.g. PEA" /></div>
-            <div className="space-y-1.5"><Label>Account number</Label><Input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} /></div>
-          </div>
+          ) : (
+            /* ── Step 1: form ── */
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={utilType} onValueChange={(v) => { setUtilType(v as UtilityType); setProviderName(""); setPeaStep("form"); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.values(UtilityType).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Provider</Label>
+                <Select value={providerName} onValueChange={(v) => { setProviderName(v); setPeaStep("form"); }}>
+                  <SelectTrigger><SelectValue placeholder="Select provider…" /></SelectTrigger>
+                  <SelectContent>
+                    {UTILITY_PROVIDERS[utilType].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>CA / REF No.</Label>
+                <Input
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  placeholder="Account number"
+                  className="font-mono"
+                />
+              </div>
+              {isPea && (
+                <div className="space-y-1.5">
+                  <Label>PEA No. (Meter No.)</Label>
+                  <Input
+                    value={peaMeterNo}
+                    onChange={(e) => setPeaMeterNo(e.target.value)}
+                    placeholder="Meter number"
+                    className="font-mono"
+                  />
+                  <p className="text-[11px] text-fg-muted">Both numbers are printed on your electricity bill.</p>
+                </div>
+              )}
+            </div>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddUtilityOpen(false)}>Cancel</Button>
-            <Button disabled={createUtility.isPending} onClick={handleAddUtility} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
-              {createUtility.isPending ? "Adding…" : "Add utility"}
-            </Button>
+            {peaStep === "confirm" ? (
+              <>
+                <Button variant="outline" onClick={() => setPeaStep("form")}>Back</Button>
+                <Button
+                  disabled={createUtility.isPending}
+                  onClick={handleAddUtility}
+                  className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                >
+                  {createUtility.isPending ? "Saving…" : "Confirm & save"}
+                </Button>
+              </>
+            ) : isPea ? (
+              <>
+                <Button variant="outline" onClick={() => setAddUtilityOpen(false)}>Cancel</Button>
+                <Button
+                  disabled={!accountNumber.trim() || !peaMeterNo.trim() || peaValidating}
+                  onClick={handlePeaVerify}
+                  className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                >
+                  {peaValidating ? "Verifying…" : "Verify meter"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setAddUtilityOpen(false)}>Cancel</Button>
+                <Button
+                  disabled={!providerName.trim() || !accountNumber.trim() || createUtility.isPending}
+                  onClick={handleAddUtility}
+                  className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                >
+                  {createUtility.isPending ? "Adding…" : "Add utility"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

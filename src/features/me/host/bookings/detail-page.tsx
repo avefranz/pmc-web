@@ -1,10 +1,10 @@
-import { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Trash2, FileText, Upload,
   Eye,
-  PenLine, CheckCircle2, Clock, AlertCircle,
+  PenLine, CheckCircle2, Clock, AlertCircle, Download, ExternalLink, Globe, FileCheck,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,19 @@ import {
   useUploadTm30,
   useUnlinkTenant,
   useBookingPayment,
-
   useBookingCancellation,
   useConfirmCancellation,
+  useDeclineCancellation,
+  useSendPaymentNotice,
+  useInitiateLandlordTermination,
 } from "@/lib/hooks/use-bookings";
+import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
+import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
+import { contractSigningDeadline } from "@/lib/types";
+import { HostPaymentHealthPill, computePaymentHealth } from "@/components/shared/payment-status-banner";
+import { Textarea } from "@/components/ui/textarea";
+import { useAsset } from "@/lib/hooks/use-assets";
+import { PeaBillCard } from "@/components/shared/pea-bill-card";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { ticketKindIcon } from "@/lib/utils/ticket-status";
@@ -41,12 +50,27 @@ import { cn } from "@/lib/utils/cn";
 
 // Landlord view: read-only guest card. Editing/removing guests is the tenant's responsibility.
 // The landlord's job here is TM-30 filing only.
-function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: string }) {
+function GuestCard({
+  guest,
+  bookingId,
+  onTm30Status,
+}: {
+  guest: BookingGuestDto;
+  bookingId: string;
+  onTm30Status?: (guestId: string, filed: boolean) => void;
+}) {
   const { data: tm30 } = useBookingTm30(bookingId, guest.id);
   const uploadTm30 = useUploadTm30(bookingId, guest.id);
 
   const hasPassport = !!(guest.passportNumber || guest.nationality || guest.visaType);
   const tm30Filed = tm30?.status === Tm30Status.Filed;
+
+  useEffect(() => {
+    if (tm30 !== undefined && guest.passportNumber) {
+      onTm30Status?.(guest.id, tm30Filed);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tm30Filed, tm30, guest.id, guest.passportNumber]);
 
   return (
     <div className="bg-bg-card rounded-xl shadow-card p-4 space-y-3">
@@ -65,7 +89,7 @@ function GuestCard({ guest, bookingId }: { guest: BookingGuestDto; bookingId: st
         {hasPassport && (
           <div className="mt-1 space-y-0.5 text-xs text-fg-muted font-mono">
             {guest.passportNumber && <p>Passport: {guest.passportNumber}{guest.passportExpiry ? ` · exp ${formatDate(guest.passportExpiry)}` : ""}</p>}
-            {(guest.nationality || guest.visaType) && <p>{[guest.nationality, guest.visaType].filter(Boolean).join(" · ")}</p>}
+            {(guest.nationality || guest.visaType || guest.gender) && <p>{[guest.nationality, guest.gender === "M" ? "Male" : guest.gender === "F" ? "Female" : undefined, guest.visaType].filter(Boolean).join(" · ")}</p>}
             {guest.dateOfBirth && <p>DOB: {formatDate(guest.dateOfBirth)}</p>}
             {guest.entryDate && <p>Entry: {formatDate(guest.entryDate)}{guest.entryPort ? ` via ${guest.entryPort}` : ""}</p>}
           </div>
@@ -134,7 +158,6 @@ const TICKET_STATUS_LABELS: Record<string, string> = {
   Verified: "Work done",
   Reopened: "Re-opened",
 };
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function BookingDetailPage() {
@@ -148,14 +171,31 @@ export function BookingDetailPage() {
   const { data: tickets } = useBookingTickets(id!);
   const { data: contractData } = useBookingContract(id!);
   const { data: paymentData } = useBookingPayment(id!);
+  const { data: asset } = useAsset(booking?.assetId ?? "");
   const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
   const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
 
   const confirmCancellation = useConfirmCancellation(id!);
+  const declineCancellation = useDeclineCancellation(id!);
   const landlordSignContract = useLandlordSignContract(id!);
 
   const [unlinkTenantOpen, setUnlinkTenantOpen] = useState(false);
   const unlinkTenant = useUnlinkTenant(id!);
+
+  // Decline early exit dialog
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+
+  // Payment notice (reminder / formal)
+  const sendPaymentNotice = useSendPaymentNotice(id!);
+  const [lastReminderAt, setLastReminderAt] = useState<number | null>(null);
+  const [lastFormalAt, setLastFormalAt] = useState<number | null>(null);
+
+  // Landlord-initiated termination
+  const initiateTermination = useInitiateLandlordTermination(id!);
+  const [terminateOpen, setTerminateOpen] = useState(false);
+  const [terminationReason, setTerminationReason] = useState<"NonPayment" | "Breach" | "MutualAgreement">("NonPayment");
+  const [terminationNote, setTerminationNote] = useState("");
 
   // Landlord signing form state
   const [landlordTypedName, setLandlordTypedName] = useState("");
@@ -169,6 +209,25 @@ export function BookingDetailPage() {
   const [landlordAgreedAuth, setLandlordAgreedAuth] = useState(false);
 
   const [contractUploading, setContractUploading] = useState(false);
+  const [tm30Downloading, setTm30Downloading] = useState(false);
+  const [tm30StatusMap, setTm30StatusMap] = useState<Map<string, boolean>>(new Map());
+  const handleTm30Status = useCallback((guestId: string, filed: boolean) => {
+    setTm30StatusMap((prev) => {
+      if (prev.get(guestId) === filed) return prev;
+      return new Map(prev).set(guestId, filed);
+    });
+  }, []);
+
+  async function handleDownloadTm30Template() {
+    setTm30Downloading(true);
+    try {
+      await bookingsApi.downloadTm30Template(id!);
+    } catch {
+      toast.error("Failed to download TM-30 template");
+    } finally {
+      setTm30Downloading(false);
+    }
+  }
 
   async function handleUploadContract(file: File) {
     setContractUploading(true);
@@ -253,6 +312,24 @@ export function BookingDetailPage() {
     (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
   );
 
+  const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
+  const tm30Summary = {
+    total: foreignGuests.length,
+    filed: foreignGuests.filter((g) => tm30StatusMap.get(g.id) === true).length,
+    allFiled: foreignGuests.length > 0 && foreignGuests.every((g) => tm30StatusMap.get(g.id) === true),
+    hasGuests: foreignGuests.length > 0,
+  };
+  const bookingDone = booking.status === BookingStatus.Completed || booking.status === BookingStatus.Cancelled;
+  const daysSinceCheckIn = Math.floor((Date.now() - checkInDate.getTime()) / 86_400_000);
+  const showTm30Banner =
+    !bookingDone &&
+    tm30Summary.hasGuests &&
+    !tm30Summary.allFiled &&
+    daysSinceCheckIn >= 0 &&
+    daysSinceCheckIn <= 30;
+  const unfiledCount = tm30Summary.total - tm30Summary.filed;
+  const maxFine = unfiledCount * 2000;
+
   return (
     <div className="space-y-6">
       {/* Back */}
@@ -270,10 +347,10 @@ export function BookingDetailPage() {
             <h1 className="text-2xl font-semibold text-fg">
               {booking.tenantName ?? booking.listingTitle ?? "Booking"}
             </h1>
-            {booking.tenantName && (
+            {booking.tenantName && !bookingDone && booking.status !== BookingStatus.Active && booking.status !== BookingStatus.Confirmed && (
               <button
                 className="p-1.5 rounded-lg hover:bg-danger/10 text-fg-muted hover:text-danger transition-colors"
-                title="Remove tenant"
+                title="Release booking slot (only available before move-in)"
                 onClick={() => setUnlinkTenantOpen(true)}
               >
                 <Trash2 size={14} />
@@ -298,6 +375,30 @@ export function BookingDetailPage() {
         )}
       </div>
 
+      {/* ── Lease completed: header + deposit settlement card ── */}
+      {booking.status === BookingStatus.Completed && (
+        <div className="space-y-3">
+          <div className="bg-bg-card border border-border rounded-2xl p-5 flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+              <CheckCircle2 size={20} className="text-success" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-fg">Lease completed</p>
+              <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+                The tenancy ended on {formatDate(booking.checkOutDate)}. Next step: confirm the deposit
+                settlement below.
+              </p>
+            </div>
+          </div>
+          <DepositSettlementCard
+            bookingId={id!}
+            role="host"
+            depositAmount={booking.depositAmount}
+            checkOutDate={booking.checkOutDate}
+          />
+        </div>
+      )}
+
       {/* ── URGENT: Landlord must sign ── */}
       {contractData?.status === "PendingLandlordSignature" && (
         <div className="bg-brand rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-lg">
@@ -305,10 +406,19 @@ export function BookingDetailPage() {
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
               <PenLine size={20} className="text-white" />
             </div>
-            <div>
-              <p className="text-base font-bold text-white">Action required — sign the rental agreement</p>
-              <p className="text-sm text-white/80 mt-0.5">
-                The tenant has paid and signed. Your signature finalises the booking. Scroll down to sign.
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-base font-bold text-white">Action required — sign the rental agreement</p>
+                <CountdownPill
+                  deadline={contractSigningDeadline(contractData)}
+                  prefix="Booking expires in"
+                  expiredLabel="Expired — booking will be cancelled"
+                  className="bg-white/20 text-white"
+                />
+              </div>
+              <p className="text-sm text-white/80 mt-1">
+                The tenant has paid and signed. Your signature finalises the booking. If unsigned by the
+                deadline, the booking auto-cancels and the tenant is refunded.
               </p>
             </div>
           </div>
@@ -318,6 +428,86 @@ export function BookingDetailPage() {
           >
             Sign now ↓
           </a>
+        </div>
+      )}
+
+      {/* TM-30 urgency banner */}
+      {showTm30Banner && (() => {
+        const isDay0 = daysSinceCheckIn === 0;
+        const isOverdue = daysSinceCheckIn >= 1;
+        const isCritical = daysSinceCheckIn >= 1 && daysSinceCheckIn <= 3;
+
+        let headline: string;
+        let sub: string;
+        let barColor: string;
+        let borderColor: string;
+        let bgColor: string;
+
+        if (isDay0) {
+          headline = "🚨 File TM-30 now — 24-hour window is open";
+          sub = `The clock started at check-in. You have 24 hours to file or face a fine of up to ฿${maxFine.toLocaleString()}. Takes 5 minutes.`;
+          barColor = "bg-danger";
+          borderColor = "border-danger/40";
+          bgColor = "bg-danger/8";
+        } else if (isCritical) {
+          headline = `🚨 TM-30 overdue by ${daysSinceCheckIn} day${daysSinceCheckIn > 1 ? "s" : ""} — file immediately`;
+          sub = `Past the 24h deadline. Fine exposure: up to ฿${maxFine.toLocaleString()} per inspection. Spend 5 minutes, avoid the fine.`;
+          barColor = "bg-danger";
+          borderColor = "border-danger/40";
+          bgColor = "bg-danger/8";
+        } else {
+          headline = `🚨 TM-30 still pending — ${daysSinceCheckIn} days overdue`;
+          sub = `Spend 5 minutes and save up to ฿${maxFine.toLocaleString()}. ${unfiledCount} guest${unfiledCount > 1 ? "s" : ""} left to file.`;
+          barColor = "bg-danger";
+          borderColor = "border-danger/30";
+          bgColor = "bg-danger/5";
+        }
+
+        return (
+          <a
+            href="#tm30-section"
+            className={cn(
+              "block rounded-2xl border p-4 transition-all hover:brightness-95",
+              bgColor, borderColor,
+            )}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-fg">{headline}</p>
+                <p className="text-xs text-fg-muted mt-1 leading-relaxed">{sub}</p>
+
+                {/* Progress bar */}
+                {tm30Summary.total > 1 && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-[11px] text-fg-muted mb-1">
+                      <span>{tm30Summary.filed} of {tm30Summary.total} guests filed</span>
+                      <span>{tm30Summary.total - tm30Summary.filed} remaining</span>
+                    </div>
+                    <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", barColor)}
+                        style={{ width: `${Math.round((tm30Summary.filed / tm30Summary.total) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl whitespace-nowrap bg-danger text-white">
+                {isOverdue ? "Overdue" : "File now"}
+              </div>
+            </div>
+          </a>
+        );
+      })()}
+
+      {/* TM-30 all filed celebration */}
+      {!bookingDone && tm30Summary.allFiled && (
+        <div className="rounded-2xl border border-success/30 bg-success/6 px-4 py-3 flex items-center gap-3">
+          <CheckCircle2 size={18} className="text-success shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-fg">TM-30 complete — you're fully compliant ✓</p>
+            <p className="text-xs text-fg-muted mt-0.5">All {tm30Summary.total} guest{tm30Summary.total > 1 ? "s" : ""} filed. No action needed.</p>
+          </div>
         </div>
       )}
 
@@ -545,23 +735,122 @@ export function BookingDetailPage() {
               }
               const dueMonths = months.filter((m) => m.isPast || m.isCurrent).length;
               const overduePending = !trulyAllPaid && !initialPaymentsReceived && dueMonths > 0;
+
+              // Derived payment health from real payment data — drives enforcement actions
+              const paymentHealth = paymentData?.payments
+                ? computePaymentHealth(paymentData.payments)
+                : null;
+              const canReminder  = paymentHealth && paymentHealth.daysOverdue >= 3;
+              const canFormal    = paymentHealth && paymentHealth.daysOverdue >= 7;
+              const canTerminate = paymentHealth && paymentHealth.daysOverdue >= 14;
+
+              const reminderCooldownMs = 3 * 86_400_000;
+              const reminderOnCooldown = lastReminderAt != null && (Date.now() - lastReminderAt) < reminderCooldownMs;
+              const formalCooldownMs = 7 * 86_400_000;
+              const formalOnCooldown = lastFormalAt != null && (Date.now() - lastFormalAt) < formalCooldownMs;
+
               return (
                 <div className="bg-bg-card rounded-xl shadow-card overflow-hidden">
-                  <div className="px-5 pt-4 pb-3.5 flex items-center justify-between border-b border-border">
-                    <div>
+                  <div className="px-5 pt-4 pb-3.5 flex items-center justify-between gap-3 border-b border-border">
+                    <div className="min-w-0">
                       <p className="text-sm font-semibold text-fg">Monthly rent</p>
                       <p className="text-xs text-fg-muted mt-0.5">{formatThb(monthlyRate)} / month · {durationMonths} months total</p>
                     </div>
-                    {trulyAllPaid ? (
-                      <span className="text-xs font-semibold text-success bg-success/10 px-2.5 py-1 rounded-full">✓ All paid</span>
-                    ) : initialPaymentsReceived ? (
-                      <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">1 / {durationMonths} paid</span>
-                    ) : overduePending ? (
-                      <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-1 rounded-full">{dueMonths} month{dueMonths !== 1 ? "s" : ""} due</span>
-                    ) : (
-                      <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">0 / {durationMonths} paid</span>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {paymentHealth && <HostPaymentHealthPill health={paymentHealth} />}
+                      {trulyAllPaid ? (
+                        <span className="text-xs font-semibold text-success bg-success/10 px-2.5 py-1 rounded-full">✓ All paid</span>
+                      ) : initialPaymentsReceived ? (
+                        <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">1 / {durationMonths} paid</span>
+                      ) : overduePending ? (
+                        <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-1 rounded-full">{dueMonths} month{dueMonths !== 1 ? "s" : ""} due</span>
+                      ) : (
+                        <span className="text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">0 / {durationMonths} paid</span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Enforcement actions — surfaced only when there's overdue debt */}
+                  {paymentHealth?.daysOverdue && paymentHealth.daysOverdue > 0 ? (
+                    <div className="px-5 py-3 border-b border-border bg-bg-subtle/40 space-y-2">
+                      <p className="text-[11px] text-fg-muted leading-relaxed">
+                        Your tenant is {paymentHealth.daysOverdue} days overdue. Siamo's automated reminders already went out at D-7, D-1, D+1, D+3. You can also act directly:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          className="h-8 text-xs rounded-lg border-border"
+                          disabled={!canReminder || reminderOnCooldown || sendPaymentNotice.isPending}
+                          title={
+                            !canReminder ? "Available from day 3 of overdue"
+                              : reminderOnCooldown ? "Cooldown: once per 3 days"
+                              : "Send a friendly reminder via email + in-app"
+                          }
+                          onClick={async () => {
+                            try {
+                              await sendPaymentNotice.mutateAsync("reminder");
+                              setLastReminderAt(Date.now());
+                              toast.success("Reminder sent to tenant");
+                            } catch {
+                              toast.error("Failed to send reminder");
+                            }
+                          }}
+                        >
+                          Send reminder
+                          {!canReminder && <span className="ml-1 opacity-60">· from day 3</span>}
+                          {canReminder && reminderOnCooldown && <span className="ml-1 opacity-60">· cooldown</span>}
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "h-8 text-xs rounded-lg border-warning/40 text-warning",
+                            !canFormal && "opacity-60",
+                          )}
+                          disabled={!canFormal || formalOnCooldown || sendPaymentNotice.isPending}
+                          title={
+                            !canFormal ? "Available from day 7 of overdue"
+                              : formalOnCooldown ? "Cooldown: once per 7 days"
+                              : "Issue a formal Notice of Outstanding Payment — recorded in timeline as evidence"
+                          }
+                          onClick={async () => {
+                            try {
+                              await sendPaymentNotice.mutateAsync("formal");
+                              setLastFormalAt(Date.now());
+                              toast.success("Formal notice issued");
+                            } catch {
+                              toast.error("Failed to send notice");
+                            }
+                          }}
+                        >
+                          Issue formal notice
+                          {!canFormal && <span className="ml-1 opacity-60">· from day 7</span>}
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "h-8 text-xs rounded-lg border-danger/40 text-danger",
+                            !canTerminate && "opacity-60",
+                          )}
+                          disabled={!canTerminate}
+                          title={
+                            !canTerminate
+                              ? "Available from day 14 of overdue"
+                              : "Initiate termination for non-payment (gives tenant 7 days to cure)"
+                          }
+                          onClick={() => {
+                            setTerminationReason("NonPayment");
+                            setTerminationNote("");
+                            setTerminateOpen(true);
+                          }}
+                        >
+                          Initiate termination
+                          {!canTerminate && <span className="ml-1 opacity-60">· from day 14</span>}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="divide-y divide-border">
                     {months.map((m, i) => {
                       const rowPaid = trulyAllPaid || (i === 0 && initialPaymentsReceived);
@@ -638,10 +927,160 @@ export function BookingDetailPage() {
               <p className="text-sm text-fg-muted">No residents added yet. Once the tenant joins the portal, their co-residents will appear here.</p>
             ) : (
               <div className="space-y-3">
-                {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} />)}
+                {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} onTm30Status={handleTm30Status} />)}
               </div>
             )}
           </div>
+
+          {/* TM-30 Filing */}
+          {(() => {
+            const hasAnyPassport = (guests ?? []).some((g) => !!g.passportNumber);
+            const missingLegalAddress = !asset?.legalAddress;
+            const { total: tm30Total, filed: tm30Filed2, allFiled: tm30AllFiled } = tm30Summary;
+
+            const steps: { icon: React.ReactNode; title: string; body: React.ReactNode }[] = [
+              {
+                icon: <Download size={13} />,
+                title: "Download the pre-filled template",
+                body: (
+                  <>
+                    <p>We pre-fill all guest passport details and your property's legal address into the Excel file. Open it in Excel or Google Sheets and verify the information is correct before submitting.</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!hasAnyPassport || tm30Downloading || missingLegalAddress}
+                      onClick={handleDownloadTm30Template}
+                      className="mt-3 gap-2 w-full"
+                    >
+                      <Download size={13} />
+                      {tm30Downloading ? "Downloading…" : "Download TM-30 Excel template"}
+                    </Button>
+                    {!hasAnyPassport && (
+                      <p className="mt-2 text-[11px] text-fg-muted">Available once a guest submits their passport details.</p>
+                    )}
+                  </>
+                ),
+              },
+              {
+                icon: <Globe size={13} />,
+                title: "Register on the immigration portal",
+                body: (
+                  <>
+                    <p><span className="font-medium text-fg">First time only.</span> Create a landlord account at the official TM-30 portal using your Thai ID or passport and your property title deed. After online sign-up, visit your local immigration office once to verify your identity — after that, everything is done online.</p>
+                    <a
+                      href="https://tm30.immigration.go.th"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
+                    >
+                      Open TM-30 portal <ExternalLink size={11} />
+                    </a>
+                  </>
+                ),
+              },
+              {
+                icon: <FileText size={13} />,
+                title: "Upload the file on the portal",
+                body: (
+                  <p>Log in, go to <span className="font-medium text-fg">"Notification of Residence"</span>, and upload the Excel file. No manual entry needed — all guest details are already in the file. Review the preview and submit.</p>
+                ),
+              },
+              {
+                icon: <FileCheck size={13} />,
+                title: "Download the confirmation receipt",
+                body: (
+                  <p>After submission, download the PDF receipt from the portal. This is your legal proof of compliance — share a copy with your tenant too, as they may need it when extending their visa at immigration.</p>
+                ),
+              },
+              {
+                icon: <Upload size={13} />,
+                title: "Upload the receipt here",
+                body: (
+                  <p>Use the <span className="font-medium text-fg">"Upload PDF"</span> button on each guest's card above. Their TM-30 status will update to <span className="font-medium text-success">Filed</span> and you'll have a record on file.</p>
+                ),
+              },
+            ];
+
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-3" id="tm30-section">
+                  <h2 className="text-sm font-semibold text-fg">TM-30 Filing</h2>
+                  {tm30Total > 0 && (
+                    <span className={cn(
+                      "text-xs font-semibold px-2 py-0.5 rounded-full",
+                      tm30AllFiled
+                        ? "bg-success/10 text-success"
+                        : "bg-warning/10 text-warning",
+                    )}>
+                      {tm30AllFiled ? `✓ ${tm30Total}/${tm30Total} filed` : `${tm30Filed2}/${tm30Total} filed`}
+                    </span>
+                  )}
+                </div>
+                <div className="bg-bg-card rounded-xl shadow-card overflow-hidden">
+
+                  {/* Deadline banner */}
+                  <div className="px-4 py-3 bg-warning/8 border-b border-warning/20 flex items-start gap-2.5">
+                    <AlertCircle size={14} className="text-warning shrink-0 mt-px" />
+                    <div>
+                      <p className="text-xs font-semibold text-fg">Required within 24 hours of check-in</p>
+                      <p className="text-[11px] text-fg-muted mt-0.5 leading-relaxed">
+                        Thai law requires landlords to report all foreign guests to immigration. Applies to non-Thai nationals only. Fine: ฿800–2,000 per guest.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Missing legal address warning */}
+                  {missingLegalAddress && (
+                    <div className="px-4 py-3 bg-danger/8 border-b border-danger/20 flex items-start gap-2.5">
+                      <AlertCircle size={14} className="text-danger shrink-0 mt-px" />
+                      <p className="text-[11px] text-danger leading-relaxed">
+                        Legal address is missing for this property — it is required for the TM-30 template.{" "}
+                        <a href={`/me/host/properties/${booking.assetId}`} className="font-semibold underline underline-offset-2">
+                          Add it in property settings →
+                        </a>
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Timeline steps */}
+                  <div className="px-4 pt-4 pb-4">
+                    {steps.map((step, i) => (
+                      <div key={i} className="flex gap-3">
+                        {/* Left column: number circle + connector */}
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-brand/10 text-brand text-[11px] font-bold flex items-center justify-center shrink-0">
+                            {i + 1}
+                          </div>
+                          {i < steps.length - 1 && (
+                            <div className="w-px flex-1 bg-border my-1.5" />
+                          )}
+                        </div>
+
+                        {/* Right column: content */}
+                        <div className={cn("flex-1 min-w-0", i < steps.length - 1 ? "pb-4" : "pb-0")}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-fg-muted">{step.icon}</span>
+                            <p className="text-[13px] font-semibold text-fg leading-tight">{step.title}</p>
+                          </div>
+                          <div className="text-[12px] text-fg-muted leading-relaxed space-y-1">
+                            {step.body}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* In-person alternative */}
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-[11px] font-semibold text-fg-muted uppercase tracking-wide mb-1.5">Alternative: In person</p>
+                      <p className="text-[12px] text-fg-muted leading-relaxed">
+                        Print the Excel template and bring it to your local immigration office with passport copies for each guest. You'll receive a stamped receipt on the spot — no online account needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Tickets */}
           <div>
@@ -668,6 +1107,14 @@ export function BookingDetailPage() {
               </div>
             )}
           </div>
+
+          {/* PEA electricity */}
+          {booking.assetId && (
+            <div>
+              <h2 className="text-sm font-semibold text-fg mb-3">Utilities</h2>
+              <PeaBillCard assetId={booking.assetId} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -844,10 +1291,17 @@ export function BookingDetailPage() {
       )}
 
 
-      {/* ── Early exit confirmation ── */}
-      {cancellation && cancellation.status === "Requested" && (
+      {/* ── Early exit request (tenant-initiated, pending host response) ── */}
+      {cancellation && cancellation.status === "Requested" && (cancellation.initiator ?? "Tenant") === "Tenant" && (
         <div className="bg-danger/10 border border-danger/20 rounded-2xl p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-fg">Early exit request</h3>
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-sm font-semibold text-fg">Early exit request</h3>
+            <CountdownPill deadline={cancellationDeadline(cancellation)} prefix="Respond in" expiredLabel="Deadline passed" />
+          </div>
+          <p className="text-xs text-fg-muted leading-relaxed">
+            If you don't respond by the deadline, this request will be automatically declined and the tenant
+            may submit a new one.
+          </p>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-xs text-fg-muted">Earliest exit</p>
@@ -869,20 +1323,50 @@ export function BookingDetailPage() {
           {cancellation.tenantNote && (
             <p className="text-xs text-fg-muted italic">"{cancellation.tenantNote}"</p>
           )}
-          <Button
-            className="w-full bg-danger hover:bg-danger/90 text-white rounded-xl h-10"
-            disabled={confirmCancellation.isPending}
-            onClick={async () => {
-              try {
-                await confirmCancellation.mutateAsync(cancellation.id);
-                toast.success("Early exit confirmed — booking cancelled");
-              } catch {
-                toast.error("Failed to confirm");
-              }
-            }}
-          >
-            {confirmCancellation.isPending ? "Confirming…" : "Confirm early exit"}
-          </Button>
+          <div className="flex gap-2 pt-1">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-xl h-10 border-border text-fg"
+              disabled={declineCancellation.isPending || confirmCancellation.isPending}
+              onClick={() => { setDeclineReason(""); setDeclineOpen(true); }}
+            >
+              Decline
+            </Button>
+            <Button
+              className="flex-1 bg-danger hover:bg-danger/90 text-white rounded-xl h-10"
+              disabled={confirmCancellation.isPending || declineCancellation.isPending}
+              onClick={async () => {
+                try {
+                  await confirmCancellation.mutateAsync(cancellation.id);
+                  toast.success("Early exit confirmed — booking cancelled");
+                } catch {
+                  toast.error("Failed to confirm");
+                }
+              }}
+            >
+              {confirmCancellation.isPending ? "Confirming…" : "Confirm early exit"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Declined / Expired / Withdrawn — informational only ── */}
+      {cancellation && (cancellation.status === "Declined" || cancellation.status === "Expired" || cancellation.status === "Withdrawn") && (
+        <div className="bg-bg-subtle border border-border rounded-2xl p-5 space-y-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-fg">Early exit request — {cancellation.status.toLowerCase()}</h3>
+          </div>
+          {cancellation.status === "Declined" && cancellation.declineReason && (
+            <p className="text-xs text-fg-muted">
+              <span className="font-medium text-fg">Reason:</span> {cancellation.declineReason}
+            </p>
+          )}
+          {cancellation.status === "Expired" && (
+            <p className="text-xs text-fg-muted">The 72-hour response window passed without action.</p>
+          )}
+          {cancellation.status === "Withdrawn" && (
+            <p className="text-xs text-fg-muted">The tenant withdrew their request.</p>
+          )}
         </div>
       )}
 
@@ -891,12 +1375,23 @@ export function BookingDetailPage() {
       {/* Unlink tenant */}
       <Dialog open={unlinkTenantOpen} onOpenChange={setUnlinkTenantOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Remove tenant</DialogTitle></DialogHeader>
-          <p className="text-sm text-fg-muted">
-            Remove{" "}
-            <span className="font-semibold text-fg">{booking.tenantName}</span>{" "}
-            from this booking? The booking status will reset to <strong>Pending</strong>. You can send a new invite afterwards.
-          </p>
+          <DialogHeader><DialogTitle>Remove tenant from booking</DialogTitle></DialogHeader>
+          <div className="space-y-3 text-sm text-fg-muted">
+            <p>
+              This will unlink{" "}
+              <span className="font-semibold text-fg">{booking.tenantName}</span>{" "}
+              from the booking and reset its status to <strong>Pending</strong> so you can re-invite someone else.
+            </p>
+            <div className="rounded-lg bg-warning/5 border border-warning/20 px-3 py-2.5 space-y-1.5">
+              <p className="text-xs font-semibold text-warning">This is not a tenant eviction.</p>
+              <p className="text-[11px] leading-relaxed text-fg-muted">
+                If the tenant has already moved in or paid for ongoing months, use the
+                <strong className="text-fg"> early-exit / termination flow</strong> instead — that path
+                handles deposit refunds, penalties, and notice periods properly. Removing the tenant here
+                does <em>not</em> trigger any refund or settlement.
+              </p>
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUnlinkTenantOpen(false)} disabled={unlinkTenant.isPending}>Cancel</Button>
             <Button
@@ -913,6 +1408,123 @@ export function BookingDetailPage() {
               }}
             >
               {unlinkTenant.isPending ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline early-exit request */}
+      <Dialog open={declineOpen} onOpenChange={setDeclineOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Decline early-exit request</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-fg-muted">
+              The tenant will see your reason and can submit a new request after a short cooldown. Please
+              explain your decision — this is your record in case of a dispute.
+            </p>
+            <Textarea
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              placeholder="e.g. Not a good time to find a replacement tenant. Happy to discuss other exit dates."
+              className="min-h-24"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeclineOpen(false)} disabled={declineCancellation.isPending}>Cancel</Button>
+            <Button
+              className="bg-danger hover:bg-danger/90 text-white"
+              disabled={declineCancellation.isPending || declineReason.trim().length < 5}
+              onClick={async () => {
+                if (!cancellation) return;
+                try {
+                  await declineCancellation.mutateAsync({ cancellationId: cancellation.id, reason: declineReason.trim() });
+                  toast.success("Request declined");
+                  setDeclineOpen(false);
+                } catch {
+                  toast.error("Failed to decline");
+                }
+              }}
+            >
+              {declineCancellation.isPending ? "Declining…" : "Decline request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Landlord-initiated termination */}
+      <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Initiate termination</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted">
+              This sends a formal termination notice to the tenant. Depending on the reason, financial
+              consequences differ.
+            </p>
+
+            <div className="space-y-2">
+              <Label className="text-sm">Reason</Label>
+              <div className="grid gap-2">
+                {([
+                  { id: "NonPayment", label: "Non-payment", body: "14+ days of unpaid rent. Tenant has 7 days to pay before termination is final. Deposit may cover the debt." },
+                  { id: "Breach", label: "Breach of agreement", body: "Damages, unauthorised guests, rule violations. Subject to dispute." },
+                  { id: "MutualAgreement", label: "Mutual agreement", body: "Both sides agreed verbally. No penalties; deposit returned in full." },
+                ] as const).map((r) => (
+                  <label
+                    key={r.id}
+                    className={cn(
+                      "flex items-start gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors",
+                      terminationReason === r.id
+                        ? "border-danger/40 bg-danger/5"
+                        : "border-border bg-bg hover:bg-bg-subtle",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="termination-reason"
+                      checked={terminationReason === r.id}
+                      onChange={() => setTerminationReason(r.id)}
+                      className="mt-1 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-fg">{r.label}</p>
+                      <p className="text-[11px] text-fg-muted leading-relaxed mt-0.5">{r.body}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm">Explanation (shown to tenant)</Label>
+              <Textarea
+                value={terminationNote}
+                onChange={(e) => setTerminationNote(e.target.value)}
+                placeholder={
+                  terminationReason === "NonPayment" ? "e.g. June rent of ฿25,000 unpaid since 14 Jun despite reminders."
+                    : terminationReason === "Breach"  ? "e.g. Repeated noise complaints from neighbours, unauthorised pets."
+                    : "e.g. Tenant accepted job abroad, both agreed to end early on Sep 1."
+                }
+                className="min-h-24"
+              />
+              <p className="text-[11px] text-fg-muted">Minimum 20 characters. This will be recorded as evidence.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTerminateOpen(false)} disabled={initiateTermination.isPending}>Cancel</Button>
+            <Button
+              className="bg-danger hover:bg-danger/90 text-white"
+              disabled={initiateTermination.isPending || terminationNote.trim().length < 20}
+              onClick={async () => {
+                try {
+                  await initiateTermination.mutateAsync({ reason: terminationReason, note: terminationNote.trim() });
+                  toast.success("Termination notice sent to tenant");
+                  setTerminateOpen(false);
+                } catch {
+                  toast.error("Failed to initiate termination");
+                }
+              }}
+            >
+              {initiateTermination.isPending ? "Sending…" : "Send notice"}
             </Button>
           </DialogFooter>
         </DialogContent>

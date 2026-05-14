@@ -60,14 +60,27 @@ function MobileBottomNav() {
   );
 }
 
-// Runs pollers based on user role — no rendered output
-function NotificationPollers() {
-  const { data: caps } = useCapabilities();
+function HostPollers() {
   useHostNotificationPoller();
-  useGuestNotificationPoller();
-  // caps is used by pollers via useCapabilities (same query key, no extra request)
-  void caps;
   return null;
+}
+
+function GuestPollers() {
+  useGuestNotificationPoller();
+  return null;
+}
+
+// Runs pollers based on current portal section — no rendered output
+function NotificationPollers() {
+  const { pathname } = useLocation();
+  const isHostSection  = pathname.startsWith("/me/host") || pathname.startsWith("/manager");
+  const isGuestSection = pathname.startsWith("/me/guest") || pathname.startsWith("/me/trips");
+  return (
+    <>
+      {isHostSection  && <HostPollers />}
+      {isGuestSection && <GuestPollers />}
+    </>
+  );
 }
 
 export function AppShell() {
