@@ -14,6 +14,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
 import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets } from "@/lib/hooks/use-bookings";
 import { useCreateTicket } from "@/lib/hooks/use-tickets";
+import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
 import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
@@ -237,6 +238,7 @@ export function GuestBookingDetailPage() {
   const { data: contract } = useBookingContract(id!);
   const { data: guests } = useBookingGuests(id!);
   const { data: bookingTickets } = useBookingTickets(id!);
+  const { data: myTm30 } = useMyTm30();
   const createTicket = useCreateTicket();
   const addGuest = useAddGuest(id!);
   const removeGuest = useRemoveGuest(id!);
@@ -783,6 +785,52 @@ export function GuestBookingDetailPage() {
               )}
             </>
           )}
+
+          {/* ── TM-30 urgency banner ── */}
+          {isActive && (() => {
+            const rec = (myTm30 ?? []).find((r) => r.bookingId === id);
+            if (!rec || rec.status === "Filed") return null;
+            const hours = (Date.now() - new Date(rec.checkInDate).getTime()) / 3_600_000;
+            if (hours < 0) return null; // check-in not yet
+            const inWindow = hours < 24;
+            const daysOverdue = Math.floor((hours - 24) / 24) + (inWindow ? 0 : 1);
+            return (
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 space-y-2",
+                  inWindow
+                    ? "bg-warning/8 border-warning/30"
+                    : daysOverdue >= 3
+                      ? "bg-danger/8 border-danger/30"
+                      : "bg-danger/5 border-danger/20",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <Shield size={18} className={cn("shrink-0 mt-0.5", inWindow ? "text-warning" : "text-danger")} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-fg">
+                      {inWindow
+                        ? `TM-30 filing — 24h window open (${Math.max(0, Math.floor(24 - hours))}h left)`
+                        : `TM-30 overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}`}
+                    </p>
+                    <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                      Thai immigration requires landlords to report foreign-guest check-in within 24 hours.
+                      Your host files this — but if it's still pending, nudge them. They risk a fine of up
+                      to ฿2,000 per unfiled guest.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg h-8 text-xs ml-7"
+                >
+                  <Link to="/me/guest/tm30">View TM-30 status</Link>
+                </Button>
+              </div>
+            );
+          })()}
 
           {/* ── Payment tracker (active / confirmed bookings) ── */}
           {(isActive || isConfirmed) && payment && (() => {
