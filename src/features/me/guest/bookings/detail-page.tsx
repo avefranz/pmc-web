@@ -340,16 +340,25 @@ export function GuestBookingDetailPage() {
       </div>
 
       {/* CRITICAL: landlord-initiated termination notice */}
-      {cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord" && (
-        <LandlordTerminationBanner
-          cancellation={cancellation}
-          bookingId={id!}
-          onPay={() => {
-            const target = document.getElementById("monthly-rent-section");
-            target?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
-      )}
+      {cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord" && (() => {
+        // Backend usually fills outstandingAmount; if it doesn't, sum the tenant's
+        // overdue MonthlyRent records so the cure amount is never just "all of it".
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const fallback = (payment?.payments ?? [])
+          .filter((p) => p.type === "MonthlyRent" && p.status !== "Paid" && p.dueDate && new Date(p.dueDate) < today)
+          .reduce((sum, p) => sum + p.amount, 0);
+        return (
+          <LandlordTerminationBanner
+            cancellation={cancellation}
+            bookingId={id!}
+            fallbackOutstandingAmount={fallback}
+            onPay={() => {
+              const target = document.getElementById("monthly-rent-section");
+              target?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        );
+      })()}
 
       {/* Hero photo — full width, links to listing */}
       {listing?.slug ? (

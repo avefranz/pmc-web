@@ -18,16 +18,21 @@ export function LandlordTerminationBanner({
   cancellation,
   bookingId,
   onPay,
+  fallbackOutstandingAmount,
 }: {
   cancellation: BookingCancellationDto;
   bookingId: string;
   onPay?: () => void;
+  /** Client-side fallback if backend didn't compute outstandingAmount. */
+  fallbackOutstandingAmount?: number;
 }) {
   const cure = useCureCancellation(bookingId);
   const reason = cancellation.reason ?? "Breach";
   const isNonPayment = reason === "NonPayment";
   const cureDeadline = cancellation.cureDeadline ??
     new Date(new Date(cancellation.createdAt).getTime() + 7 * 86_400_000).toISOString();
+  const outstanding = cancellation.outstandingAmount ?? fallbackOutstandingAmount ?? 0;
+  const hasKnownAmount = outstanding > 0;
 
   return (
     <div className="bg-danger/10 border-2 border-danger/40 rounded-2xl p-5 mb-6 shadow-sm">
@@ -56,29 +61,31 @@ export function LandlordTerminationBanner({
 
           {isNonPayment ? (
             <div className="mt-3 space-y-2">
-              {cancellation.outstandingAmount != null && cancellation.outstandingAmount > 0 ? (
+              {hasKnownAmount ? (
                 <p className="text-sm text-fg">
-                  Outstanding: <span className="font-bold">{formatThb(cancellation.outstandingAmount)}</span>.
+                  Outstanding: <span className="font-bold">{formatThb(outstanding)}</span>.
                   Pay this in full by <span className="font-bold">{formatDate(cureDeadline)}</span> to cancel
                   the termination and stay in the property.
                 </p>
               ) : (
                 <p className="text-sm text-fg">
-                  Pay all outstanding rent by <span className="font-bold">{formatDate(cureDeadline)}</span> to
-                  cancel the termination and stay in the property.
+                  Pay <span className="font-bold">every overdue rent invoice</span> by{" "}
+                  <span className="font-bold">{formatDate(cureDeadline)}</span> to cancel the termination.
+                  The exact amount is shown on each invoice — make sure none are left Pending.
                 </p>
               )}
               <p className="text-xs text-fg-muted">
-                If unpaid by the deadline, the booking will be terminated. Your deposit will be applied to
-                the unpaid rent, and any remainder returned to you.
+                After paying, tap "I've paid — confirm" so we re-check your invoices.
+                If the deadline passes unpaid, the booking terminates and your deposit is applied to the
+                unpaid rent. Any remainder is refunded.
               </p>
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2 pt-1 flex-wrap">
                 {onPay && (
                   <Button
                     onClick={onPay}
                     className="bg-danger hover:bg-danger/90 text-white rounded-xl h-10 px-5 font-semibold"
                   >
-                    Pay outstanding now
+                    {hasKnownAmount ? `Pay ${formatThb(outstanding)} now` : "Pay outstanding now"}
                   </Button>
                 )}
                 <Button
@@ -89,8 +96,13 @@ export function LandlordTerminationBanner({
                     try {
                       await cure.mutateAsync(cancellation.id);
                       toast.success("Termination cancelled — your stay continues");
-                    } catch {
-                      toast.error("Couldn't cure — make sure all rent is paid first");
+                    } catch (err) {
+                      const status = (err as { response?: { status?: number } } | null)?.response?.status;
+                      if (status === 409 || status === 422) {
+                        toast.error("Some rent is still unpaid — pay every overdue invoice first");
+                      } else {
+                        toast.error("Couldn't cure — make sure all rent is paid first");
+                      }
                     }
                   }}
                 >
