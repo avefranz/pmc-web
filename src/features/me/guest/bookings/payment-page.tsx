@@ -480,10 +480,20 @@ export function GuestPaymentPage() {
                       <Smartphone size={14} /> PromptPay
                     </div>
                   )}
+                  {payment.bankAccountNumber && (
+                    <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+                      <CreditCard size={14} /> Bank transfer
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 text-xs text-fg-muted">
                     <CreditCard size={14} /> Visa / Mastercard
                   </div>
                 </div>
+                {!payment.promptPayId && !payment.bankAccountNumber && (
+                  <p className="text-[11px] text-fg-muted mt-2 leading-relaxed">
+                    Your host hasn't shared a PromptPay or bank account yet, so only card payment is available.
+                  </p>
+                )}
               </div>
             </>
           )}

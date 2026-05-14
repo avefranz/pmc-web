@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { Home, Calendar } from "lucide-react";
+import { Home, Calendar, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { useHostBookings } from "@/lib/hooks/use-bookings";
+import { useMyProfile } from "@/lib/hooks/use-profile";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus } from "@/lib/types/enums";
 import type { BookingDto } from "@/lib/types";
@@ -294,8 +295,39 @@ function PastBookingsList({ bookings }: { bookings: BookingDto[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+function MissingPaymentDetailsBanner({ pendingCount }: { pendingCount: number }) {
+  return (
+    <Link
+      to="/me/host/settings/payment"
+      className="block rounded-2xl border border-warning/30 bg-warning/8 px-4 py-3 hover:brightness-95 transition"
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle size={18} className="text-warning shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-fg">
+            {pendingCount > 0
+              ? `${pendingCount} reservation${pendingCount > 1 ? "s" : ""} can't be paid — set up your payment details`
+              : "Set up your payment details before guests can pay"}
+          </p>
+          <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+            Tenants can't complete payment until you add a PromptPay number or bank account.
+            Without details, bookings will auto-cancel on their signing deadline.
+          </p>
+        </div>
+        <span className="text-xs font-semibold text-warning shrink-0 self-center">Set up →</span>
+      </div>
+    </Link>
+  );
+}
+
 export function HostBookingsPage() {
   const { data: bookings, isLoading } = useHostBookings();
+  const { data: profile } = useMyProfile();
+  const hasPayoutDetails = Boolean(profile?.promptPayId || profile?.bankAccountNumber);
+  const pendingPaymentCount = (bookings ?? []).filter(
+    (b) => b.status === BookingStatus.PendingPayment,
+  ).length;
+  const showPayoutBanner = profile && !hasPayoutDetails && (pendingPaymentCount > 0 || (bookings?.length ?? 0) > 0);
 
   if (isLoading) {
     return (
@@ -312,6 +344,11 @@ export function HostBookingsPage() {
     return (
       <div>
         <PageHeader title="Reservations" />
+        {showPayoutBanner && (
+          <div className="mb-4">
+            <MissingPaymentDetailsBanner pendingCount={0} />
+          </div>
+        )}
         <EmptyState
           icon={<Home size={40} />}
           title="No reservations yet"
@@ -327,6 +364,11 @@ export function HostBookingsPage() {
   return (
     <div>
       <PageHeader title="Reservations" />
+      {showPayoutBanner && (
+        <div className="mb-4">
+          <MissingPaymentDetailsBanner pendingCount={pendingPaymentCount} />
+        </div>
+      )}
       <Tabs defaultValue="active">
         <TabsList className="mb-6">
           <TabsTrigger value="active">

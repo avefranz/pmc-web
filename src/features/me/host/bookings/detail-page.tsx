@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Trash2, FileText, Upload,
@@ -37,6 +37,7 @@ import { contractSigningDeadline } from "@/lib/types";
 import { HostPaymentHealthPill, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { Textarea } from "@/components/ui/textarea";
 import { useAsset } from "@/lib/hooks/use-assets";
+import { useMyProfile } from "@/lib/hooks/use-profile";
 import { PeaBillCard } from "@/components/shared/pea-bill-card";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { formatDate, formatThb } from "@/lib/utils/format";
@@ -172,6 +173,7 @@ export function BookingDetailPage() {
   const { data: contractData } = useBookingContract(id!);
   const { data: paymentData } = useBookingPayment(id!);
   const { data: asset } = useAsset(booking?.assetId ?? "");
+  const { data: profile } = useMyProfile();
   const cancellationEnabled = booking?.status === BookingStatus.Active || booking?.status === BookingStatus.Confirmed;
   const { data: cancellation } = useBookingCancellation(id!, cancellationEnabled);
 
@@ -397,6 +399,26 @@ export function BookingDetailPage() {
             checkOutDate={booking.checkOutDate}
           />
         </div>
+      )}
+
+      {/* ── Host hasn't set up payout details — guest can't pay ── */}
+      {booking.status === BookingStatus.PendingPayment && profile && !profile.promptPayId && !profile.bankAccountNumber && (
+        <Link
+          to="/me/host/settings/payment"
+          className="block rounded-2xl border border-warning/40 bg-warning/8 p-4 hover:brightness-95 transition"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle size={18} className="text-warning shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-fg">Add your payment details — tenant can't pay yet</p>
+              <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                You haven't set up a PromptPay number or bank account, so this booking is stuck on the
+                payment step. If you don't add them before the signing deadline, the booking auto-cancels.
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-warning shrink-0 self-center">Set up →</span>
+          </div>
+        </Link>
       )}
 
       {/* ── Contract voided notice ── */}
