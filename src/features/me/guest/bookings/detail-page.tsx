@@ -276,6 +276,47 @@ export function GuestBookingDetailPage() {
   const [guestsConfirmed, setGuestsConfirmed] = useState(() => localStorage.getItem(guestsStorageKey) === "1");
   function confirmGuestsAlone() { localStorage.setItem(guestsStorageKey, "1"); setGuestsConfirmed(true); }
 
+  // Listing-change detection — backend doesn't push notifications when the host
+  // edits wifi / houseRules / checkInInstructions mid-stay, so we fingerprint
+  // the last-seen values locally and surface any diff on next visit.
+  const listingFingerprintKey = `siamo_listing_seen_${id}`;
+  const [listingChanges, setListingChanges] = useState<string[]>([]);
+  React.useEffect(() => {
+    if (!listing) return;
+    const current = {
+      wifiName: listing.wifiName ?? "",
+      wifiPassword: listing.wifiPassword ?? "",
+      houseRules: listing.houseRules ?? "",
+      checkInInstructions: listing.checkInInstructions ?? "",
+    };
+    const stored = localStorage.getItem(listingFingerprintKey);
+    if (!stored) {
+      localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
+      return;
+    }
+    try {
+      const prev = JSON.parse(stored) as typeof current;
+      const diffs: string[] = [];
+      if (prev.wifiName !== current.wifiName || prev.wifiPassword !== current.wifiPassword) diffs.push("WiFi");
+      if (prev.houseRules !== current.houseRules) diffs.push("House rules");
+      if (prev.checkInInstructions !== current.checkInInstructions) diffs.push("Check-in instructions");
+      setListingChanges(diffs);
+    } catch {
+      localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
+    }
+  }, [listing, listingFingerprintKey]);
+  function dismissListingChanges() {
+    if (!listing) return;
+    const current = {
+      wifiName: listing.wifiName ?? "",
+      wifiPassword: listing.wifiPassword ?? "",
+      houseRules: listing.houseRules ?? "",
+      checkInInstructions: listing.checkInInstructions ?? "",
+    };
+    localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
+    setListingChanges([]);
+  }
+
   if (isLoading) {
     return (
       <div>
@@ -338,6 +379,29 @@ export function GuestBookingDetailPage() {
           </Link>
         )}
       </div>
+
+      {/* Listing changes since last visit */}
+      {(isActive || isConfirmed) && listingChanges.length > 0 && (
+        <div className="bg-brand/8 border border-brand/30 rounded-2xl p-4 flex items-start gap-3 mb-4">
+          <Wifi size={16} className="text-brand shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">
+              Your host updated: {listingChanges.join(", ")}
+            </p>
+            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+              Check the latest below before continuing. Tap "Got it" to dismiss this banner.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg h-8 text-xs shrink-0"
+            onClick={dismissListingChanges}
+          >
+            Got it
+          </Button>
+        </div>
+      )}
 
       {/* CRITICAL: landlord-initiated termination notice */}
       {cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord" && (() => {
