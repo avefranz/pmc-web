@@ -1,10 +1,15 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, LifeBuoy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CountdownPill } from "@/components/shared/countdown-pill";
 import { formatThb, formatDate } from "@/lib/utils/format";
 import { useCureCancellation } from "@/lib/hooks/use-bookings";
+import { useSupportContact } from "@/lib/hooks/use-support-contact";
 import type { BookingCancellationDto } from "@/lib/types";
+
+// Client fallback for the 7-day Breach dispute window. Prefer cancellation.disputeDeadline
+// from the server — this only kicks in for legacy records that pre-date the column.
+const BREACH_DISPUTE_HOURS = 7 * 24;
 
 /**
  * Critical alert shown to the **tenant** when the landlord has initiated termination.
@@ -27,6 +32,7 @@ export function LandlordTerminationBanner({
   fallbackOutstandingAmount?: number;
 }) {
   const cure = useCureCancellation(bookingId);
+  const { data: supportContact } = useSupportContact();
   const reason = cancellation.reason ?? "Breach";
   const isNonPayment = reason === "NonPayment";
   const cureDeadline = cancellation.cureDeadline ??
@@ -110,18 +116,50 @@ export function LandlordTerminationBanner({
                 </Button>
               </div>
             </div>
-          ) : reason === "Breach" ? (
-            <div className="mt-3 space-y-2">
-              <p className="text-sm text-fg">
-                Effective on <span className="font-bold">{formatDate(cancellation.earliestExitDate)}</span>.
-                You can dispute the host's claim through Siamo support — contact us within 7 days.
-              </p>
-              <p className="text-xs text-fg-muted">
-                Damages may be deducted from your deposit. Net refund:{" "}
-                <span className="font-medium text-fg">{formatThb(cancellation.netRefund)}</span>.
-              </p>
-            </div>
-          ) : (
+          ) : reason === "Breach" ? (() => {
+            const disputeDeadline = cancellation.disputeDeadline ?? new Date(
+              new Date(cancellation.createdAt).getTime() + BREACH_DISPUTE_HOURS * 3600_000,
+            ).toISOString();
+            const disputeUrl = supportContact?.webUrl ?? (() => {
+              const email = supportContact?.email;
+              if (!email) return null;
+              const subject = encodeURIComponent(`Dispute Breach termination — booking ${cancellation.bookingId}`);
+              const body = encodeURIComponent(
+                `Hi Siamo support,\n\nI'd like to dispute a Breach termination on booking ${cancellation.bookingId}.\n\nHost's stated reason: ${cancellation.initiatorNote ?? "(none provided)"}\n\nMy side:\n`,
+              );
+              return `mailto:${email}?subject=${subject}&body=${body}`;
+            })();
+            return (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm text-fg">
+                  Effective on <span className="font-bold">{formatDate(cancellation.earliestExitDate)}</span>.
+                  If you believe the host's claim is wrong, you can open a dispute through Siamo support.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {disputeUrl && (
+                    <Button
+                      asChild
+                      className="bg-danger hover:bg-danger/90 text-white rounded-xl h-9 px-4 text-sm"
+                    >
+                      <a href={disputeUrl} target={supportContact?.webUrl ? "_blank" : undefined} rel="noopener noreferrer">
+                        <LifeBuoy size={14} className="mr-1.5" />Open a dispute
+                      </a>
+                    </Button>
+                  )}
+                  <CountdownPill
+                    deadline={disputeDeadline}
+                    prefix="Dispute window closes in"
+                    expiredLabel="Dispute window closed"
+                    className="bg-white/60"
+                  />
+                </div>
+                <p className="text-xs text-fg-muted">
+                  Damages may be deducted from your deposit. Net refund:{" "}
+                  <span className="font-medium text-fg">{formatThb(cancellation.netRefund)}</span>.
+                </p>
+              </div>
+            );
+          })() : (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-fg">
                 Effective on <span className="font-bold">{formatDate(cancellation.earliestExitDate)}</span>.

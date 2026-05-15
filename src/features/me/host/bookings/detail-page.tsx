@@ -1159,17 +1159,41 @@ export function BookingDetailPage() {
       {/* ── Contract signing section ── */}
       {contractData && (
         <>
-          {contractData.status === "PendingTenantSignature" && (
-            <div className="bg-bg-card border border-border rounded-2xl p-5 flex items-start gap-3">
-              <Clock size={18} className="text-fg-muted shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-fg">Awaiting tenant signature</p>
-                <p className="text-xs text-fg-muted mt-1">
-                  The rental agreement has been sent to the tenant for signing. You'll be notified when they've signed.
-                </p>
+          {contractData.status === "PendingTenantSignature" && (() => {
+            const deadline = contractSigningDeadline(contractData);
+            const hoursLeft = (new Date(deadline).getTime() - Date.now()) / 3600_000;
+            // Mirror the tenant-side escalation thresholds so both sides see the same urgency.
+            const isUrgent = hoursLeft >= 0 && hoursLeft < 12;
+            const isElevated = hoursLeft >= 0 && hoursLeft < 36;
+            const palette = isUrgent
+              ? "bg-danger/8 border-danger/30"
+              : isElevated
+                ? "bg-warning/8 border-warning/30"
+                : "bg-bg-card border-border";
+            const accent = isUrgent ? "text-danger" : isElevated ? "text-warning" : "text-fg-muted";
+            return (
+              <div className={cn("rounded-2xl border p-5 flex items-start gap-3", palette)}>
+                <Clock size={18} className={cn("shrink-0 mt-0.5", accent)} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className={cn("text-sm font-semibold", isUrgent ? "text-danger" : isElevated ? "text-warning" : "text-fg")}>
+                      {isUrgent ? "Tenant about to miss the signing deadline" : "Awaiting tenant signature"}
+                    </p>
+                    <CountdownPill
+                      deadline={deadline}
+                      prefix="Tenant has"
+                      expiredLabel="Expired — booking will be cancelled"
+                    />
+                  </div>
+                  <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                    The rental agreement is with the tenant. If they don't sign by the deadline the booking
+                    auto-cancels and any payment is refunded.
+                    {isElevated && " Consider nudging them via a message or directly."}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {contractData.status === "PendingLandlordSignature" && (
             <div id="landlord-sign-form" className="bg-bg-card border-2 border-brand/40 rounded-2xl overflow-hidden shadow-lg scroll-mt-8">

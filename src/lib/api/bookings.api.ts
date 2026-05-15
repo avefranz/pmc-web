@@ -251,6 +251,31 @@ export const bookingsApi = {
       .then((r) => r.data.data),
 
   /**
+   * Upload evidence photos for a partial-hold inspection. Returns URLs that the
+   * host then includes in the subsequent submitCheckoutInspection call — this
+   * endpoint does NOT mutate the settlement record itself.
+   *
+   * Expected backend: POST /api/bookings/{id}/checkout-inspection/photos
+   */
+  uploadInspectionPhotos: (bookingId: string, photos: File[]) => {
+    const form = new FormData();
+    photos.forEach((f) => form.append("photos", f));
+    return apiClient
+      .post<{ data: { urls: string[] } }>(`/api/bookings/${bookingId}/checkout-inspection/photos`, form)
+      .then((r) => r.data.data.urls);
+  },
+
+  /**
+   * Tenant marks the booking page as seen. Resets `listingChangesAfter` until the
+   * next host-side edit, so the "Your host updated…" banner doesn't re-appear on
+   * every visit. Idempotent.
+   */
+  markBookingSeen: (bookingId: string) =>
+    apiClient
+      .post<{ data: { seenAt: string } }>(`/api/me/guest/bookings/${bookingId}/mark-seen`, {})
+      .then((r) => r.data.data),
+
+  /**
    * Tenant accepts the partial hold proposed by the host.
    *
    * Expected backend: POST /api/bookings/{id}/deposit-settlement/accept

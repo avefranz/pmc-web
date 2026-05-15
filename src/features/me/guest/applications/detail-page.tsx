@@ -7,7 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
 import { useMyApplication } from "@/lib/hooks/use-booking-requests";
+import { bookingRequestDeadline } from "@/lib/api/booking-requests.api";
 import type { BookingRequestStatus } from "@/lib/api/booking-requests.api";
+import { CountdownPill } from "@/components/shared/countdown-pill";
 import { format, parseISO, addMonths } from "date-fns";
 
 function PhotoLightbox({ urls, startIndex, onClose }: { urls: string[]; startIndex: number; onClose: () => void }) {
@@ -194,8 +196,17 @@ export function GuestApplicationDetailPage() {
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white/60">
               <Icon size={20} className={cfg.color} />
             </div>
-            <div>
-              <p className={cn("font-semibold", cfg.color)}>{cfg.label}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className={cn("font-semibold", cfg.color)}>{cfg.label}</p>
+                {app.status === "Pending" && app.createdAt && (
+                  <CountdownPill
+                    deadline={bookingRequestDeadline(app)}
+                    prefix="Auto-expires in"
+                    expiredLabel="Auto-expired"
+                  />
+                )}
+              </div>
               <p className="text-sm text-fg-muted mt-0.5">{cfg.description}</p>
               {app.status === "Rejected" && app.rejectionReason && (
                 <p className="text-sm text-fg mt-2 pt-2 border-t border-danger/20">

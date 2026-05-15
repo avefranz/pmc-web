@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { useTickets } from "@/lib/hooks/use-tickets";
 import { formatRelative } from "@/lib/utils/format";
-import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { ticketStatusColor, ticketKindIcon, tenantTicketStatusLabel } from "@/lib/utils/ticket-status";
 import { cn } from "@/lib/utils/cn";
 
 const OPEN_STATUSES = new Set([
@@ -80,7 +80,7 @@ function TicketGroup({ label, tickets, muted }: { label: string; tickets: NonNul
                 </p>
               </div>
               <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
-                {t.status}
+                {tenantTicketStatusLabel(t.status)}
               </span>
             </div>
           </Link>

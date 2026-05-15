@@ -5,9 +5,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { CountdownPill } from "@/components/shared/countdown-pill";
 import { cn } from "@/lib/utils/cn";
+import { formatDate } from "@/lib/utils/format";
 import { useMyApplications } from "@/lib/hooks/use-booking-requests";
 import { clearUnseen } from "@/lib/hooks/use-notification-poller";
+import { bookingRequestDeadline } from "@/lib/api/booking-requests.api";
 import type { GuestApplicationDto, BookingRequestStatus } from "@/lib/api/booking-requests.api";
 
 const STATUS_CONFIG: Record<BookingRequestStatus, { icon: React.ElementType; color: string; bg: string; label: string }> = {
@@ -20,6 +23,8 @@ const STATUS_CONFIG: Record<BookingRequestStatus, { icon: React.ElementType; col
 function ApplicationCard({ app }: { app: GuestApplicationDto }) {
   const cfg = STATUS_CONFIG[app.status];
   const Icon = cfg.icon;
+  const isPending = app.status === "Pending";
+  const deadline = isPending ? bookingRequestDeadline(app) : null;
   return (
     <Link
       to={`/me/guest/applications/${app.id}`}
@@ -31,10 +36,20 @@ function ApplicationCard({ app }: { app: GuestApplicationDto }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-fg line-clamp-1">{app.listingTitle}</p>
         <p className="text-xs text-fg-muted mt-0.5">
-          Move-in {app.moveInDate} · {app.durationMonths} month{app.durationMonths !== 1 ? "s" : ""}
+          Move-in {formatDate(app.moveInDate)} · {app.durationMonths} month{app.durationMonths !== 1 ? "s" : ""}
         </p>
       </div>
-      <span className={cn("text-xs font-medium shrink-0", cfg.color)}>{cfg.label}</span>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <span className={cn("text-xs font-medium", cfg.color)}>{cfg.label}</span>
+        {deadline && (
+          <CountdownPill
+            deadline={deadline}
+            prefix="Auto-expires in"
+            expiredLabel="Auto-expired"
+            className="text-[10px]"
+          />
+        )}
+      </div>
     </Link>
   );
 }

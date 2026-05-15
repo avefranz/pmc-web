@@ -24,6 +24,8 @@ export interface HostBookingRequestDto {
   status: BookingRequestStatus;
   rejectionReason?: string;
   createdAt: string;
+  /** Server-computed deadline after which Pending auto-expires. */
+  expiresAt?: string;
 }
 
 export interface GuestApplicationDto {
@@ -43,6 +45,8 @@ export interface GuestApplicationDto {
   rejectionReason?: string;
   respondedAt?: string;
   createdAt: string;
+  /** Server-computed deadline after which Pending auto-expires. */
+  expiresAt?: string;
 }
 
 // ── Normalizer: maps backend BookingRequestSummaryDto field names → frontend DTO ──
@@ -71,7 +75,23 @@ function normalizeHostRequest(r: any): HostBookingRequestDto {
     rejectionReason:      r.rejectionReason ?? undefined,
     petPhotoUrls:         r.petPhotoUrls ?? [],
     createdAt:            r.createdAt,
+    expiresAt:            r.expiresAt ?? undefined,
   };
+}
+
+/**
+ * Pending booking requests auto-expire after 72h with no response (matches the
+ * contract-signing window). Backend fills `expiresAt`; we keep a client-side
+ * fallback for legacy records that pre-date the column.
+ */
+export const REQUEST_EXPIRY_HOURS = 72;
+
+export function bookingRequestDeadline(req: {
+  expiresAt?: string | null;
+  createdAt: string;
+}): string {
+  if (req.expiresAt) return req.expiresAt;
+  return new Date(new Date(req.createdAt).getTime() + REQUEST_EXPIRY_HOURS * 3600_000).toISOString();
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────

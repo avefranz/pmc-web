@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Banknote, AlertCircle, CheckCircle2, Shield, Camera } from "lucide-react";
+import { useRef, useState } from "react";
+import { Banknote, AlertCircle, CheckCircle2, Shield, Camera, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,8 @@ import {
   useAcceptDepositSettlement,
   useDisputeDepositSettlement,
 } from "@/lib/hooks/use-bookings";
+import { bookingsApi } from "@/lib/api/bookings.api";
+import { cn } from "@/lib/utils/cn";
 import type { DepositSettlementDto } from "@/lib/types";
 
 /**
@@ -172,12 +174,42 @@ function PartialHoldDialog({
 }) {
   const [holdAmount, setHoldAmount] = useState("");
   const [reason, setReason] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
   const inspect = useSubmitCheckoutInspection(bookingId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsedAmount = Number(holdAmount);
   const validAmount = !Number.isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= depositAmount;
   const validReason = reason.trim().length >= 10;
-  const canSubmit = validAmount && validReason && !isPending;
+  const submitting = inspect.isPending || uploading;
+  const canSubmit = validAmount && validReason && !submitting && !isPending;
+
+  async function handleSubmit() {
+    setUploading(true);
+    try {
+      // Upload first so the URLs land in the same settlement record. Failure
+      // here aborts the hold rather than submitting a hold with no evidence.
+      const photoUrls = photos.length > 0
+        ? await bookingsApi.uploadInspectionPhotos(bookingId, photos)
+        : undefined;
+      await inspect.mutateAsync({
+        outcome: "partial_hold",
+        holdAmount: parsedAmount,
+        reason: reason.trim(),
+        photoUrls,
+      });
+      toast.success("Hold submitted — tenant will be notified");
+      onOpenChange(false);
+      setHoldAmount("");
+      setReason("");
+      setPhotos([]);
+    } catch {
+      toast.error("Failed to submit");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -185,8 +217,8 @@ function PartialHoldDialog({
         <DialogHeader><DialogTitle>Withhold from deposit</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
-            The tenant will see your reason and have 7 days to accept or dispute. Be specific — this is
-            the record if the case is escalated.
+            The tenant will see your reason and photos and has 7 days to accept or dispute. Be specific —
+            this is the record if the case is escalated.
           </p>
           <div className="space-y-1.5">
             <Label className="text-sm">Amount to withhold (max {formatThb(depositAmount)})</Label>
@@ -210,34 +242,78 @@ function PartialHoldDialog({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Broken bathroom mirror, replacement quote ฿4,200. Photos attached."
+              placeholder="e.g. Broken bathroom mirror, replacement quote ฿4,200."
               className="min-h-24"
             />
-            <p className="text-[11px] text-fg-muted">Minimum 10 characters. Attach photos via support if needed.</p>
+            <p className="text-[11px] text-fg-muted">Minimum 10 characters.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Evidence photos</Label>
+            <label
+              className={cn(
+                "flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-colors",
+                photos.length > 0
+                  ? "border-success/40 bg-success/5"
+                  : "border-border hover:border-brand hover:bg-brand/5",
+              )}
+            >
+              <Camera size={16} className={photos.length > 0 ? "text-success" : "text-fg-muted"} />
+              <div className="flex-1 min-w-0">
+                {photos.length > 0 ? (
+                  <p className="text-sm font-medium text-success">
+                    {photos.length} photo{photos.length !== 1 ? "s" : ""} attached
+                  </p>
+                ) : (
+                  <p className="text-sm text-fg-muted">Tap to attach (up to 10)</p>
+                )}
+                <p className="text-[11px] text-fg-muted mt-0.5">
+                  Tenant sees these alongside your reason — strongly recommended.
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const next = [...photos, ...Array.from(e.target.files ?? [])].slice(0, 10);
+                  setPhotos(next);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {photos.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {photos.map((f, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 text-xs bg-bg-subtle text-fg-muted rounded-full pl-2.5 pr-1 py-0.5"
+                  >
+                    <span className="max-w-[120px] truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPhotos((arr) => arr.filter((_, j) => j !== i))}
+                      className="w-4 h-4 rounded-full hover:bg-border flex items-center justify-center text-fg-muted hover:text-fg"
+                    >
+                      <XIcon size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={inspect.isPending}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
           <Button
             className="bg-warning hover:bg-warning/90 text-white"
             disabled={!canSubmit}
-            onClick={async () => {
-              try {
-                await inspect.mutateAsync({
-                  outcome: "partial_hold",
-                  holdAmount: parsedAmount,
-                  reason: reason.trim(),
-                });
-                toast.success("Hold submitted — tenant will be notified");
-                onOpenChange(false);
-              } catch {
-                toast.error("Failed to submit");
-              }
-            }}
+            onClick={handleSubmit}
           >
-            {inspect.isPending ? "Submitting…" : "Submit hold"}
+            {uploading ? "Uploading…" : inspect.isPending ? "Submitting…" : "Submit hold"}
           </Button>
         </DialogFooter>
       </DialogContent>

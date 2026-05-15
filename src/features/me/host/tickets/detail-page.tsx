@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, Paperclip } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -36,8 +36,17 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+function isImageAttachment(a: { contentType?: string; fileName?: string; url: string }): boolean {
+  // Server-provided contentType is the source of truth when present; fall back
+  // to the filename heuristic for legacy records that lack it.
+  if (a.contentType) return a.contentType.startsWith("image/");
+  return /\.(png|jpe?g|gif|webp|heic)$/i.test(a.fileName ?? a.url);
+}
+
 function MessageBubble({ msg }: { msg: TicketMessageDto }) {
   const isInternal = msg.visibility === MessageVisibility.Internal;
+  const imageAttachments = (msg.attachments ?? []).filter(isImageAttachment);
+  const otherAttachments = (msg.attachments ?? []).filter((a) => !imageAttachments.includes(a));
   return (
     <div className={cn("flex gap-3", isInternal && "opacity-75")}>
       <div className="w-7 h-7 rounded-full bg-bg-subtle shrink-0 flex items-center justify-center text-xs font-semibold text-fg-muted mt-0.5">
@@ -51,12 +60,29 @@ function MessageBubble({ msg }: { msg: TicketMessageDto }) {
           )}
           <span className="text-xs text-fg-muted">{formatRelative(msg.createdAt)}</span>
         </div>
-        <div className="bg-bg-subtle rounded-xl rounded-tl-sm px-4 py-3 text-sm text-fg whitespace-pre-wrap leading-relaxed">
-          {msg.body}
-        </div>
-        {msg.attachments?.length > 0 && (
+        {msg.body && (
+          <div className="bg-bg-subtle rounded-xl rounded-tl-sm px-4 py-3 text-sm text-fg whitespace-pre-wrap leading-relaxed">
+            {msg.body}
+          </div>
+        )}
+        {imageAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {imageAttachments.map((a) => (
+              <a
+                key={a.id}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-20 h-20 rounded-lg overflow-hidden bg-bg-subtle"
+              >
+                <img src={a.url} alt={a.fileName ?? ""} className="w-full h-full object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
+        {otherAttachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">
-            {msg.attachments.map((a) => (
+            {otherAttachments.map((a) => (
               <a
                 key={a.id}
                 href={a.url}
@@ -83,15 +109,22 @@ export function TicketDetailPage() {
   const toggleChecklist = useToggleChecklistItem(id!);
 
   const [msgBody, setMsgBody] = useState("");
+  const [msgAttachments, setMsgAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSend() {
     const body = msgBody.trim();
-    if (!body) return;
+    if (!body && msgAttachments.length === 0) return;
     setSending(true);
     try {
-      await postMessage.mutateAsync({ body, visibility: MessageVisibility.Public });
+      await postMessage.mutateAsync({
+        body,
+        visibility: MessageVisibility.Public,
+        attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
+      });
       setMsgBody("");
+      setMsgAttachments([]);
     } catch {
       toast.error("Failed to send message");
     } finally {
@@ -203,12 +236,54 @@ export function TicketDetailPage() {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSend();
                 }}
               />
-              <div className="flex justify-end">
+              {msgAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {msgAttachments.map((f, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1.5 text-xs bg-bg-subtle text-fg-muted rounded-full pl-2.5 pr-1 py-0.5"
+                    >
+                      <Paperclip size={10} />
+                      <span className="max-w-[140px] truncate">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setMsgAttachments((arr) => arr.filter((_, j) => j !== i))}
+                        className="w-4 h-4 rounded-full hover:bg-border flex items-center justify-center text-fg-muted hover:text-fg"
+                      >
+                        <XIcon size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  setMsgAttachments((arr) => [...arr, ...Array.from(e.target.files ?? [])]);
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex justify-between items-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={sending}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="gap-1.5 h-8 text-xs"
+                >
+                  <Paperclip size={12} />
+                  Attach
+                </Button>
                 <Button
                   size="sm"
                   className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
                   onClick={handleSend}
-                  disabled={!msgBody.trim() || sending}
+                  disabled={(!msgBody.trim() && msgAttachments.length === 0) || sending}
                 >
                   <Send size={13} className="mr-1.5" />Send
                 </Button>

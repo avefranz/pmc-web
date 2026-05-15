@@ -1,7 +1,16 @@
 import { AlertCircle, Clock, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { formatThb, formatDate } from "@/lib/utils/format";
-import type { PaymentRecordDto } from "@/lib/types";
+import { InvoiceStatus } from "@/lib/types/enums";
+import type { PaymentRecordDto, InvoiceDto } from "@/lib/types";
+
+const INVOICE_TYPE_LABEL: Record<string, string> = {
+  Deposit: "Security deposit",
+  Utilities: "Utilities",
+  Cleaning: "Cleaning fee",
+  Damage: "Damage fee",
+  Other: "Other charge",
+};
 
 /**
  * Derive the most pressing payment status from an existing list of payments.
@@ -192,6 +201,71 @@ export function TenantPaymentBanner({
           Pay now
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Tenant banner for unpaid invoices that are NOT monthly rent (utilities, damage,
+ * cleaning, etc.). `TenantPaymentBanner` only covers MonthlyRent records, so these
+ * other charges would otherwise live silently inside the invoice list with no
+ * "X days overdue" escalation.
+ */
+export function TenantOtherInvoicesBanner({
+  invoices,
+  className,
+}: {
+  invoices: InvoiceDto[];
+  className?: string;
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+
+  // "Rent" invoices are handled by TenantPaymentBanner via payment records.
+  const unpaid = invoices.filter(
+    (i) => i.status !== InvoiceStatus.Paid && i.type !== "Rent",
+  );
+  if (unpaid.length === 0) return null;
+
+  const overdue = unpaid.filter((i) => i.dueDate && new Date(i.dueDate).getTime() < todayMs);
+  const totalAmount = unpaid.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const overdueAmount = overdue.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const isOverdue = overdue.length > 0;
+  const oldest = overdue.sort((a, b) =>
+    (a.dueDate ?? "") < (b.dueDate ?? "") ? -1 : 1,
+  )[0];
+  const daysOverdue = oldest?.dueDate
+    ? Math.floor((todayMs - new Date(oldest.dueDate).getTime()) / MS_PER_DAY)
+    : 0;
+
+  const palette = isOverdue
+    ? daysOverdue >= 7
+      ? "bg-danger/10 border-danger/30"
+      : "bg-warning/10 border-warning/30"
+    : "bg-bg-card border-border";
+  const accent = isOverdue && daysOverdue >= 7 ? "text-danger" : "text-warning";
+
+  const types = Array.from(new Set(unpaid.map((i) => INVOICE_TYPE_LABEL[i.type] ?? i.type)));
+  const headline = isOverdue
+    ? unpaid.length === 1
+      ? `${types[0]} ${daysOverdue} day${daysOverdue !== 1 ? "s" : ""} overdue`
+      : `${unpaid.length} unpaid charges (${daysOverdue}d overdue)`
+    : unpaid.length === 1
+      ? `${types[0]} due`
+      : `${unpaid.length} unpaid charges`;
+
+  return (
+    <div className={cn("rounded-2xl border px-5 py-4 flex items-start gap-3", palette, className)}>
+      <AlertCircle size={18} className={cn("shrink-0 mt-0.5", accent)} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-fg">{headline}</p>
+        <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+          {isOverdue
+            ? `${formatThb(overdueAmount)} past due${unpaid.length > overdue.length ? ` (plus ${formatThb(totalAmount - overdueAmount)} pending)` : ""}. Pay to avoid late fees and disputes at move-out.`
+            : `${formatThb(totalAmount)} outstanding across ${types.join(", ")}.`}
+        </p>
+      </div>
     </div>
   );
 }

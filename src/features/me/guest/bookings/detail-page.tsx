@@ -12,13 +12,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets } from "@/lib/hooks/use-bookings";
+import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets, useMarkBookingSeen } from "@/lib/hooks/use-bookings";
 import { useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
-import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
+import { ticketStatusColor, ticketKindIcon, tenantTicketStatusLabel } from "@/lib/utils/ticket-status";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
-import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
+import { TenantPaymentBanner, TenantOtherInvoicesBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
 import { LandlordTerminationBanner } from "@/components/shared/landlord-termination-banner";
 import { GuestPeaBillCard } from "@/components/shared/pea-bill-card";
@@ -27,7 +27,7 @@ import { useListing } from "@/lib/hooks/use-listings";
 import { useAsset } from "@/lib/hooks/use-assets";
 import { GatewayOverlay } from "./gateway-overlay";
 import { formatDate, formatThb } from "@/lib/utils/format";
-import { BookingStatus, InvoiceStatus, VisaType } from "@/lib/types/enums";
+import { BookingStatus, VisaType } from "@/lib/types/enums";
 import type { CheckInMethod, UpsertPassportRequest, LandlordContact, ContactChannel } from "@/lib/types";
 import { contractSigningDeadline } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
@@ -276,45 +276,19 @@ export function GuestBookingDetailPage() {
   const [guestsConfirmed, setGuestsConfirmed] = useState(() => localStorage.getItem(guestsStorageKey) === "1");
   function confirmGuestsAlone() { localStorage.setItem(guestsStorageKey, "1"); setGuestsConfirmed(true); }
 
-  // Listing-change detection — backend doesn't push notifications when the host
-  // edits wifi / houseRules / checkInInstructions mid-stay, so we fingerprint
-  // the last-seen values locally and surface any diff on next visit.
-  const listingFingerprintKey = `siamo_listing_seen_${id}`;
-  const [listingChanges, setListingChanges] = useState<string[]>([]);
-  React.useEffect(() => {
-    if (!listing) return;
-    const current = {
-      wifiName: listing.wifiName ?? "",
-      wifiPassword: listing.wifiPassword ?? "",
-      houseRules: listing.houseRules ?? "",
-      checkInInstructions: listing.checkInInstructions ?? "",
-    };
-    const stored = localStorage.getItem(listingFingerprintKey);
-    if (!stored) {
-      localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
-      return;
-    }
-    try {
-      const prev = JSON.parse(stored) as typeof current;
-      const diffs: string[] = [];
-      if (prev.wifiName !== current.wifiName || prev.wifiPassword !== current.wifiPassword) diffs.push("WiFi");
-      if (prev.houseRules !== current.houseRules) diffs.push("House rules");
-      if (prev.checkInInstructions !== current.checkInInstructions) diffs.push("Check-in instructions");
-      setListingChanges(diffs);
-    } catch {
-      localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
-    }
-  }, [listing, listingFingerprintKey]);
+  // Listing-change detection — backend exposes `listingChangesAfter` (short keys
+  // for the fields edited since the tenant's lastSeenListingAt). Dismissing calls
+  // mark-seen, which resets the list on the server so it doesn't reappear.
+  const markSeen = useMarkBookingSeen(id!);
+  const CHANGE_LABEL: Record<string, string> = {
+    wifi: "WiFi",
+    houseRules: "House rules",
+    checkInInstructions: "Check-in instructions",
+  };
+  const listingChanges = (booking?.listingChangesAfter ?? [])
+    .map((k) => CHANGE_LABEL[k] ?? k);
   function dismissListingChanges() {
-    if (!listing) return;
-    const current = {
-      wifiName: listing.wifiName ?? "",
-      wifiPassword: listing.wifiPassword ?? "",
-      houseRules: listing.houseRules ?? "",
-      checkInInstructions: listing.checkInInstructions ?? "",
-    };
-    localStorage.setItem(listingFingerprintKey, JSON.stringify(current));
-    setListingChanges([]);
+    markSeen.mutate();
   }
 
   if (isLoading) {
@@ -343,7 +317,6 @@ export function GuestBookingDetailPage() {
   const presentAmenities = listing?.amenities?.filter((a) => a.isPresent) ?? [];
   const daysLeft = booking.daysRemaining;
   const heroUrl = listing?.media?.[0]?.url ?? booking.primaryImageUrl;
-  const unpaidInvoices = (invoices ?? []).filter((i) => i.status !== InvoiceStatus.Paid);
 
   // Lease duration & monthly rate
   const checkIn = new Date(booking.checkInDate);
@@ -396,9 +369,10 @@ export function GuestBookingDetailPage() {
             variant="outline"
             size="sm"
             className="rounded-lg h-8 text-xs shrink-0"
+            disabled={markSeen.isPending}
             onClick={dismissListingChanges}
           >
-            Got it
+            {markSeen.isPending ? "…" : "Got it"}
           </Button>
         </div>
       )}
@@ -596,6 +570,11 @@ export function GuestBookingDetailPage() {
                       target?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
                   />
+                )}
+
+                {/* Non-rent invoices (utilities, damage, cleaning, etc.) — separate signal */}
+                {(isActive || isConfirmed) && invoices && (
+                  <TenantOtherInvoicesBanner invoices={invoices} />
                 )}
 
                 {/* Check-in plan card */}
@@ -893,10 +872,16 @@ export function GuestBookingDetailPage() {
           {isActive && (() => {
             const rec = (myTm30 ?? []).find((r) => r.bookingId === id);
             if (!rec || rec.status === "Filed") return null;
-            const hours = (Date.now() - new Date(rec.checkInDate).getTime()) / 3_600_000;
-            if (hours < 0) return null; // check-in not yet
-            const inWindow = hours < 24;
-            const daysOverdue = Math.floor((hours - 24) / 24) + (inWindow ? 0 : 1);
+            // Prefer the server-computed deadline; fall back to checkIn + 24h for legacy.
+            const deadlineMs = rec.filingDeadline
+              ? new Date(rec.filingDeadline).getTime()
+              : new Date(rec.checkInDate).getTime() + 24 * 3600_000;
+            const windowOpensMs = deadlineMs - 24 * 3600_000;
+            const nowMs = Date.now();
+            if (nowMs < windowOpensMs) return null; // window not yet open
+            const inWindow = nowMs < deadlineMs;
+            const hoursLeft = inWindow ? Math.floor((deadlineMs - nowMs) / 3_600_000) : 0;
+            const daysOverdue = inWindow ? 0 : Math.floor((nowMs - deadlineMs) / 86_400_000) + 1;
             return (
               <div
                 className={cn(
@@ -913,7 +898,7 @@ export function GuestBookingDetailPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-fg">
                       {inWindow
-                        ? `TM-30 filing — 24h window open (${Math.max(0, Math.floor(24 - hours))}h left)`
+                        ? `TM-30 filing — 24h window open (${hoursLeft}h left)`
                         : `TM-30 overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}`}
                     </p>
                     <p className="text-xs text-fg-muted mt-1 leading-relaxed">
@@ -931,6 +916,88 @@ export function GuestBookingDetailPage() {
                 >
                   <Link to="/me/guest/tm30">View TM-30 status</Link>
                 </Button>
+              </div>
+            );
+          })()}
+
+          {/* ── End-of-stay coordination (last 14 days of an active lease) ── */}
+          {isActive && daysLeft != null && daysLeft <= 14 && daysLeft >= 0 && (() => {
+            const urgent = daysLeft <= 3;
+            const palette = urgent
+              ? "bg-danger/8 border-danger/30"
+              : daysLeft <= 7
+                ? "bg-warning/10 border-warning/30"
+                : "bg-warning/5 border-warning/20";
+            const accent = urgent ? "text-danger" : "text-warning";
+            return (
+              <div className={cn("rounded-2xl border p-4 space-y-3", palette)}>
+                <div className="flex items-start gap-3">
+                  <DoorOpen size={18} className={cn("shrink-0 mt-0.5", accent)} />
+                  <div className="flex-1 min-w-0">
+                    <p className={cn("text-sm font-semibold", accent)}>
+                      {daysLeft === 0
+                        ? "Move-out today"
+                        : `Move-out in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}`}
+                    </p>
+                    <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                      Your lease ends {formatDate(booking.checkOutDate)}. Before you leave, sort the items below so the
+                      deposit settlement goes smoothly — the host has a 7-day window to inspect after check-out.
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2 pl-1 text-sm">
+                  <li className="flex items-start gap-2.5">
+                    <Camera size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                    <span className="text-fg-muted leading-snug">
+                      <span className="text-fg font-medium">Photo the property</span> on the day you leave (every room,
+                      fridge, walls, appliances). Your evidence if the host claims damage later.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Key size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                    <span className="text-fg-muted leading-snug">
+                      <span className="text-fg font-medium">Agree key/access return</span> with your host —
+                      handover, keybox code reset, or front-desk drop-off.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <CheckCircle2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                    <span className="text-fg-muted leading-snug">
+                      <span className="text-fg font-medium">Check final utilities/cleaning charges</span> are settled —
+                      anything unpaid will be deducted from your deposit.
+                    </span>
+                  </li>
+                </ul>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-8 text-xs"
+                    onClick={() => {
+                      setIssueTitle("Interested in renewing my stay");
+                      setIssueDescription("Hi! I'd like to discuss extending this lease — please let me know if it's possible and on what terms.");
+                      setIssueType(TicketType.Request);
+                      setIssuePriority(TicketPriority.Normal);
+                      setReportIssueOpen(true);
+                    }}
+                  >
+                    Discuss renewal
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-8 text-xs"
+                    onClick={() => {
+                      setIssueTitle("Move-out coordination");
+                      setIssueDescription(`I'm checking out on ${formatDate(booking.checkOutDate)}. Can we agree on time and key/access return?`);
+                      setIssueType(TicketType.Request);
+                      setIssuePriority(TicketPriority.Normal);
+                      setReportIssueOpen(true);
+                    }}
+                  >
+                    Coordinate move-out
+                  </Button>
+                </div>
               </div>
             );
           })()}
@@ -1513,7 +1580,7 @@ export function GuestBookingDetailPage() {
                           <p className="text-[11px] text-fg-muted mt-0.5">{formatDate(t.createdAt)}</p>
                         </div>
                         <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
-                          {t.status}
+                          {tenantTicketStatusLabel(t.status)}
                         </span>
                       </Link>
                     ))}

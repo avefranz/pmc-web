@@ -185,6 +185,8 @@ export interface BookingCancellationDto {
   expiresAt?: string | null;
   /** Deadline by which tenant must cure a NonPayment termination (default: createdAt + 7d). */
   cureDeadline?: string | null;
+  /** Deadline by which tenant may dispute a Breach termination through support. Null for other reasons. */
+  disputeDeadline?: string | null;
   landlordConfirmedAt: string | null;
   declinedAt?: string | null;
   createdAt: string;
@@ -198,6 +200,11 @@ export interface Tm30TenantRecordDto {
   status: "Pending" | "Filed";
   filedAt: string | null;
   documentUrl: string | null;
+  /**
+   * Deadline by which the host must file the TM-30 with Thai immigration.
+   * Server-computed as max(checkIn, entryDate) + 24h. Null only on legacy records.
+   */
+  filingDeadline?: string | null;
 }
 
 // ─── Assets ───────────────────────────────────────────────────────────────────
@@ -360,6 +367,12 @@ export interface BookingDto {
   primaryImageUrl?: string;
   daysRemaining?: number;
   landlordContact?: LandlordContact | null;
+  /**
+   * Critical listing fields that the host changed AFTER the tenant's lastSeenListingAt.
+   * Short keys: "wifi", "houseRules", "checkInInstructions". Empty array when the
+   * tenant hasn't opened the booking yet (so first-time viewers don't see ghost diffs).
+   */
+  listingChangesAfter?: string[];
 }
 
 export interface Tm30FilingDto {
@@ -447,6 +460,8 @@ export interface TicketMessageAttachmentDto {
   id: string;
   url: string;
   fileName?: string;
+  /** MIME type from upload; used to reliably distinguish images from other files. */
+  contentType?: string;
 }
 
 export interface TicketMessageDto {

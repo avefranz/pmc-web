@@ -15,6 +15,8 @@ import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
 import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport } from "@/lib/hooks/use-bookings";
 import { bookingsApi } from "@/lib/api/bookings.api";
+import { contractSigningDeadline } from "@/lib/types";
+import { CountdownPill } from "@/components/shared/countdown-pill";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
@@ -100,10 +102,17 @@ export function GuestContractSignPage() {
       toast.success("Agreement signed!");
       navigate(`/me/guest/bookings/${id}`);
     } catch (err: unknown) {
-      const msg =
+      const status = (err as { response?: { status?: number } } | null)?.response?.status;
+      // 409/422 here almost always means the signing deadline passed between
+      // the form mount and submit — the contract was voided server-side.
+      // Tell the tenant exactly that instead of a generic failure.
+      const isExpired = status === 409 || status === 410 || status === 422;
+      const apiMsg =
         (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.message ??
-        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.title ??
-        "Failed to sign agreement. Please try again.";
+        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.title;
+      const msg = isExpired
+        ? "The signing window closed while you were filling this in. This booking is cancelled and any payment will be refunded — you'll need a new booking to proceed."
+        : apiMsg ?? "Failed to sign agreement. Please try again.";
       setSubmitError(msg);
     } finally {
       setIsSubmitting(false);
@@ -193,8 +202,20 @@ export function GuestContractSignPage() {
 
       {/* Title */}
       <div>
-        <h1 className="text-xl font-semibold text-fg">Sign your rental agreement</h1>
-        <p className="text-sm text-fg-muted mt-1">Review the key terms below and sign electronically.</p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="text-xl font-semibold text-fg">Sign your rental agreement</h1>
+          {!alreadySigned && (
+            <CountdownPill
+              deadline={contractSigningDeadline(contract)}
+              prefix="Expires in"
+              expiredLabel="Expired — booking cancelled"
+            />
+          )}
+        </div>
+        <p className="text-sm text-fg-muted mt-1">
+          Review the key terms below and sign electronically.
+          {!alreadySigned && " Your form data isn't saved server-side until you submit, so finish in one go."}
+        </p>
       </div>
 
       {/* Already signed notice */}

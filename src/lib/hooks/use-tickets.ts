@@ -78,7 +78,17 @@ export const useUpdateTicketAssignee = () => {
 export const usePostTicketMessage = (ticketId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: PostTicketMessageRequest) => ticketsApi.postMessage(ticketId, data),
+    mutationFn: async ({ attachments, ...data }: PostTicketMessageRequest & { attachments?: File[] }) => {
+      const { id } = await ticketsApi.postMessage(ticketId, data);
+      // Attachments upload after the message exists; failures bubble up so the
+      // compose UI can surface them rather than silently dropping evidence.
+      if (attachments?.length) {
+        await Promise.all(
+          attachments.map((file) => ticketsApi.uploadMessageAttachment(ticketId, id, file)),
+        );
+      }
+      return { id };
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ticketKeys.detail(ticketId) }),
   });
 };

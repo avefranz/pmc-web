@@ -10,7 +10,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { CountdownPill } from "@/components/shared/countdown-pill";
 import { useHostRequest, useApproveRequest, useRejectRequest } from "@/lib/hooks/use-booking-requests";
+import { bookingRequestDeadline } from "@/lib/api/booking-requests.api";
 import { formatThb } from "@/lib/utils/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
@@ -243,8 +245,17 @@ export function HostRequestDetailPage() {
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white/60">
               <StatusIcon size={20} className={STATUS_CFG.color} />
             </div>
-            <div className="flex-1">
-              <p className={cn("font-semibold", STATUS_CFG.color)}>{STATUS_CFG.label}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className={cn("font-semibold", STATUS_CFG.color)}>{STATUS_CFG.label}</p>
+                {isPending && req.createdAt && (
+                  <CountdownPill
+                    deadline={bookingRequestDeadline(req)}
+                    prefix="Auto-expires in"
+                    expiredLabel="Auto-expired"
+                  />
+                )}
+              </div>
               <p className="text-sm text-fg-muted mt-0.5">{STATUS_CFG.desc}</p>
               {req.status === "Rejected" && req.rejectionReason && (
                 <p className="text-sm text-fg mt-2 pt-2 border-t border-danger/20">

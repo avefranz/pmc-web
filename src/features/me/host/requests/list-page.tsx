@@ -4,10 +4,12 @@ import { Inbox, Home, ArrowRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { CountdownPill } from "@/components/shared/countdown-pill";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
 import { useHostRequests } from "@/lib/hooks/use-booking-requests";
-import type { HostBookingRequestDto, BookingRequestStatus } from "@/lib/api/booking-requests.api";
+import { bookingRequestDeadline } from "@/lib/api/booking-requests.api";
+import type { HostBookingRequestDto } from "@/lib/api/booking-requests.api";
 
 // ─── Fate helpers ─────────────────────────────────────────────────────────────
 
@@ -33,20 +35,28 @@ function RequestCard({ req }: { req: HostBookingRequestDto }) {
 
   const fate = isApproved ? getApprovedFate(req) : null;
 
+  // Pending escalation: warning by default, danger once the auto-expiry window
+  // is mostly used up (under 24h of the 72h budget). Without this signal a
+  // request that's been sitting 50h looks like one that arrived 5min ago.
+  const hoursLeft = isPending && req.createdAt
+    ? (new Date(bookingRequestDeadline(req)).getTime() - Date.now()) / 3600_000
+    : null;
+  const pendingUrgent = hoursLeft != null && hoursLeft < 24;
+
   const badgeLabel = isPending
-    ? "Awaiting your response"
+    ? pendingUrgent ? "Respond soon" : "Awaiting your response"
     : fate
       ? fate.label
       : req.status === "Rejected" ? "Rejected" : "Expired";
 
   const badgeCls = isPending
-    ? "bg-warning/10 text-warning"
+    ? pendingUrgent ? "bg-danger/10 text-danger font-semibold" : "bg-warning/10 text-warning"
     : fate
       ? fate.badgeCls
       : "bg-bg-subtle text-fg-muted";
 
   const stripeColor = isPending
-    ? "border-warning"
+    ? pendingUrgent ? "border-danger" : "border-warning"
     : fate
       ? fate.stripe
       : "border-transparent";
@@ -89,10 +99,20 @@ function RequestCard({ req }: { req: HostBookingRequestDto }) {
             <span className="text-sm font-bold text-fg">
               {formatThb(req.monthlyRate)}<span className="text-[11px] font-normal text-fg-muted"> /month</span>
             </span>
-            <span className={cn("text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap", badgeCls)}>
-              {badgeLabel}
-            </span>
-            {isPending && <ArrowRight size={14} className="text-warning shrink-0" />}
+            <div className="flex flex-col items-end gap-1">
+              <span className={cn("text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap", badgeCls)}>
+                {badgeLabel}
+              </span>
+              {isPending && req.createdAt && (
+                <CountdownPill
+                  deadline={bookingRequestDeadline(req)}
+                  prefix="Auto-expires in"
+                  expiredLabel="Auto-expired"
+                  className="text-[10px]"
+                />
+              )}
+            </div>
+            {isPending && <ArrowRight size={14} className={cn("shrink-0", pendingUrgent ? "text-danger" : "text-warning")} />}
           </div>
         </div>
       </div>

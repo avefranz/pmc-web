@@ -6,17 +6,28 @@ import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
-function tm30Urgency(checkInDate: string): {
-  hoursIntoWindow: number;
+function tm30Urgency(rec: { checkInDate: string; filingDeadline?: string | null }): {
+  hoursLeftInWindow: number;
   daysOverdue: number;
   level: "future" | "open" | "overdueMinor" | "overdueSerious";
 } {
-  const checkIn = new Date(checkInDate).getTime();
-  const hours = (Date.now() - checkIn) / 3_600_000;
-  if (hours < 0) return { hoursIntoWindow: 0, daysOverdue: 0, level: "future" };
-  if (hours < 24) return { hoursIntoWindow: hours, daysOverdue: 0, level: "open" };
-  const days = Math.floor((hours - 24) / 24);
-  return { hoursIntoWindow: hours, daysOverdue: days + 1, level: days >= 3 ? "overdueSerious" : "overdueMinor" };
+  // Prefer server-computed deadline (handles re-entry quirks: entryDate later than
+  // checkIn etc.); fall back to checkIn + 24h for legacy records.
+  const deadlineMs = rec.filingDeadline
+    ? new Date(rec.filingDeadline).getTime()
+    : new Date(rec.checkInDate).getTime() + 24 * 3600_000;
+  const windowOpensMs = deadlineMs - 24 * 3600_000;
+  const nowMs = Date.now();
+  if (nowMs < windowOpensMs) return { hoursLeftInWindow: 0, daysOverdue: 0, level: "future" };
+  if (nowMs < deadlineMs) {
+    return { hoursLeftInWindow: (deadlineMs - nowMs) / 3_600_000, daysOverdue: 0, level: "open" };
+  }
+  const daysOverdue = Math.floor((nowMs - deadlineMs) / 86_400_000) + 1;
+  return {
+    hoursLeftInWindow: 0,
+    daysOverdue,
+    level: daysOverdue >= 3 ? "overdueSerious" : "overdueMinor",
+  };
 }
 
 export function GuestTm30Page() {
@@ -46,7 +57,7 @@ export function GuestTm30Page() {
         <div className="space-y-3">
           {records.map((rec) => {
             const pending = rec.status !== "Filed";
-            const urg = pending ? tm30Urgency(rec.checkInDate) : null;
+            const urg = pending ? tm30Urgency(rec) : null;
             const isOverdue = urg?.level === "overdueMinor" || urg?.level === "overdueSerious";
             const isOpen = urg?.level === "open";
             return (
@@ -80,7 +91,7 @@ export function GuestTm30Page() {
                       </span>
                     ) : isOpen ? (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
-                        <Clock size={10} /> 24h window — {Math.max(0, Math.floor(24 - urg!.hoursIntoWindow))}h left
+                        <Clock size={10} /> 24h window — {Math.max(0, Math.floor(urg!.hoursLeftInWindow))}h left
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-muted bg-bg-subtle px-2 py-0.5 rounded-full">

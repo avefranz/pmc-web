@@ -69,3 +69,28 @@ export function ticketKindLabel(kind: TicketKind): string {
 export function priorityLabel(p: TicketPriority): string {
   return p;
 }
+
+// Tenant-facing labels for raw backend ticket statuses. The host UI uses richer
+// labels of its own — these are the subset that makes sense to a renter.
+const TENANT_TICKET_STATUS_LABELS: Record<string, string> = {
+  Draft: "Drafting",
+  Reported: "Reported",
+  Triaging: "Under review",
+  Quoted: "Quote received",
+  PendingApproval: "Pending approval",
+  Approved: "Approved",
+  InProgress: "In progress",
+  Blocked: "Blocked",
+  Verified: "Marked fixed",
+  Closed: "Closed",
+  Completed: "Closed",
+  Reopened: "Re-opened",
+  Cancelled: "Cancelled",
+  Canceled: "Cancelled",
+  Pending: "Pending",
+  Rejected: "Rejected",
+};
+
+export function tenantTicketStatusLabel(status: string): string {
+  return TENANT_TICKET_STATUS_LABELS[status] ?? status;
+}

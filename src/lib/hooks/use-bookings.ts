@@ -350,3 +350,15 @@ export const useDisputeDepositSettlement = (bookingId: string) => {
     },
   });
 };
+
+export const useMarkBookingSeen = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => bookingsApi.markBookingSeen(bookingId),
+    // Refresh detail + my-bookings so listingChangesAfter clears immediately.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.my() });
+    },
+  });
+};
