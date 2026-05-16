@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +67,16 @@ export function PaymentSettingsPage() {
           <p className="text-sm text-fg-muted">
             These details are shown to tenants when payment is required. At least one method (PromptPay or bank transfer) is recommended.
           </p>
+
+          {(profile?.promptPayId || profile?.bankAccountNumber) && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-warning/8 border border-warning/20 px-3 py-2.5">
+              <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
+              <p className="text-xs text-fg-muted leading-relaxed">
+                <span className="font-semibold text-fg">Updates apply to new invoices only.</span>{" "}
+                Already-issued invoices will keep the previous payout details.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-fg">PromptPay ID</Label>

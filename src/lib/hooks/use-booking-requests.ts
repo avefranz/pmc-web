@@ -28,7 +28,7 @@ export const useHostRequest = (id: string) =>
 export const useApproveRequest = (id: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => bookingRequestsApi.approve(id),
+    mutationFn: (idempotencyKey: string) => bookingRequestsApi.approve(id, idempotencyKey),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.hostRequests() });
       qc.invalidateQueries({ queryKey: keys.hostRequest(id) });

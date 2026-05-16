@@ -34,7 +34,6 @@ export function UserMenu({ compact }: { compact?: boolean } = {}) {
 
   function handleSignOut() {
     clearAuth();
-    localStorage.removeItem("pmc_token");
     qc.clear();
     navigate("/login", { replace: true });
   }

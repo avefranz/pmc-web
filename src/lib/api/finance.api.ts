@@ -8,8 +8,10 @@ import type {
 } from "../types";
 
 export const financeApi = {
-  markInvoicePaid: (invoiceId: string) =>
-    apiClient.patch<void>(`/api/finance/invoices/${invoiceId}/paid`),
+  markInvoicePaid: (invoiceId: string, idempotencyKey: string) =>
+    apiClient.patch<void>(`/api/finance/invoices/${invoiceId}/paid`, undefined, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
 
   createCustomInvoice: (data: CreateInvoiceRequest) =>
     apiClient

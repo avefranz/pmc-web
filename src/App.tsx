@@ -57,6 +57,7 @@ import { FinancePage } from "@/features/me/host/finance/page";
 // Guest TM30 & onboarding
 import { GuestTm30Page } from "@/features/me/guest/tm30/page";
 import { PassportOnboardingStep } from "@/features/me/onboarding/passport-step";
+import { IntentOnboardingStep } from "@/features/me/onboarding/intent-step";
 
 // Host settings
 import { PaymentSettingsPage } from "@/features/me/host/settings/payment-settings-page";
@@ -122,6 +123,7 @@ export default function App() {
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
 
         {/* Onboarding */}
+        <Route path="/me/onboarding/intent" element={<IntentOnboardingStep />} />
         <Route path="/me/onboarding/passport" element={<PassportOnboardingStep />} />
 
         {/* Legacy trips — redirect to new paths */}

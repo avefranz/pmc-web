@@ -155,10 +155,11 @@ export function HostRequestDetailPage() {
 
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const approveIdempotencyKey = useState(() => crypto.randomUUID())[0];
 
   async function handleApprove() {
     try {
-      await approve.mutateAsync();
+      await approve.mutateAsync(approveIdempotencyKey);
       toast.success("Request approved");
       navigate("/me/host/requests");
     } catch (err) {

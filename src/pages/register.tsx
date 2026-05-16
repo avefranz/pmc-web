@@ -42,7 +42,7 @@ export default function RegisterPage() {
     setErrors({});
     try {
       await register.mutateAsync({ email: email.trim(), password, firstName: firstName.trim() });
-      navigate("/me/onboarding/passport", { replace: true });
+      navigate("/me/onboarding/intent", { replace: true });
     } catch {
       setServerError("Registration failed. This email may already be in use.");
     }
@@ -60,7 +60,7 @@ export default function RegisterPage() {
 
         <div className="bg-bg-card rounded-xl shadow-pop p-8">
           <h1 className="text-2xl font-semibold text-fg mb-1">Create an account</h1>
-          <p className="text-sm text-fg-muted mb-6">Start planning your stay in Thailand</p>
+          <p className="text-sm text-fg-muted mb-6">Find a place to rent or list your property — one account for both.</p>
 
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div className="space-y-1.5">

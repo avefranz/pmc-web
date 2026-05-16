@@ -113,6 +113,10 @@ export interface PaymentInstructionsDto {
   bankAccountName: string | null;
   payments: PaymentRecordDto[];
   isFullyPaid: boolean;
+  /** False when landlord hasn't set up payment details yet. */
+  isLandlordReady: boolean;
+  /** Human-readable reasons why isLandlordReady is false. */
+  notReadyReasons: string[];
 }
 
 // ─── Deposit settlement ──────────────────────────────────────────────────────
@@ -122,6 +126,7 @@ export type DepositSettlementStatus =
   | "FullReturn"     // host confirmed full refund
   | "PartialHold"    // host wants to withhold part of deposit — tenant must accept/dispute
   | "Disputed"       // tenant disputed the partial hold, escalated to support
+  | "PendingRefund"  // settlement decided, landlord must transfer refundAmount to tenant
   | "Released";      // funds settled (final state)
 
 export interface DepositSettlementDto {
@@ -143,6 +148,12 @@ export interface DepositSettlementDto {
   tenantResponseAt?: string | null;
   /** Tenant's reason for disputing. */
   disputeReason?: string | null;
+  /** Amount landlord must physically transfer to tenant (present when status = PendingRefund or Released). */
+  refundAmount?: number | null;
+  /** Bank reference / slip link provided by landlord when confirming the transfer. */
+  refundReference?: string | null;
+  /** When the landlord confirmed the refund transfer. */
+  refundConfirmedAt?: string | null;
   createdAt: string;
 }
 
@@ -373,6 +384,10 @@ export interface BookingDto {
    * tenant hasn't opened the booking yet (so first-time viewers don't see ghost diffs).
    */
   listingChangesAfter?: string[];
+  /** Set when booking expired because tenant checked in but didn't pay within the window. */
+  noShowAt?: string | null;
+  /** ID of the booking this was renewed from (present on renewal bookings). */
+  renewedFromBookingId?: string | null;
 }
 
 export interface Tm30FilingDto {
@@ -496,6 +511,8 @@ export interface InvoiceDto {
   bookingId?: string;
   ticketId?: string;
   description?: string;
+  /** Batch identifier for auto-generated invoices, e.g. "utilities-2026-05". */
+  generationBatch?: string | null;
 }
 
 export interface FinanceCategoryDto {
@@ -563,6 +580,8 @@ export interface UtilityContractDto {
   utilityType: UtilityType;
   providerName: string;
   accountNumber: string;
+  /** Monthly estimated cost in THB; used by the auto-invoice generator. */
+  monthlyEstimate?: number | null;
 }
 
 // ─── References ───────────────────────────────────────────────────────────────
@@ -744,6 +763,7 @@ export interface CreateUtilityContractRequest {
   utilityType: UtilityType;
   providerName: string;
   accountNumber: string;
+  monthlyEstimate?: number | null;
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ import {
   useDeclineCancellation,
   useSendPaymentNotice,
   useInitiateLandlordTermination,
+  useUpdateBookingStatus,
 } from "@/lib/hooks/use-bookings";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
@@ -199,6 +200,10 @@ export function BookingDetailPage() {
   const [terminationReason, setTerminationReason] = useState<"NonPayment" | "Breach" | "MutualAgreement">("NonPayment");
   const [terminationNote, setTerminationNote] = useState("");
 
+  // Close lease
+  const updateBookingStatus = useUpdateBookingStatus(id!);
+  const [closeLeaseError, setCloseLeaseError] = useState<string | null>(null);
+
   // Landlord signing form state
   const [landlordTypedName, setLandlordTypedName] = useState("");
   const [landlordSigningCapacity, setLandlordSigningCapacity] = useState("Owner");
@@ -284,6 +289,7 @@ export function BookingDetailPage() {
     [BookingStatus.PendingPayment]: "bg-warning/10 text-warning",
     [BookingStatus.Completed]:      "bg-bg-subtle text-fg-muted",
     [BookingStatus.Cancelled]:      "bg-danger/10 text-danger",
+    [BookingStatus.Expired]:        "bg-danger/10 text-danger",
   };
 
   // Lease duration & monthly rate
@@ -372,10 +378,75 @@ export function BookingDetailPage() {
           </span>
         ) : (
           <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium shrink-0", statusClass[booking.status] ?? "bg-bg-subtle text-fg-muted")}>
-            {booking.status}
+            {booking.status === BookingStatus.Expired
+              ? booking.noShowAt ? "Expired (no-show)" : "Expired"
+              : booking.status}
           </span>
         )}
       </div>
+
+      {/* ── Close lease (host action for Active bookings past checkout) ── */}
+      {booking.status === BookingStatus.Active && new Date(booking.checkOutDate) <= new Date() && (() => {
+        const nonThGuests = (guests ?? []).filter((g) => g.nationality !== "TH" && !!g.passportNumber);
+        const allTm30Filed = nonThGuests.length === 0 || nonThGuests.every((g) => tm30StatusMap.get(g.id) === true);
+        const unfiledGuests = nonThGuests.filter((g) => tm30StatusMap.get(g.id) !== true);
+        return (
+          <div className="bg-bg-card border border-border rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-fg-muted shrink-0" />
+              <h3 className="text-sm font-semibold text-fg">Close lease</h3>
+            </div>
+            <p className="text-xs text-fg-muted leading-relaxed">
+              The checkout date has passed. Once you close the lease, deposit settlement will begin.
+            </p>
+            {nonThGuests.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold text-fg-muted uppercase tracking-wide">TM-30 status (required before closing)</p>
+                {nonThGuests.map((g) => {
+                  const filed = tm30StatusMap.get(g.id) === true;
+                  const name = [g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest";
+                  return (
+                    <div key={g.id} className="flex items-center gap-2">
+                      <span className={cn(
+                        "w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+                        filed ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+                      )}>
+                        {filed ? "✓" : "!"}
+                      </span>
+                      <p className="text-xs text-fg">{name}</p>
+                      <span className={cn("text-[11px] font-medium ml-auto", filed ? "text-success" : "text-warning")}>
+                        {filed ? "Filed" : "Not filed"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {closeLeaseError && (
+              <div className="rounded-lg bg-danger/8 border border-danger/20 px-3 py-2">
+                <p className="text-xs text-danger leading-relaxed">{closeLeaseError}</p>
+              </div>
+            )}
+            <Button
+              className="w-full bg-fg hover:bg-fg/90 text-bg rounded-xl h-10"
+              disabled={!allTm30Filed || updateBookingStatus.isPending}
+              onClick={async () => {
+                setCloseLeaseError(null);
+                try {
+                  await updateBookingStatus.mutateAsync(BookingStatus.Completed);
+                  toast.success("Lease closed — deposit settlement is now active");
+                } catch (err: unknown) {
+                  const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                  setCloseLeaseError(msg ?? "Failed to close lease. Please try again.");
+                  if (unfiledGuests.length > 0) return;
+                }
+              }}
+            >
+              {updateBookingStatus.isPending ? "Closing…" : allTm30Filed ? "Close lease" : `File TM-30 for ${unfiledGuests.length} guest${unfiledGuests.length !== 1 ? "s" : ""} first`}
+            </Button>
+          </div>
+        );
+      })()}
 
       {/* ── Lease completed: header + deposit settlement card ── */}
       {booking.status === BookingStatus.Completed && (

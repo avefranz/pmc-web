@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Check, Lock, Smartphone, CreditCard, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
-import QRCode from "react-qr-code";
+// Vite's CJS interop hands back the whole CJS module object as the "default" export
+// for react-qr-code, so we have to drill into `.default.default` to get the actual
+// component. Fall back to `.default` if a future Vite version straightens this out.
+import QRCodeDefault from "react-qr-code";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const QRCode: any = (QRCodeDefault as { default?: unknown })?.default ?? QRCodeDefault;
 import generatePayload from "promptpay-qr";
 import { formatThb } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -46,9 +51,11 @@ export function GatewayOverlay({
       setStep("success");
       setTimeout(onClose, 2200);
     } catch (e) {
+      const axiosMsg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       const msg = e instanceof Error && e.message.includes("Timed out")
         ? "We didn't get confirmation in time. Your payment may still go through — check your booking in a minute before retrying."
-        : "Payment could not be processed. Please try again.";
+        : axiosMsg
+        ?? "Payment could not be processed. Please try again.";
       setError(msg);
       setStep("select");
     }

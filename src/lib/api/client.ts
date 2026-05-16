@@ -1,4 +1,16 @@
 import axios from "axios";
+import { useAuthStore } from "../stores/auth.store";
+
+// One-time migration: older sessions kept the token under "pmc_token" alongside
+// Zustand's "pmc_auth". Import any leftover value into the store (if Zustand has
+// none) and drop the legacy key, so going forward there is a single source of truth.
+(() => {
+  const legacy = localStorage.getItem("pmc_token");
+  if (legacy && !useAuthStore.getState().token) {
+    useAuthStore.getState().setToken(legacy);
+  }
+  if (legacy !== null) localStorage.removeItem("pmc_token");
+})();
 
 export const apiClient = axios.create({
   baseURL: "",
@@ -6,7 +18,7 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("pmc_token");
+  const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
 
   // For FormData axios must set Content-Type itself (it adds the multipart boundary).
@@ -26,9 +38,9 @@ apiClient.interceptors.response.use(
     // Only redirect to /login when the user HAD a token (session expired).
     // Anonymous users hitting a 401 (e.g. submitting a booking request before auth)
     // should NOT be redirected — the UI handles that inline.
-    const hadToken = !!localStorage.getItem("pmc_token");
+    const hadToken = !!useAuthStore.getState().token;
     if (err.response?.status === 401 && !redirecting && hadToken) {
-      localStorage.removeItem("pmc_token");
+      useAuthStore.getState().clearAuth();
       if (!window.location.pathname.startsWith("/login")) {
         redirecting = true;
         window.location.href = "/login";

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, DoorOpen } from "lucide-react";
+import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, DoorOpen, Phone, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { useMe } from "@/lib/hooks/use-auth";
+import { useMyProfile } from "@/lib/hooks/use-profile";
 import { AssetOccupancyStatus } from "@/lib/types/enums";
 import type { AssetDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
@@ -117,6 +118,7 @@ export function PropertiesListPage() {
   const { data: assets, isLoading } = useAssets();
   const { data: caps } = useCapabilities();
   const { data: me } = useMe();
+  const { data: profile } = useMyProfile();
 
   const addBtn = (
     <>
@@ -249,9 +251,51 @@ export function PropertiesListPage() {
 
   const showSections = caps?.isManager && managedAssets.length > 0;
 
+  const noContact = profile !== undefined && !profile.phone;
+  const noPayment = profile !== undefined && !profile.promptPayId && !profile.bankAccountNumber;
+
   return (
     <div>
       <PageHeader title="My properties" actions={addBtn} />
+
+      {(noContact || noPayment) && (
+        <div className="space-y-3 mb-6">
+          {noContact && (
+            <Link
+              to="/me/host/settings/contact"
+              className="block rounded-2xl border border-brand/30 bg-brand/5 p-4 hover:brightness-95 transition"
+            >
+              <div className="flex items-start gap-3">
+                <Phone size={18} className="text-brand shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-fg">Add your contact details</p>
+                  <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                    Your phone number and messaging apps are shared with tenants after a booking is confirmed, so they can reach you directly.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-brand shrink-0 self-center">Add →</span>
+              </div>
+            </Link>
+          )}
+          {noPayment && (
+            <Link
+              to="/me/host/settings/payment"
+              className="block rounded-2xl border border-warning/40 bg-warning/8 p-4 hover:brightness-95 transition"
+            >
+              <div className="flex items-start gap-3">
+                <CreditCard size={18} className="text-warning shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-fg">Set up payment details</p>
+                  <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                    Add a PromptPay number or bank account so tenants can pay rent. Without this, bookings will stall at the payment step.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-warning shrink-0 self-center">Set up →</span>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
       {showSections ? (
         <>
           <PropertyGrid assets={ownedAssets} title="Owned" />

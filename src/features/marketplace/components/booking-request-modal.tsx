@@ -1,21 +1,39 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { format, parseISO, addMonths } from "date-fns";
 import { X, CheckCircle2, Zap, ArrowLeft, Eye, EyeOff, ExternalLink, Camera } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { NationalityInput } from "@/components/ui/nationality-input";
+import { DateInput } from "@/components/ui/date-input";
 import { formatThb } from "@/lib/utils/format";
 import { useSubmitBookingRequest } from "@/lib/hooks/use-marketplace";
+import { useUpdateProfile } from "@/lib/hooks/use-profile";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { authApi } from "@/lib/api/auth.api";
+import { profileApi } from "@/lib/api/profile.api";
 import { bookingRequestsApi } from "@/lib/api/booking-requests.api";
 import { PasswordHints, passwordValid } from "@/components/shared/password-hints";
 import { PetsSelector, EMPTY_PETS, petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
 import { cn } from "@/lib/utils/cn";
+import { VisaType } from "@/lib/types/enums";
 import type { DiscountTier, BookingRequestResult } from "@/lib/types/marketplace";
+
+const VISA_LABELS: Record<VisaType, string> = {
+  [VisaType.VisaExempt]: "Visa Exempt",
+  [VisaType.Tourist]: "Tourist Visa",
+  [VisaType.NonImmigrantB]: "Non-Immigrant B",
+  [VisaType.NonImmigrantO]: "Non-Immigrant O",
+  [VisaType.NonImmigrantOA]: "Non-Immigrant OA",
+  [VisaType.Education]: "Education Visa",
+  [VisaType.SpecialTourist]: "Special Tourist",
+  [VisaType.Other]: "Other",
+};
 
 // ─── Pet photo upload ─────────────────────────────────────────────────────────
 
@@ -155,7 +173,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Step = "form" | "auth" | "success";
+type Step = "form" | "auth" | "passport" | "success";
 type AuthMode = "register" | "login";
 
 export function BookingRequestModal({
@@ -170,8 +188,16 @@ export function BookingRequestModal({
   onClose,
 }: Props) {
   const submit = useSubmitBookingRequest();
+  const updateProfile = useUpdateProfile();
   const { token, setToken } = useAuthStore();
   const navigate = useNavigate();
+
+  const { data: profile } = useQuery({
+    queryKey: ["profile"],
+    queryFn: profileApi.get,
+    enabled: !!token,
+    staleTime: 60_000,
+  });
 
   // Form fields
   const [name, setName] = useState("");
@@ -192,6 +218,26 @@ export function BookingRequestModal({
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [bookingResult, setBookingResult] = useState<BookingRequestResult | null>(null);
+
+  // Passport step state
+  const [pNationality, setPNationality] = useState("");
+  const [pPassportNumber, setPPassportNumber] = useState("");
+  const [pPassportExpiry, setPPassportExpiry] = useState("");
+  const [pVisaType, setPVisaType] = useState<VisaType | "">("");
+  const [pLastEntryDate, setPLastEntryDate] = useState("");
+  const [pLastEntryPort, setPLastEntryPort] = useState("");
+  const [passportSaving, setPassportSaving] = useState(false);
+
+  useEffect(() => {
+    if (step === "passport" && profile) {
+      setPNationality(profile.nationality ?? "");
+      setPPassportNumber(profile.passportNumber ?? "");
+      setPPassportExpiry(profile.passportExpiry ?? "");
+      setPVisaType((profile.visaType as VisaType) ?? "");
+      setPLastEntryDate(profile.lastEntryDate ?? "");
+      setPLastEntryPort(profile.lastEntryPort ?? "");
+    }
+  }, [step, profile]);
 
   const hasPets = petsExplicit === true && totalPets(pets) > 0;
   const petPhotosReady = !hasPets || (["cats", "dogs", "other"] as PetKey[]).every(
@@ -243,6 +289,12 @@ export function BookingRequestModal({
 
     // Authenticated users don't need to fill name/email (backend takes from profile)
     if (token) {
+      // If profile loaded and passport not set (and not Thai national), collect passport first
+      const needsPassport = profile !== undefined && !profile.passportNumber && profile.nationality !== "TH";
+      if (needsPassport) {
+        setStep("passport");
+        return;
+      }
       try {
         await doSubmitBooking();
       } catch (err: unknown) {
@@ -279,9 +331,9 @@ export function BookingRequestModal({
         result = await authApi.login(email.trim(), password);
       }
 
-      // Save token to both zustand store and localStorage (same as use-auth.ts)
+      // Zustand persist mirrors this into localStorage under "pmc_auth";
+      // axios reads the token from the store on every request.
       setToken(result.token);
-      localStorage.setItem("pmc_token", result.token);
 
       // Auto-submit the booking request
       try {
@@ -309,6 +361,49 @@ export function BookingRequestModal({
     }
   }
 
+  async function handlePassportSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const isThai = pNationality === "TH";
+    setPassportSaving(true);
+    try {
+      await updateProfile.mutateAsync({
+        nationality: pNationality || undefined,
+        passportNumber: (!isThai && pPassportNumber) ? pPassportNumber : undefined,
+        passportExpiry: (!isThai && pPassportExpiry) ? pPassportExpiry : undefined,
+        visaType: (!isThai && pVisaType) ? (pVisaType as VisaType) : undefined,
+        lastEntryDate: (!isThai && pLastEntryDate) ? pLastEntryDate : undefined,
+        lastEntryPort: (!isThai && pLastEntryPort) ? pLastEntryPort : undefined,
+      });
+    } catch {
+      toast.error("Failed to save details. Proceeding with booking.");
+    } finally {
+      setPassportSaving(false);
+    }
+    try {
+      await doSubmitBooking();
+    } catch (err: unknown) {
+      const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
+      const msg = res?.errors
+        ? Object.values(res.errors).flat().join(" · ")
+        : res?.message ?? "Failed to send request. Please try again.";
+      toast.error(msg);
+      setStep("form");
+    }
+  }
+
+  async function handlePassportSkip() {
+    try {
+      await doSubmitBooking();
+    } catch (err: unknown) {
+      const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
+      const msg = res?.errors
+        ? Object.values(res.errors).flat().join(" · ")
+        : res?.message ?? "Failed to send request. Please try again.";
+      toast.error(msg);
+      setStep("form");
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-0 sm:px-4">
       <div className="bg-bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-pop flex flex-col max-h-[92dvh] sm:max-h-[90dvh]">
@@ -316,9 +411,12 @@ export function BookingRequestModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            {step === "auth" && (
+            {(step === "auth" || step === "passport") && (
               <button
-                onClick={() => { setStep("form"); setAuthError(""); setPassword(""); }}
+                onClick={() => {
+                  if (step === "auth") { setAuthError(""); setPassword(""); }
+                  setStep("form");
+                }}
                 className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted hover:bg-bg-subtle transition-colors -ml-1 mr-0.5"
               >
                 <ArrowLeft size={15} />
@@ -327,6 +425,7 @@ export function BookingRequestModal({
             <h2 className="text-base font-semibold text-fg">
               {step === "form" && "Request to Book"}
               {step === "auth" && (authMode === "register" ? "Create your account" : "Sign in")}
+              {step === "passport" && "Your details"}
               {step === "success" && (bookingResult?.isInstantBook ? "Booking confirmed!" : "Request sent!")}
             </h2>
           </div>
@@ -554,6 +653,92 @@ export function BookingRequestModal({
               <p className="text-xs text-center text-fg-muted mt-3">
                 You won't be charged now. The manager will review and respond.
               </p>
+            </div>
+          </form>
+        )}
+
+        {/* ─── Passport step ─── */}
+        {step === "passport" && (
+          <form onSubmit={handlePassportSubmit} className="flex flex-col min-h-0 flex-1">
+            <div className="overflow-y-auto overscroll-contain flex-1">
+              <div className="px-6 py-5 space-y-4">
+                <p className="text-sm text-fg-muted">
+                  {pNationality === "TH"
+                    ? "Please confirm your nationality to complete your booking."
+                    : "Required for your rental contract and TM30 immigration filing."}
+                </p>
+
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-fg">Nationality</Label>
+                  <NationalityInput value={pNationality} onChange={setPNationality} placeholder="Select nationality…" />
+                </div>
+
+                {pNationality !== "TH" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Passport number</Label>
+                      <Input
+                        value={pPassportNumber}
+                        onChange={(e) => setPPassportNumber(e.target.value.toUpperCase())}
+                        placeholder="AB123456"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Passport expiry</Label>
+                      <DateInput value={pPassportExpiry} onChange={setPPassportExpiry} minYear={2000} maxYear={2060} />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-fg">Visa type</Label>
+                      <Select value={pVisaType} onValueChange={(v) => setPVisaType(v as VisaType)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select visa type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(VISA_LABELS).map(([val, label]) => (
+                            <SelectItem key={val} value={val}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium text-fg">Last entry date</Label>
+                        <DateInput value={pLastEntryDate} onChange={setPLastEntryDate} minYear={2015} maxYear={new Date().getFullYear()} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium text-fg">Entry port</Label>
+                        <Input
+                          value={pLastEntryPort}
+                          onChange={(e) => setPLastEntryPort(e.target.value)}
+                          placeholder="Suvarnabhumi"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-border shrink-0 space-y-2">
+              <Button
+                type="submit"
+                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
+                disabled={!pNationality || passportSaving || submit.isPending}
+              >
+                {(passportSaving || submit.isPending) ? "Please wait…" : "Save & send request"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-fg-muted text-sm"
+                onClick={handlePassportSkip}
+                disabled={passportSaving || submit.isPending}
+              >
+                Skip for now
+              </Button>
             </div>
           </form>
         )}

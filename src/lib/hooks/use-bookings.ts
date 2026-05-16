@@ -242,6 +242,9 @@ export const useConfirmCancellation = (bookingId: string) => {
       qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
       qc.invalidateQueries({ queryKey: keys.host() });
       qc.invalidateQueries({ queryKey: keys.my() });
+      // Backend removes future pending invoices/payments on confirm — must refetch.
+      qc.invalidateQueries({ queryKey: keys.invoices(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.payment(bookingId) });
     },
   });
 };
@@ -347,6 +350,30 @@ export const useDisputeDepositSettlement = (bookingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.depositSettlement(bookingId) });
       qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useConfirmRefund = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reference, idempotencyKey }: { reference?: string; idempotencyKey: string }) =>
+      bookingsApi.confirmRefund(bookingId, reference, idempotencyKey),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.depositSettlement(bookingId) });
+      qc.invalidateQueries({ queryKey: keys.detail(bookingId) });
+    },
+  });
+};
+
+export const useRenewBooking = (bookingId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ additionalMonths, idempotencyKey }: { additionalMonths: number; idempotencyKey: string }) =>
+      bookingsApi.renew(bookingId, additionalMonths, idempotencyKey),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      qc.invalidateQueries({ queryKey: keys.my() });
     },
   });
 };

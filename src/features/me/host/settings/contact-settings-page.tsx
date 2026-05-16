@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,10 @@ const COUNTRY_CODES = ["+66", "+7", "+1", "+44", "+49", "+33", "+81", "+82", "+8
 export function ContactSettingsPage() {
   const { data: profile, isLoading } = useMyProfile();
   const updateProfile = useUpdateProfile();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const setupMode = (location.state as { setup?: boolean } | null)?.setup === true;
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
 
   const [countryCode, setCountryCode] = useState("+66");
   const [phone, setPhone] = useState("");
@@ -60,6 +64,7 @@ export function ContactSettingsPage() {
         lineHandle: selected.has("Line") ? (lineHandle.trim() || null) : null,
       });
       toast.success("Contact details saved");
+      if (setupMode) navigate(returnTo ?? "/me/host/properties");
     } catch {
       toast.error("Failed to save");
     }
@@ -77,19 +82,31 @@ export function ContactSettingsPage() {
   return (
     <div className="max-w-3xl">
       <div className="flex items-center gap-2 mb-6">
-        <Link
-          to="/me/profile"
-          className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
-        >
-          <ArrowLeft size={18} />
-        </Link>
+        {setupMode ? (
+          <button
+            type="button"
+            onClick={() => navigate(returnTo ?? "/me/host/properties")}
+            className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
+        ) : (
+          <Link
+            to="/me/profile"
+            className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+        )}
         <h1 className="text-2xl font-semibold text-fg">Contact details</h1>
       </div>
 
       <form onSubmit={handleSave} className="space-y-4">
         <div className="bg-bg-card rounded-2xl shadow-card p-6 space-y-5">
           <p className="text-sm text-fg-muted">
-            Your contact details are shared with tenants only after their booking is confirmed or active.
+            {setupMode
+              ? "Add your contact details so tenants can reach you directly after a booking is confirmed."
+              : "Your contact details are shared with tenants only after their booking is confirmed or active."}
           </p>
 
           {/* Phone number */}
@@ -161,8 +178,17 @@ export function ContactSettingsPage() {
           className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-2xl h-12 font-medium"
           disabled={updateProfile.isPending}
         >
-          {updateProfile.isPending ? "Saving…" : "Save"}
+          {updateProfile.isPending ? "Saving…" : setupMode ? "Save & continue →" : "Save"}
         </Button>
+        {setupMode && (
+          <button
+            type="button"
+            onClick={() => navigate(returnTo ?? "/me/host/properties")}
+            className="w-full text-sm text-fg-muted hover:text-fg transition-colors py-2"
+          >
+            Skip for now
+          </button>
+        )}
       </form>
     </div>
   );

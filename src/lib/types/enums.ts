@@ -81,6 +81,7 @@ export enum BookingStatus {
   Active = "Active",
   Completed = "Completed",
   Cancelled = "Cancelled",
+  Expired = "Expired",
 }
 
 export enum InvoiceStatus {

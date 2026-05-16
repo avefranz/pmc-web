@@ -711,6 +711,7 @@ export function PropertyDetailPage() {
   const [utilType, setUtilType] = useState<UtilityType>(UtilityType.Electricity);
   const [providerName, setProviderName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
+  const [monthlyEstimate, setMonthlyEstimate] = useState("");
   // PEA-specific validation flow
   const [peaMeterNo, setPeaMeterNo] = useState("");
   const [peaStep, setPeaStep] = useState<"form" | "confirm">("form");
@@ -728,7 +729,7 @@ export function PropertyDetailPage() {
   const isPea = utilType === UtilityType.Electricity && providerName === "PEA";
 
   function resetUtilityDialog() {
-    setProviderName(""); setAccountNumber("");
+    setProviderName(""); setAccountNumber(""); setMonthlyEstimate("");
     setPeaMeterNo(""); setPeaStep("form"); setPeaCustomerName(""); setPeaValidating(false);
   }
 
@@ -747,7 +748,14 @@ export function PropertyDetailPage() {
 
   async function handleAddUtility() {
     try {
-      await createUtility.mutateAsync({ assetId: id!, utilityType: utilType, providerName: providerName.trim(), accountNumber: accountNumber.trim() });
+      const parsed = parseFloat(monthlyEstimate);
+      await createUtility.mutateAsync({
+        assetId: id!,
+        utilityType: utilType,
+        providerName: providerName.trim(),
+        accountNumber: accountNumber.trim(),
+        monthlyEstimate: monthlyEstimate.trim() && !isNaN(parsed) ? parsed : null,
+      });
       toast.success("Utility added");
       setAddUtilityOpen(false);
       resetUtilityDialog();
@@ -3573,6 +3581,18 @@ export function PropertyDetailPage() {
                   <p className="text-[11px] text-fg-muted">Both numbers are printed on your electricity bill.</p>
                 </div>
               )}
+              <div className="space-y-1.5">
+                <Label>Estimated monthly cost (THB) <span className="text-fg-subtle font-normal">— optional</span></Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={monthlyEstimate}
+                  onChange={(e) => setMonthlyEstimate(e.target.value)}
+                  placeholder="e.g. 1500"
+                  className="font-mono"
+                />
+                <p className="text-[11px] text-fg-muted">Used to auto-generate monthly utility invoices for tenants.</p>
+              </div>
             </div>
           )}
 

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets, useMarkBookingSeen } from "@/lib/hooks/use-bookings";
+import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets, useMarkBookingSeen, useRenewBooking } from "@/lib/hooks/use-bookings";
 import { useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
@@ -67,6 +67,7 @@ function StatusPill({ status }: { status: string }) {
   if (status === BookingStatus.PendingPayment || status === "Pending") { text = "Payment pending"; cls = "bg-warning/10 text-warning"; }
   if (status === BookingStatus.Completed)      { text = "Completed";       cls = "bg-bg-subtle text-fg-muted"; }
   if (status === BookingStatus.Cancelled)      { text = "Cancelled";       cls = "bg-danger/10 text-danger"; }
+  if (status === BookingStatus.Expired)        { text = "Expired";         cls = "bg-danger/10 text-danger"; }
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full", cls)}>
       <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
@@ -270,6 +271,10 @@ export function GuestBookingDetailPage() {
   const [issueDescription, setIssueDescription] = useState("");
   const [issueType, setIssueType] = useState<TicketType>(TicketType.Maintenance);
   const [issuePriority, setIssuePriority] = useState<TicketPriority>(TicketPriority.Normal);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewMonths, setRenewMonths] = useState(1);
+  const renewIdempotencyKey = useState(() => crypto.randomUUID())[0];
+  const renewBooking = useRenewBooking(id!);
 
   // Co-residents must be confirmed before signing — stored in localStorage so it survives refresh
   const guestsStorageKey = `siamo_guests_confirmed_${id}`;
@@ -374,6 +379,16 @@ export function GuestBookingDetailPage() {
           >
             {markSeen.isPending ? "…" : "Got it"}
           </Button>
+        </div>
+      )}
+
+      {/* Renewal chain notice */}
+      {booking?.renewedFromBookingId && (
+        <div className="bg-bg-subtle border border-border rounded-2xl px-4 py-3 flex items-center gap-3 mb-2">
+          <CalendarDays size={15} className="text-fg-muted shrink-0" />
+          <p className="text-xs text-fg-muted">
+            Continued from a previous lease
+          </p>
         </div>
       )}
 
@@ -973,15 +988,9 @@ export function GuestBookingDetailPage() {
                     variant="outline"
                     size="sm"
                     className="rounded-lg h-8 text-xs"
-                    onClick={() => {
-                      setIssueTitle("Interested in renewing my stay");
-                      setIssueDescription("Hi! I'd like to discuss extending this lease — please let me know if it's possible and on what terms.");
-                      setIssueType(TicketType.Request);
-                      setIssuePriority(TicketPriority.Normal);
-                      setReportIssueOpen(true);
-                    }}
+                    onClick={() => setRenewOpen(true)}
                   >
-                    Discuss renewal
+                    Renew lease
                   </Button>
                   <Button
                     variant="outline"
@@ -1301,7 +1310,7 @@ export function GuestBookingDetailPage() {
 
               {/* Pay button — only if there's something to pay */}
               {pendingPayments.length > 0 && (
-                <div className="px-5 py-4 border-t border-border">
+                <div className="px-5 py-4 border-t border-border space-y-3">
                   {contract?.status === "PendingTenantSignature" ? (
                     <>
                       <Button
@@ -1310,9 +1319,25 @@ export function GuestBookingDetailPage() {
                       >
                         <CreditCard size={14} className="mr-1.5" />Sign the agreement first
                       </Button>
-                      <p className="text-[11px] text-fg-muted text-center mt-2">
+                      <p className="text-[11px] text-fg-muted text-center">
                         Sign your rental agreement above to unlock payment
                       </p>
+                    </>
+                  ) : payment && payment.isLandlordReady === false ? (
+                    <>
+                      <Button
+                        disabled
+                        className="w-full bg-brand/50 text-white rounded-xl h-10 text-sm font-semibold cursor-not-allowed opacity-60"
+                      >
+                        <CreditCard size={14} className="mr-1.5" />Payment not yet available
+                      </Button>
+                      <div className="rounded-xl bg-warning/8 border border-warning/20 px-3 py-2.5 space-y-1">
+                        <p className="text-xs font-semibold text-warning">Landlord payment details not ready</p>
+                        {(payment.notReadyReasons ?? []).map((r, i) => (
+                          <p key={i} className="text-xs text-fg-muted leading-relaxed">{r}</p>
+                        ))}
+                        <p className="text-[11px] text-fg-muted mt-1">Reach out to your landlord before paying.</p>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -1322,7 +1347,7 @@ export function GuestBookingDetailPage() {
                       >
                         <CreditCard size={14} className="mr-1.5" />Pay {formatThb(totalPending)} now
                       </Button>
-                      <p className="text-[11px] text-fg-muted text-center mt-2">
+                      <p className="text-[11px] text-fg-muted text-center">
                         Complete payment to activate your booking
                       </p>
                     </>
@@ -1974,6 +1999,64 @@ export function GuestBookingDetailPage() {
               }}
             >
               {createTicket.isPending ? "Submitting…" : "Report issue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Renew lease dialog */}
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Renew your lease</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted leading-relaxed">
+              How many additional months would you like to add? Your deposit will carry over — no re-payment needed.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Additional months</Label>
+              <Select
+                value={String(renewMonths)}
+                onValueChange={(v) => setRenewMonths(Number(v))}
+              >
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
+                    <SelectItem key={m} value={String(m)}>
+                      {m} month{m !== 1 ? "s" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-[11px] text-fg-muted bg-bg-subtle rounded-lg px-3 py-2 leading-relaxed">
+              After renewal you'll receive a new lease to sign, then pay the first month's rent to activate it.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewOpen(false)} disabled={renewBooking.isPending}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              disabled={renewBooking.isPending}
+              onClick={async () => {
+                try {
+                  const { bookingId: newBookingId } = await renewBooking.mutateAsync({
+                    additionalMonths: renewMonths,
+                    idempotencyKey: renewIdempotencyKey,
+                  });
+                  toast.success("Lease renewed! Sign your new agreement to continue.");
+                  setRenewOpen(false);
+                  window.location.href = `/me/guest/bookings/${newBookingId}`;
+                } catch (err: unknown) {
+                  const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                  toast.error(msg ?? "Failed to renew lease");
+                }
+              }}
+            >
+              {renewBooking.isPending ? "Renewing…" : `Renew ${renewMonths} month${renewMonths !== 1 ? "s" : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>

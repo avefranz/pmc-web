@@ -518,7 +518,6 @@ function MarketplaceUserMenu() {
 
   function signOut() {
     clearAuth();
-    localStorage.removeItem("pmc_token");
     qc.clear();
     navigate("/login", { replace: true });
     setOpen(false);

@@ -106,8 +106,10 @@ export const bookingRequestsApi = {
     apiClient.get<{ data: unknown }>(`/api/me/host/booking-requests/${id}`)
       .then((r) => normalizeHostRequest(r.data.data)),
 
-  approve: (id: string): Promise<void> =>
-    apiClient.post(`/api/me/host/booking-requests/${id}/approve`, {}, { headers: { "Content-Type": "application/json" } }).then(() => undefined),
+  approve: (id: string, idempotencyKey: string): Promise<void> =>
+    apiClient.post(`/api/me/host/booking-requests/${id}/approve`, {}, {
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    }).then(() => undefined),
 
   reject: (id: string, reason?: string): Promise<void> =>
     apiClient.post(`/api/me/host/booking-requests/${id}/reject`, { reason: reason ?? null }, { headers: { "Content-Type": "application/json" } }).then(() => undefined),

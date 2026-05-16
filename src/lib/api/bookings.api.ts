@@ -294,4 +294,35 @@ export const bookingsApi = {
     apiClient
       .post<{ data: DepositSettlementDto }>(`/api/bookings/${bookingId}/deposit-settlement/dispute`, { reason })
       .then((r) => r.data.data),
+
+  /**
+   * Landlord confirms they have transferred the refund to the tenant.
+   * Only valid when settlement.status === "PendingRefund".
+   *
+   * Expected backend: POST /api/bookings/{id}/deposit-settlement/refund-confirm
+   */
+  confirmRefund: (bookingId: string, reference?: string, idempotencyKey?: string) =>
+    apiClient
+      .post<{ data: DepositSettlementDto }>(
+        `/api/bookings/${bookingId}/deposit-settlement/refund-confirm`,
+        { reference: reference ?? null },
+        idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : undefined,
+      )
+      .then((r) => r.data.data),
+
+  /**
+   * Tenant renews their lease for 1–12 additional months.
+   * Source booking must be Active or Confirmed.
+   *
+   * Expected backend: POST /api/bookings/{id}/renew
+   * Response: { bookingId: string } — the new booking to sign + pay first month.
+   */
+  renew: (bookingId: string, additionalMonths: number, idempotencyKey: string) =>
+    apiClient
+      .post<{ data: { bookingId: string } }>(
+        `/api/bookings/${bookingId}/renew`,
+        { additionalMonths },
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      )
+      .then((r) => r.data.data),
 };

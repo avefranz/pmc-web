@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Banknote, AlertCircle, CheckCircle2, Shield, Camera, X as XIcon } from "lucide-react";
+import { Banknote, AlertCircle, CheckCircle2, Shield, Camera, X as XIcon, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   useSubmitCheckoutInspection,
   useAcceptDepositSettlement,
   useDisputeDepositSettlement,
+  useConfirmRefund,
 } from "@/lib/hooks/use-bookings";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { cn } from "@/lib/utils/cn";
@@ -77,6 +78,15 @@ export function DepositSettlementCard({
   // Disputed — both sides see the same status
   if (settlement.status === "Disputed") {
     return <DisputedState settlement={settlement} />;
+  }
+
+  // Pending refund transfer from landlord to tenant
+  if (settlement.status === "PendingRefund") {
+    return role === "host" ? (
+      <HostPendingRefundState settlement={settlement} bookingId={bookingId} />
+    ) : (
+      <TenantPendingRefundState settlement={settlement} />
+    );
   }
 
   return null;
@@ -566,6 +576,96 @@ function DisputeDialog({
   );
 }
 
+function HostPendingRefundState({
+  settlement, bookingId,
+}: { settlement: DepositSettlementDto; bookingId: string }) {
+  const [open, setOpen] = useState(false);
+  const [reference, setReference] = useState("");
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const confirmRefund = useConfirmRefund(bookingId);
+  const amount = settlement.refundAmount ?? settlement.returnAmount;
+
+  return (
+    <>
+      <div className="bg-warning/5 border border-warning/20 rounded-2xl px-5 py-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <ArrowRightLeft size={16} className="text-warning shrink-0" />
+          <h3 className="text-sm font-semibold text-fg">Refund transfer required</h3>
+        </div>
+        <p className="text-xs text-fg-muted leading-relaxed">
+          The deposit settlement has been finalised. Please transfer{" "}
+          <span className="font-semibold text-fg">{formatThb(amount)}</span> to the tenant via bank
+          transfer or PromptPay, then confirm below.
+        </p>
+        <Button
+          className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10"
+          onClick={() => setOpen(true)}
+        >
+          I have transferred the refund
+        </Button>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Confirm refund transfer</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-fg-muted">
+              Confirm that you have transferred{" "}
+              <span className="font-semibold text-fg">{formatThb(amount)}</span> to the tenant.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Bank reference / slip link (optional)</Label>
+              <Input
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="e.g. SCB ref 123456 or https://…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={confirmRefund.isPending}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-success hover:bg-success/90 text-white"
+              disabled={confirmRefund.isPending}
+              onClick={async () => {
+                try {
+                  await confirmRefund.mutateAsync({ reference: reference.trim() || undefined, idempotencyKey });
+                  toast.success("Refund confirmed — settlement complete");
+                  setOpen(false);
+                } catch {
+                  toast.error("Failed to confirm refund");
+                }
+              }}
+            >
+              {confirmRefund.isPending ? "Confirming…" : "Confirm transfer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TenantPendingRefundState({ settlement }: { settlement: DepositSettlementDto }) {
+  const amount = settlement.refundAmount ?? settlement.returnAmount;
+  return (
+    <div className="bg-bg-card rounded-2xl shadow-card px-5 py-4 flex items-start gap-3">
+      <ArrowRightLeft size={18} className="text-brand shrink-0 mt-0.5" />
+      <div>
+        <p className="text-sm font-semibold text-fg">Awaiting refund transfer from landlord</p>
+        <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+          Your landlord is transferring{" "}
+          <span className="font-semibold text-fg">{formatThb(amount)}</span> to you. Once they confirm,
+          this will update to "Settled". If you haven't received the funds within a few business days,
+          reach out to your landlord or contact Siamo support.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SettlementCompleteState({ settlement }: { settlement: DepositSettlementDto }) {
   const fullReturn = settlement.holdAmount === 0;
   return (
@@ -579,6 +679,13 @@ function SettlementCompleteState({ settlement }: { settlement: DepositSettlement
           Released <span className="font-medium text-fg">{formatThb(settlement.returnAmount)}</span>
           {!fullReturn && (
             <> · Withheld <span className="font-medium text-fg">{formatThb(settlement.holdAmount)}</span></>
+          )}
+          {settlement.refundConfirmedAt && (
+            <> · Refund confirmed {formatDate(settlement.refundConfirmedAt)}
+              {settlement.refundReference && (
+                <> (ref: <span className="font-mono">{settlement.refundReference}</span>)</>
+              )}
+            </>
           )}
         </p>
       </div>
