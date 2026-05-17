@@ -713,6 +713,17 @@ export interface CreateListingRequest {
   rentalType?: string;
   startDate?: string;
   endDate?: string;
+  checkInMethod?: string | null;
+  checkInInstructions?: string | null;
+  utilityElectricity?: boolean;
+  utilityWater?: boolean;
+  utilityInternet?: boolean;
+  utilityAircon?: boolean;
+  utilityGarbage?: boolean;
+  petsAllowed?: boolean;
+  petDeposit?: number;
+  cancellationNoticeDays?: number;
+  cancellationPenaltyMonths?: number;
 }
 
 export interface GenerateInviteRequest {

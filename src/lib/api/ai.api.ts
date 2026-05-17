@@ -33,6 +33,24 @@ export type SuggestListingFeaturesResponse = {
   tookMs:   number;
 };
 
+export type NearbyHighlight = {
+  name:           string;
+  kind:           string;
+  distanceMeters: number;
+};
+
+export type SuggestNearbyBlurbRequest = {
+  area:       string;
+  highlights: NearbyHighlight[];
+};
+
+export type SuggestNearbyBlurbResponse = {
+  blurb:    string;
+  provider: AiProvider;
+  cached:   boolean;
+  tookMs:   number;
+};
+
 const BANGKOK_DISTRICTS = new Set([
   "sukhumvit", "sathorn", "silom", "asok", "phrom phong", "thonglor",
   "ekkamai", "ari", "nana", "ratchada", "chatuchak", "on nut", "udomsuk",
@@ -144,6 +162,34 @@ export const aiApi = {
         cached:   false,
         tookMs:   0,
       };
+    }
+  },
+
+  /**
+   * Suggest a one-paragraph marketing blurb describing the neighborhood from a
+   * caller-supplied set of POIs (the model isn't allowed to invent places).
+   * On 429/5xx falls back to a dry "X, Y, Z nearby" template so the UI never
+   * has to show an error for this flow.
+   */
+  async suggestNearbyBlurb(
+    req: SuggestNearbyBlurbRequest,
+  ): Promise<SuggestNearbyBlurbResponse> {
+    try {
+      const resp = await apiClient.post<{ data: SuggestNearbyBlurbResponse }>(
+        "/api/ai/listings/suggest-nearby-blurb",
+        req,
+      );
+      return resp.data.data;
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) throw err;
+      const nearest = [...req.highlights]
+        .sort((a, b) => a.distanceMeters - b.distanceMeters)
+        .slice(0, 3);
+      const blurb = nearest.length
+        ? `Right in ${req.area}, with ${nearest.map((h) => `${h.name} (${h.kind}, ${h.distanceMeters} m)`).join("; ")} nearby.`
+        : `Right in ${req.area}.`;
+      return { blurb: blurb.slice(0, 300), provider: "template", cached: false, tookMs: 0 };
     }
   },
 };

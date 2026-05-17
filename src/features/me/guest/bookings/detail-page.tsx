@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen, CalendarDays, Timer, Coins, Key, Lock, Building2, ConciergeBell, MapPin, Bus, FileText, CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle, Wrench } from "lucide-react";
+import {
+  ArrowLeft, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen,
+  CalendarDays, Coins, Key, Lock, ConciergeBell, MapPin, Bus, Building2, FileText,
+  CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle,
+  Wrench, Home, ListChecks, AlertCircle, Clock,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -12,16 +17,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation, useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests, useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets, useMarkBookingSeen, useRenewBooking } from "@/lib/hooks/use-bookings";
+import {
+  useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation,
+  useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests,
+  useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets,
+  useMarkBookingSeen, useRenewBooking,
+} from "@/lib/hooks/use-bookings";
 import { useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
 import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
 import { ticketStatusColor, ticketKindIcon, tenantTicketStatusLabel } from "@/lib/utils/ticket-status";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
-import { TenantPaymentBanner, TenantOtherInvoicesBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
+import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
 import { LandlordTerminationBanner } from "@/components/shared/landlord-termination-banner";
-import { GuestPeaBillCard } from "@/components/shared/pea-bill-card";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { useListing } from "@/lib/hooks/use-listings";
 import { useAsset } from "@/lib/hooks/use-assets";
@@ -32,14 +41,7 @@ import type { CheckInMethod, UpsertPassportRequest, LandlordContact, ContactChan
 import { contractSigningDeadline } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
-const INVOICE_TYPE_LABELS: Record<string, string> = {
-  Rent: "Total rent",
-  Deposit: "Security deposit",
-  Utilities: "Utilities",
-  Cleaning: "Cleaning fee",
-  Damage: "Damage fee",
-  Other: "Other",
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -135,10 +137,8 @@ const CHANNEL_META: Record<ContactChannel, { label: string; emoji: string }> = {
 };
 
 function getContactLink(channel: ContactChannel, contact: LandlordContact): string | null {
-  // LINE doesn't need a phone number — it uses the handle
   if (channel === "Line") return contact.lineHandle ? `https://line.me/ti/p/~${contact.lineHandle}` : null;
   if (channel === "WeChat") return null;
-  // All remaining channels require a phone number
   if (!contact.phone) return null;
   const phone = `${contact.phoneCountryCode}${contact.phone}`.replace(/\+/g, "");
   const phoneWithPlus = `${contact.phoneCountryCode}${contact.phone}`;
@@ -163,7 +163,6 @@ function LandlordContactCard({ contact }: { contact: LandlordContact }) {
         <h3 className="text-sm font-semibold text-fg">Contact your host</h3>
       </div>
       <div className="px-5 py-4 space-y-3">
-        {/* Phone number — only shown if landlord has set one */}
         {hasPhone && (
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-fg-muted">Phone</span>
@@ -173,8 +172,6 @@ function LandlordContactCard({ contact }: { contact: LandlordContact }) {
             </div>
           </div>
         )}
-
-        {/* Channel buttons */}
         {hasChannels && (
           <div className="flex flex-wrap gap-2 pt-1">
             {contact.contactChannels.map((ch) => {
@@ -183,7 +180,6 @@ function LandlordContactCard({ contact }: { contact: LandlordContact }) {
               const isWeChat = ch === "WeChat";
 
               if (isWeChat) {
-                // WeChat: no deep link, just show as info chip
                 return (
                   <span
                     key={ch}
@@ -223,6 +219,85 @@ const CHECK_IN_METHOD_LABEL: Record<CheckInMethod, { label: string; Icon: React.
   Other:       { label: "Other",        Icon: Key },
 };
 
+const INVOICE_TYPE_LABELS: Record<string, string> = {
+  Rent: "Total rent",
+  Deposit: "Security deposit",
+  Utilities: "Utilities",
+  Cleaning: "Cleaning fee",
+  Damage: "Damage fee",
+  Other: "Other",
+};
+void INVOICE_TYPE_LABELS;
+
+// ─── Tabs nav ─────────────────────────────────────────────────────────────────
+
+type TabId = "stay" | "payments" | "property" | "residents" | "issues";
+
+function TabsNav({
+  active,
+  onChange,
+  counts,
+}: {
+  active: TabId;
+  onChange: (t: TabId) => void;
+  counts: { payments?: string; residents?: number; issues?: number };
+}) {
+  const tabs: { id: TabId; label: string; icon: React.ReactNode; count?: string | number }[] = [
+    { id: "stay",      label: "Stay",         icon: <Key size={13} /> },
+    { id: "payments",  label: "Payments",     icon: <ListChecks size={13} />, count: counts.payments },
+    { id: "property",  label: "Property",     icon: <Home size={13} /> },
+    { id: "residents", label: "Co-residents", icon: <Users size={13} />,      count: counts.residents },
+    { id: "issues",    label: "Issues",       icon: <Wrench size={13} />,     count: counts.issues },
+  ];
+  return (
+    <div className="border-b border-border overflow-x-auto">
+      <div role="tablist" className="flex gap-1 min-w-max">
+        {tabs.map((t) => {
+          const on = active === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              onClick={() => onChange(t.id)}
+              className={cn(
+                "relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors whitespace-nowrap",
+                on ? "text-fg" : "text-fg-muted hover:text-fg",
+              )}
+            >
+              <span className={cn("transition-colors", on ? "text-fg" : "text-fg-subtle")}>{t.icon}</span>
+              {t.label}
+              {t.count != null && t.count !== "" && t.count !== 0 && (
+                <span className={cn(
+                  "text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums",
+                  on ? "bg-fg text-bg" : "bg-bg-subtle text-fg-muted",
+                )}>
+                  {t.count}
+                </span>
+              )}
+              {on && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-fg rounded-full" />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── At-a-glance strip ────────────────────────────────────────────────────────
+
+function GlanceCell({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
+  return (
+    <div className="px-5 py-4 min-w-0">
+      <p className="text-[11px] text-fg-muted uppercase tracking-wide font-semibold">{label}</p>
+      <div className="mt-1 text-base font-semibold text-fg truncate">{value}</div>
+      {sub && <div className="text-[11px] text-fg-muted mt-0.5 truncate">{sub}</div>}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export function GuestBookingDetailPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -244,6 +319,7 @@ export function GuestBookingDetailPage() {
   const addGuest = useAddGuest(id!);
   const removeGuest = useRemoveGuest(id!);
   const updatePassport = useUpdatePassport(id!);
+
   // Initial payment = Deposit + MonthlyRent[1]. All other months are separate transactions.
   const initialPayments = (payment?.payments ?? []).filter(
     (p) => p.type === "Deposit" || p.type === "EarlyExitPenalty" || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
@@ -251,15 +327,17 @@ export function GuestBookingDetailPage() {
   const pendingPayments = initialPayments.filter((p) => p.status === "Pending");
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
 
+  const [tab, setTab] = useState<TabId>("stay");
+
   const [gatewayOpen, setGatewayOpen] = useState(false);
   const [gatewayAmount, setGatewayAmount] = useState(0);
   const [gatewayPaymentId, setGatewayPaymentId] = useState<string | null>(null);
-
   function openGateway(amount: number, paymentId?: string) {
     setGatewayAmount(amount);
     setGatewayPaymentId(paymentId ?? null);
     setGatewayOpen(true);
   }
+
   const [showWifiPwd, setShowWifiPwd] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [exitNote, setExitNote] = useState("");
@@ -275,11 +353,6 @@ export function GuestBookingDetailPage() {
   const [renewMonths, setRenewMonths] = useState(1);
   const renewIdempotencyKey = useState(() => crypto.randomUUID())[0];
   const renewBooking = useRenewBooking(id!);
-
-  // Co-residents must be confirmed before signing — stored in localStorage so it survives refresh
-  const guestsStorageKey = `siamo_guests_confirmed_${id}`;
-  const [guestsConfirmed, setGuestsConfirmed] = useState(() => localStorage.getItem(guestsStorageKey) === "1");
-  function confirmGuestsAlone() { localStorage.setItem(guestsStorageKey, "1"); setGuestsConfirmed(true); }
 
   // Listing-change detection — backend exposes `listingChangesAfter` (short keys
   // for the fields edited since the tenant's lastSeenListingAt). Dismissing calls
@@ -298,17 +371,32 @@ export function GuestBookingDetailPage() {
 
   if (isLoading) {
     return (
-      <div>
-        <Skeleton className="h-8 w-48 mb-6" />
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-          <Skeleton className="h-72 rounded-2xl" />
-          <Skeleton className="h-96 rounded-2xl" />
+      <div className="space-y-5">
+        {/* Breadcrumb */}
+        <Skeleton className="h-5 w-24" />
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-8 w-72 max-w-full" />
+            <Skeleton className="h-4 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-6 w-20 rounded-full" />
         </div>
+
+        {/* Glance strip */}
+        <Skeleton className="h-24 rounded-2xl" />
+
+        {/* Tabs */}
+        <Skeleton className="h-10 w-full max-w-md rounded-xl" />
+
+        {/* Tab panel */}
+        <Skeleton className="h-[480px] rounded-2xl" />
       </div>
     );
   }
 
-  if (!booking) return <p className="text-fg-muted">Booking not found.</p>;
+  if (!booking) return <p className="text-sm text-fg-muted">Booking not found.</p>;
 
   const isActive = booking.status === BookingStatus.Active;
   const isConfirmed = booking.status === BookingStatus.Confirmed;
@@ -317,57 +405,212 @@ export function GuestBookingDetailPage() {
   const isCompleted = booking.status === BookingStatus.Completed;
   const isCancelled = booking.status === BookingStatus.Cancelled;
   const isUpcoming = !isCompleted && !isCancelled;
+  void isUpcoming;
   const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
-  const guestsReady = guestsConfirmed || coResidents.length > 0;
+  void coResidents;
   const presentAmenities = listing?.amenities?.filter((a) => a.isPresent) ?? [];
   const daysLeft = booking.daysRemaining;
-  const heroUrl = listing?.media?.[0]?.url ?? booking.primaryImageUrl;
 
   // Lease duration & monthly rate
   const checkIn = new Date(booking.checkInDate);
   const checkOut = new Date(booking.checkOutDate);
   const durationMonths = (checkOut.getFullYear() - checkIn.getFullYear()) * 12 + (checkOut.getMonth() - checkIn.getMonth());
   const monthlyRate = durationMonths > 0 ? Math.round(booking.rentAmount / durationMonths) : booking.rentAmount;
-  const totalDays = Math.round((checkOut.getTime() - checkIn.getTime()) / 86_400_000);
-  const leaseProgress = (isActive && daysLeft != null && totalDays > 0)
-    ? Math.min(100, Math.round(((totalDays - daysLeft) / totalDays) * 100))
-    : null;
-  const monthsLeft = (daysLeft != null && daysLeft > 0) ? Math.ceil(daysLeft / 30) : null;
 
-  return (
-    <div className="pb-8">
-      {/* Back + title */}
-      <div className="flex items-center gap-2 mb-6">
-        <Link
-          to="/me/guest/bookings"
-          className="p-1.5 rounded-xl hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
-        >
-          <ArrowLeft size={18} />
-        </Link>
-        <h1 className="text-xl font-semibold text-fg line-clamp-1 flex-1">
-          {listing?.title ?? booking.assetName ?? "My stay"}
-        </h1>
-        {listing?.slug && (
-          <Link
-            to={`/listings/${listing.slug}`}
-            className="shrink-0 inline-flex items-center gap-1.5 text-xs text-brand hover:underline font-medium"
-          >
-            <ExternalLink size={13} />
-            View listing
-          </Link>
-        )}
+  // Days-to-checkin label
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const checkInDay = new Date(booking.checkInDate); checkInDay.setHours(0, 0, 0, 0);
+  const daysToCheckIn = Math.round((checkInDay.getTime() - today.getTime()) / 86_400_000);
+  const checkInRelative =
+    daysToCheckIn === 0 ? "Today"
+    : daysToCheckIn === 1 ? "Tomorrow"
+    : daysToCheckIn > 1   ? `in ${daysToCheckIn} days`
+    : daysToCheckIn === -1 ? "Yesterday"
+    : `${Math.abs(daysToCheckIn)} days ago`;
+
+  // ── Rent payments (per-month model) ──
+  const rentPayments = (payment?.payments ?? [])
+    .filter((p) => p.type === "MonthlyRent")
+    .sort((a, b) => (a.monthIndex ?? 0) - (b.monthIndex ?? 0));
+  const paidRentCount = rentPayments.filter((p) => p.status === "Paid").length;
+  const nextRent = rentPayments.find((p) => p.status === "Pending") ?? null;
+  const paidSoFar = rentPayments.filter((p) => p.status === "Paid").reduce((s, p) => s + p.amount, 0);
+  const totalRent = rentPayments.reduce((s, p) => s + p.amount, 0);
+
+  // Open tickets
+  const openTickets = (bookingTickets ?? []).filter(
+    (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
+  );
+
+  // Foreign-guest TM-30 summary
+  const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
+
+  // Payment health (used in alert resolver)
+  const paymentHealth = payment?.payments ? computePaymentHealth(payment.payments) : null;
+
+  // Tab counts
+  const counts = {
+    payments: rentPayments.length > 0 ? `${paidRentCount}/${rentPayments.length}` : undefined,
+    residents: guests?.length ?? 0,
+    issues: openTickets.length,
+  };
+
+  // ── Glance strip ──
+  const glance = (
+    <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-y divide-x divide-border sm:divide-y-0">
+        <GlanceCell
+          label="Check-in"
+          value={formatDate(booking.checkInDate)}
+          sub={checkInRelative}
+        />
+        <GlanceCell
+          label="Next payment"
+          value={
+            isPendingPayment && totalPending > 0
+              ? formatThb(totalPending)
+              : nextRent
+                ? formatThb(nextRent.amount)
+                : <span className="text-success">All paid</span>
+          }
+          sub={
+            isPendingPayment && totalPending > 0
+              ? "Before signing deadline"
+              : nextRent?.dueDate
+                ? `Due ${formatDate(nextRent.dueDate)}`
+                : isCompleted
+                  ? "Lease completed"
+                  : "Nothing owed"
+          }
+        />
+        <GlanceCell
+          label="Co-residents"
+          value={`${guests?.length ?? 1} ${(guests?.length ?? 1) === 1 ? "person" : "people"}`}
+          sub={
+            (guests?.length ?? 1) > 1
+              ? `You + ${(guests?.length ?? 1) - 1} other${(guests?.length ?? 1) - 1 === 1 ? "" : "s"}`
+              : "Just you"
+          }
+        />
+        <GlanceCell
+          label="Deposit"
+          value={formatThb(booking.depositAmount)}
+          sub="Held by Siamo · refundable"
+        />
       </div>
+    </div>
+  );
 
-      {/* Listing changes since last visit */}
-      {(isActive || isConfirmed) && listingChanges.length > 0 && (
-        <div className="bg-brand/8 border border-brand/30 rounded-2xl p-4 flex items-start gap-3 mb-4">
+  // ── Single most-urgent alert (priority resolver) ──
+  type Alert =
+    | { kind: "tenant-sign-pending"; deadline: string; hoursLeft: number }
+    | { kind: "payment-overdue"; daysOverdue: number }
+    | { kind: "landlord-termination" }
+    | { kind: "listing-changes" }
+    | { kind: "checkin-coming-up" }
+    | { kind: "lease-completed" }
+    | { kind: "own-cancel-pending" }
+    | null;
+
+  const alert: Alert = (() => {
+    // 1. Contract signing
+    if (contract?.status === "PendingTenantSignature") {
+      const deadline = contractSigningDeadline(contract);
+      const hoursLeft = (new Date(deadline).getTime() - Date.now()) / 3600_000;
+      return { kind: "tenant-sign-pending", deadline, hoursLeft };
+    }
+    // 2. Payment overdue
+    if ((isActive || isConfirmed) && paymentHealth && paymentHealth.daysOverdue >= 1) {
+      return { kind: "payment-overdue", daysOverdue: paymentHealth.daysOverdue };
+    }
+    // 3. Landlord-initiated termination
+    if (cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord") {
+      return { kind: "landlord-termination" };
+    }
+    // 4. Listing changes
+    if ((isActive || isConfirmed) && listingChanges.length > 0) {
+      return { kind: "listing-changes" };
+    }
+    // 5. Check-in coming up (within 7 days, but not past)
+    if (isConfirmed && daysToCheckIn >= 0 && daysToCheckIn <= 7) {
+      return { kind: "checkin-coming-up" };
+    }
+    // 6. Lease completed
+    if (isCompleted) {
+      return { kind: "lease-completed" };
+    }
+    // 7. Tenant's own cancellation pending
+    if (cancellation && cancellation.status === "Requested" && (cancellation.initiator ?? "Tenant") === "Tenant") {
+      return { kind: "own-cancel-pending" };
+    }
+    return null;
+  })();
+
+  const alertBanner = !alert ? null : (() => {
+    if (alert.kind === "tenant-sign-pending") {
+      const isUrgent = alert.hoursLeft < 12;
+      const isElevated = alert.hoursLeft < 36;
+      const palette = isUrgent
+        ? "bg-danger/10 border-danger/30"
+        : isElevated
+          ? "bg-warning/15 border-warning/30"
+          : "bg-warning/10 border-warning/20";
+      const accent = isUrgent ? "text-danger" : "text-warning";
+      return (
+        <div className={cn("rounded-2xl border p-4 flex items-start gap-3", palette)}>
+          <FileText size={18} className={cn("shrink-0 mt-0.5", accent)} />
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className={cn("text-sm font-semibold", accent)}>
+                {isUrgent ? "Sign now — booking expires soon" : "Sign your rental agreement"}
+              </p>
+              <CountdownPill deadline={alert.deadline} prefix="Expires in" expiredLabel="Expired — booking cancelled" />
+            </div>
+            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+              Both signatures are required before your booking is confirmed.
+              If unsigned by the deadline, this booking will be automatically cancelled and any payments refunded.
+            </p>
+          </div>
+          <Button asChild className={cn(
+            "shrink-0 rounded-xl h-9 text-sm font-semibold",
+            isUrgent ? "bg-danger hover:bg-danger/90 text-white" : "bg-warning hover:bg-warning/90 text-white",
+          )}>
+            <Link to={`/me/guest/bookings/${id}/contract`}>Sign now →</Link>
+          </Button>
+        </div>
+      );
+    }
+    if (alert.kind === "payment-overdue") {
+      return (
+        <TenantPaymentBanner
+          health={paymentHealth!}
+          onPay={() => setTab("payments")}
+        />
+      );
+    }
+    if (alert.kind === "landlord-termination" && cancellation) {
+      const fallback = (payment?.payments ?? [])
+        .filter((p) => p.type === "MonthlyRent" && p.status !== "Paid" && p.dueDate && new Date(p.dueDate) < today)
+        .reduce((sum, p) => sum + p.amount, 0);
+      return (
+        <LandlordTerminationBanner
+          cancellation={cancellation}
+          bookingId={id!}
+          fallbackOutstandingAmount={fallback}
+          onPay={() => setTab("payments")}
+        />
+      );
+    }
+    if (alert.kind === "listing-changes") {
+      return (
+        <div className="bg-brand/8 border border-brand/30 rounded-2xl p-4 flex items-start gap-3">
           <Wifi size={16} className="text-brand shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-fg">
               Your host updated: {listingChanges.join(", ")}
             </p>
             <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-              Check the latest below before continuing. Tap "Got it" to dismiss this banner.
+              Check the latest in the Stay / Property tabs.
             </p>
           </div>
           <Button
@@ -380,23 +623,722 @@ export function GuestBookingDetailPage() {
             {markSeen.isPending ? "…" : "Got it"}
           </Button>
         </div>
+      );
+    }
+    if (alert.kind === "checkin-coming-up") {
+      return (
+        <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/30 rounded-2xl p-4 flex items-start gap-3">
+          <Key size={18} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Coordinate check-in with your host</p>
+            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+              Your stay starts <b className="text-fg">{formatDate(booking.checkInDate)}</b> · {checkInRelative}. Message your host to agree on time and key handoff.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="shrink-0 rounded-xl h-9 text-sm bg-fg text-bg hover:bg-fg/90"
+            onClick={() => toast.info("In-app messaging is coming soon — for now, use the contact details on the Property tab.")}
+          >
+            <MessageCircle size={14} className="mr-1.5" />Message host
+          </Button>
+        </div>
+      );
+    }
+    if (alert.kind === "lease-completed") {
+      return (
+        <div className="bg-bg-card border border-border rounded-2xl p-4 flex items-start gap-3">
+          <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Lease completed — deposit settlement in progress</p>
+            <p className="text-xs text-fg-muted mt-1">
+              Your stay ended on {formatDate(booking.checkOutDate)}. Track the deposit return on the Payments tab.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTab("payments")}
+            className="shrink-0 bg-fg text-bg font-semibold text-sm px-4 py-2 rounded-xl hover:bg-fg/90 transition-colors"
+          >
+            Open settlement →
+          </button>
+        </div>
+      );
+    }
+    if (alert.kind === "own-cancel-pending" && cancellation) {
+      return (
+        <div className="bg-warning/8 border border-warning/25 rounded-2xl p-4 flex items-start gap-3">
+          <Clock size={18} className="text-warning shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-fg">Awaiting host response on your early-exit request</p>
+              <CountdownPill deadline={cancellationDeadline(cancellation)} prefix="Respond in" expiredLabel="Expired" />
+            </div>
+            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+              You can withdraw or update your request from the Stay tab.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTab("stay")}
+            className="shrink-0 bg-fg text-bg font-semibold text-sm px-4 py-2 rounded-xl hover:bg-fg/90 transition-colors"
+          >
+            Manage →
+          </button>
+        </div>
+      );
+    }
+    return null;
+  })();
+
+  // ─── STAY PANE ───────────────────────────────────────────────────────────────
+  const stayPane = (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+      {/* Left column: emotional / context */}
+      <div className="space-y-5">
+
+        {/* Check-in countdown — only when active or about to start */}
+        {(isConfirmed || (isActive && daysToCheckIn >= 0)) && (
+          <div className="bg-bg-card rounded-2xl shadow-card p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Check-in countdown</p>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-fg tabular-nums">
+                    {daysToCheckIn >= 0 ? daysToCheckIn : 0}
+                  </span>
+                  <span className="text-sm text-fg-muted">
+                    days · {new Date(booking.checkInDate).toLocaleString("en", { weekday: "long", month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                <p className="text-xs text-fg-muted mt-2 leading-relaxed">
+                  {listing?.checkInMethod === "KeyHandover"
+                    ? "Your host will hand over keys in person — coordinate a meeting time first."
+                    : listing?.checkInMethod === "Smartlock"
+                      ? "Your host will send you the smart lock code before check-in."
+                      : listing?.checkInMethod === "Keybox"
+                        ? "Your host will share the keybox code before check-in."
+                        : listing?.checkInMethod === "Reception"
+                          ? "Staff will check you in at the front desk."
+                          : "Your host will share check-in details below."}
+                </p>
+              </div>
+              <div className="shrink-0 flex flex-col items-end gap-2">
+                {contract?.status === "FullySigned" && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success/10 px-2 py-0.5 rounded-full">
+                    <Check size={11} strokeWidth={3} /> Agreement signed
+                  </span>
+                )}
+                {contract?.finalPdfUrl && (
+                  <a
+                    href={contract.finalPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-brand hover:underline"
+                  >
+                    <FileText size={12} />View agreement
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pending payment hero — before booking confirmed */}
+        {isPendingPayment && (
+          <div className="bg-warning/8 border border-warning/30 rounded-2xl p-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <CreditCard size={18} className="text-warning shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-fg">Complete the steps to confirm your booking</p>
+                <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                  Sign the agreement and pay the initial amount — your booking activates as soon as both are done.
+                </p>
+              </div>
+            </div>
+            {totalPending > 0 && (
+              <div className="rounded-xl bg-bg-card border border-border p-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-fg-muted">Initial payment</p>
+                  <p className="text-lg font-bold text-fg">{formatThb(totalPending)}</p>
+                </div>
+                <Button
+                  size="sm"
+                  className="rounded-xl bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                  onClick={() => setTab("payments")}
+                >
+                  Go to payment →
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Cancelled / completed status hero */}
+        {isCancelled && (() => {
+          const c = cancellation;
+          const voided = contract?.status === "Voided";
+          let headline = "Booking cancelled";
+          let detail = "This stay has been ended.";
+          if (voided) {
+            headline = "Booking cancelled — contract expired";
+            detail = "The 72h signing window passed without both parties signing. Any payments will be refunded.";
+          } else if (c?.reason === "NonPayment") {
+            headline = "Booking terminated — unpaid rent";
+            detail = "The cure deadline passed without payment. Your deposit was applied to the outstanding rent.";
+          } else if (c?.reason === "Breach") {
+            headline = "Booking terminated — breach of agreement";
+            detail = "Contact Siamo support if you believe this was wrong.";
+          } else if (c?.reason === "TenantEarlyExit") {
+            headline = "Booking ended early";
+            detail = "Your early-exit request was confirmed. The 1-month penalty applies.";
+          } else if (c?.reason === "MutualAgreement") {
+            headline = "Booking cancelled by mutual agreement";
+            detail = "Your full deposit will be returned after the deposit-settlement window.";
+          }
+          return (
+            <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="w-8 h-8 rounded-full bg-fg-subtle/20 flex items-center justify-center shrink-0">
+                  <DoorOpen size={16} className="text-fg-muted" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-fg">{headline}</p>
+                  <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{detail}</p>
+                  {c?.initiatorNote && (
+                    <p className="text-xs text-fg mt-2 italic">"{c.initiatorNote}"</p>
+                  )}
+                </div>
+              </div>
+              <Button asChild variant="outline" size="sm" className="w-full rounded-lg h-9 text-xs">
+                <Link to="/listings">Browse other properties</Link>
+              </Button>
+            </div>
+          );
+        })()}
+
+        {/* Landlord contact card */}
+        {(isActive || isConfirmed || isPendingPayment) && booking.landlordContact && (
+          booking.landlordContact.contactChannels.length > 0 || booking.landlordContact.phone
+        ) && (
+          <LandlordContactCard contact={booking.landlordContact} />
+        )}
+
+        {/* Getting there mini-block */}
+        {(asset?.legalAddress || asset?.googleMapsUrl) && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+              <MapPin size={14} className="text-fg-muted" />
+              <h3 className="text-sm font-semibold text-fg">Get there</h3>
+            </div>
+            <div className="divide-y divide-border">
+              {asset?.legalAddress && (
+                <div className="px-5 py-3 flex items-start gap-3">
+                  <FileText size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                  <p className="text-sm text-fg-muted leading-relaxed">{asset.legalAddress}</p>
+                </div>
+              )}
+              {asset?.googleMapsUrl && (
+                <div className="px-5 py-3 flex items-start gap-3">
+                  <ExternalLink size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                  <a
+                    href={asset.googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-brand hover:underline"
+                  >
+                    Open in Google Maps
+                  </a>
+                </div>
+              )}
+              {listing?.transportInfo && (
+                <div className="px-5 py-3 flex items-start gap-3">
+                  <Bus size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                  <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">{listing.transportInfo}</p>
+                </div>
+              )}
+              {listing?.nearbyPlaces && (
+                <div className="px-5 py-3 flex items-start gap-3">
+                  <Building2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                  <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">{listing.nearbyPlaces}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Early-exit: own request status */}
+        {cancellation && cancellation.status === "Requested" && (cancellation.initiator ?? "Tenant") === "Tenant" && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border">
+              <div className="flex items-start gap-2 min-w-0">
+                <DoorOpen size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">Early exit requested</p>
+                  <p className="text-xs text-fg-muted">Earliest exit: {formatDate(cancellation.earliestExitDate)}</p>
+                </div>
+              </div>
+              <CountdownPill deadline={cancellationDeadline(cancellation)} prefix="Host responds in" expiredLabel="Expired" />
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await withdrawCancellation.mutateAsync(cancellation.id);
+                  toast.success("Request withdrawn");
+                } catch {
+                  toast.error("Failed to withdraw");
+                }
+              }}
+              disabled={withdrawCancellation.isPending}
+              className="w-full text-xs text-fg-muted hover:text-fg py-3 transition-colors disabled:opacity-50"
+            >
+              {withdrawCancellation.isPending ? "Withdrawing…" : "Withdraw request"}
+            </button>
+          </div>
+        )}
+
+        {cancellation && cancellation.status === "Declined" && (
+          <div className="bg-danger/5 border border-danger/20 rounded-2xl px-4 py-3 space-y-1.5">
+            <p className="text-sm font-medium text-fg">Your request was declined</p>
+            {cancellation.declineReason ? (
+              <p className="text-xs text-fg-muted leading-relaxed">
+                <span className="font-medium text-fg">Host's reason:</span> {cancellation.declineReason}
+              </p>
+            ) : (
+              <p className="text-xs text-fg-muted">The host declined without providing a reason.</p>
+            )}
+          </div>
+        )}
+
+        {cancellation && cancellation.status === "Expired" && (
+          <div className="bg-bg-subtle border border-border rounded-2xl px-4 py-3 space-y-1">
+            <p className="text-sm font-medium text-fg">Your request expired</p>
+            <p className="text-xs text-fg-muted">The host didn't respond within 72 hours. You can submit a new request below.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Right column: facts */}
+      <div className="space-y-5">
+
+        {/* Booking summary */}
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg">Booking</h3>
+            <button
+              type="button"
+              onClick={() => setTab("payments")}
+              className="text-xs text-fg-muted hover:text-fg transition-colors"
+            >
+              Payments →
+            </button>
+          </div>
+          <dl className="divide-y divide-border text-sm">
+            <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Check-in</dt><dd className="text-fg">{formatDate(booking.checkInDate)}</dd></div>
+            <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Check-out</dt><dd className="text-fg">{formatDate(booking.checkOutDate)}</dd></div>
+            {durationMonths > 0 && (
+              <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Duration</dt><dd className="text-fg">{durationMonths} month{durationMonths !== 1 ? "s" : ""}</dd></div>
+            )}
+            <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Monthly rent</dt><dd className="text-fg font-semibold">{formatThb(monthlyRate)}</dd></div>
+            {booking.depositAmount > 0 && (
+              <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Deposit</dt><dd className="text-fg">{formatThb(booking.depositAmount)}</dd></div>
+            )}
+            {totalRent > 0 && (
+              <div className="px-5 py-2.5 flex justify-between gap-3">
+                <dt className="text-fg-muted">Paid so far</dt>
+                <dd className="text-fg">{formatThb(paidSoFar)} of {formatThb(totalRent)}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+
+        {/* WiFi */}
+        {(isActive || isConfirmed) && listing && (listing.wifiName || listing.wifiPassword) && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+              <Wifi size={15} className="text-fg-muted" />
+              <h3 className="text-sm font-semibold text-fg">Wi-Fi</h3>
+            </div>
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-border last:border-none">
+              <div className="flex-1 text-sm font-medium text-fg">{listing.wifiName ?? "Network"}</div>
+              {listing.wifiName && <CopyBtn text={listing.wifiName} />}
+            </div>
+            {listing.wifiPassword && (
+              <div className="flex items-center gap-3 px-5 py-3">
+                <div className="flex-1 text-sm font-mono text-fg">
+                  {showWifiPwd ? listing.wifiPassword : "•".repeat(Math.min(listing.wifiPassword.length, 14))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowWifiPwd((v) => !v)}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-bg-subtle hover:bg-border text-fg-muted hover:text-fg transition-colors"
+                  >
+                    {showWifiPwd ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                  <CopyBtn text={listing.wifiPassword} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* House rules preview */}
+        {(isActive || isConfirmed) && listing?.houseRules && (() => {
+          const rules = listing.houseRules.split(/\r?\n/).map((r) => r.trim()).filter(Boolean).slice(0, 5);
+          if (rules.length === 0) return null;
+          return (
+            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-fg">House rules</h3>
+                <button
+                  type="button"
+                  onClick={() => setTab("property")}
+                  className="text-xs text-fg-muted hover:text-fg transition-colors"
+                >
+                  View all →
+                </button>
+              </div>
+              <ul className="divide-y divide-border">
+                {rules.map((r, i) => (
+                  <li key={i} className="px-5 py-2.5 text-sm text-fg-muted">{r}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
+
+        {/* Renew / early-exit actions */}
+        {(isActive || isConfirmed) && (
+          <div className="space-y-3">
+            {isActive && (
+              <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-3">
+                <h4 className="text-sm font-semibold text-fg">Loving the stay?</h4>
+                <p className="text-xs text-fg-muted leading-relaxed">
+                  Extend your lease — your deposit carries over, no extra payment until activation.
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full rounded-xl h-9 text-sm"
+                  onClick={() => setRenewOpen(true)}
+                >
+                  <CalendarDays size={14} className="mr-1.5" />Renew lease
+                </Button>
+              </div>
+            )}
+            {(!cancellation || cancellation.status === "Declined" || cancellation.status === "Expired" || cancellation.status === "Withdrawn") &&
+              (cancellation?.initiator ?? "Tenant") === "Tenant" && (
+              <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-3">
+                <h4 className="text-sm font-semibold text-fg">Need to leave early?</h4>
+                <p className="text-xs text-fg-muted leading-relaxed">
+                  Submit an early-exit request. Your host will review — terms depend on your agreement (1-month penalty typically applies).
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full rounded-xl h-9 text-sm"
+                  onClick={() => setExitDialogOpen(true)}
+                >
+                  <DoorOpen size={14} className="mr-1.5" />
+                  {cancellation ? "Submit new request" : "Request early exit"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── PAYMENTS PANE ───────────────────────────────────────────────────────────
+  const paymentsPane = (
+    <div className="space-y-5">
+
+      {/* Lease completed + deposit settlement */}
+      {isCompleted && payment?.payments?.find((p) => p.type === "Deposit" && p.status === "Paid") && (
+        <DepositSettlementCard
+          bookingId={id!}
+          role="tenant"
+          depositAmount={booking.depositAmount}
+          checkOutDate={booking.checkOutDate}
+        />
       )}
 
-      {/* Renewal chain notice */}
-      {booking?.renewedFromBookingId && (
-        <div className="bg-bg-subtle border border-border rounded-2xl px-4 py-3 flex items-center gap-3 mb-2">
-          <CalendarDays size={15} className="text-fg-muted shrink-0" />
-          <p className="text-xs text-fg-muted">
-            Continued from a previous lease
-          </p>
+      {/* Initial payments — when booking is PendingPayment */}
+      {isPendingPayment && initialPayments.length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg">Initial payment</h3>
+            {pendingPayments.length > 0 && (
+              <span className="text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
+                {formatThb(totalPending)} due
+              </span>
+            )}
+          </div>
+          <div className="divide-y divide-border">
+            {initialPayments.map((p) => {
+              const isPaid = p.status === "Paid";
+              const label = p.type === "Deposit" ? "Security deposit"
+                : p.type === "MonthlyRent" ? "First month's rent"
+                : p.type === "EarlyExitPenalty" ? "Early exit penalty"
+                : "Payment";
+              return (
+                <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <p className="text-sm text-fg">{label}</p>
+                    <p className="text-xs text-fg-muted">{formatThb(p.amount)}</p>
+                  </div>
+                  {isPaid ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success/10 px-2.5 py-0.5 rounded-full">
+                      <Check size={10} strokeWidth={3} /> Paid
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full">Due</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {pendingPayments.length > 0 && (
+            <div className="px-5 py-4 border-t border-border space-y-3">
+              {contract?.status === "PendingTenantSignature" ? (
+                <>
+                  <Button
+                    disabled
+                    className="w-full bg-brand/50 text-white rounded-xl h-10 text-sm font-semibold cursor-not-allowed opacity-60"
+                  >
+                    <CreditCard size={14} className="mr-1.5" />Sign the agreement first
+                  </Button>
+                  <p className="text-[11px] text-fg-muted text-center">
+                    Sign your rental agreement to unlock payment
+                  </p>
+                </>
+              ) : payment && payment.isLandlordReady === false ? (
+                <>
+                  <Button
+                    disabled
+                    className="w-full bg-brand/50 text-white rounded-xl h-10 text-sm font-semibold cursor-not-allowed opacity-60"
+                  >
+                    <CreditCard size={14} className="mr-1.5" />Payment not yet available
+                  </Button>
+                  <div className="rounded-xl bg-warning/8 border border-warning/20 px-3 py-2.5 space-y-1">
+                    <p className="text-xs font-semibold text-warning">Landlord payment details not ready</p>
+                    {(payment.notReadyReasons ?? []).map((r, i) => (
+                      <p key={i} className="text-xs text-fg-muted leading-relaxed">{r}</p>
+                    ))}
+                    <p className="text-[11px] text-fg-muted mt-1">Reach out to your landlord before paying.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Button
+                    className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm font-semibold"
+                    onClick={() => openGateway(totalPending)}
+                  >
+                    <CreditCard size={14} className="mr-1.5" />Pay {formatThb(totalPending)} now
+                  </Button>
+                  <p className="text-[11px] text-fg-muted text-center">
+                    Complete payment to activate your booking
+                  </p>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* CRITICAL: landlord-initiated termination notice */}
+      {/* Next payment card (monthly rent) */}
+      {(isActive || isConfirmed) && rentPayments.length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card p-5">
+          {nextRent ? (() => {
+            const dueDate = nextRent.dueDate ? new Date(nextRent.dueDate) : null;
+            dueDate?.setHours(0, 0, 0, 0);
+            const daysToDue = dueDate ? Math.round((dueDate.getTime() - today.getTime()) / 86_400_000) : null;
+            const payWindowOpen = dueDate ? (() => { const d = new Date(dueDate); d.setDate(d.getDate() - 7); return d; })() : null;
+            const windowIsOpen = payWindowOpen ? today >= payWindowOpen : false;
+            const dueLabel = nextRent.dueDate
+              ? new Date(nextRent.dueDate).toLocaleString("en", { month: "long", year: "numeric" })
+              : `Month ${nextRent.monthIndex}`;
+            return (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Next payment</p>
+                    <h3 className="text-sm font-semibold text-fg">{dueLabel}</h3>
+                  </div>
+                  {daysToDue != null && (
+                    <span className={cn(
+                      "text-xs font-semibold px-2 py-1 rounded-full",
+                      daysToDue < 0   ? "bg-danger/10 text-danger"
+                      : daysToDue === 0 ? "bg-warning/10 text-warning"
+                      : daysToDue <= 7  ? "bg-warning/10 text-warning"
+                      : "bg-bg-subtle text-fg-muted",
+                    )}>
+                      {daysToDue < 0 ? `Overdue ${Math.abs(daysToDue)}d`
+                        : daysToDue === 0 ? "Due today"
+                        : `Due in ${daysToDue}d`}
+                    </span>
+                  )}
+                </div>
+                <p className="text-3xl font-bold text-fg tabular-nums">{formatThb(nextRent.amount)}</p>
+                {nextRent.dueDate && <p className="text-xs text-fg-muted mt-1">Due {formatDate(nextRent.dueDate)}</p>}
+                <Button
+                  className={cn(
+                    "w-full mt-4 rounded-xl h-10 text-sm font-semibold",
+                    windowIsOpen
+                      ? "bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                      : "bg-bg-subtle hover:bg-border text-fg border border-border",
+                  )}
+                  onClick={() => openGateway(nextRent.amount, nextRent.id)}
+                >
+                  <CreditCard size={14} className="mr-1.5" />Pay {formatThb(nextRent.amount)} now
+                </Button>
+                {!windowIsOpen && payWindowOpen && (
+                  <p className="text-[11px] text-fg-muted text-center mt-2">
+                    Pay window opens {formatDate(payWindowOpen.toISOString().slice(0, 10))} — early payment also fine, no extra charge.
+                  </p>
+                )}
+              </>
+            );
+          })() : (
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎉</span>
+              <div>
+                <p className="text-sm font-bold text-success">All rent paid</p>
+                <p className="text-xs text-fg-muted mt-0.5">Lease ends {formatDate(booking.checkOutDate)}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Totals strip */}
+      {rentPayments.length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card p-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-fg-muted">Paid so far</p>
+              <p className="text-lg font-bold text-fg tabular-nums">
+                {formatThb(paidSoFar)}{" "}
+                <small className="text-sm font-medium text-fg-muted">of {formatThb(totalRent)}</small>
+              </p>
+            </div>
+            <div className="border-l border-border pl-4">
+              <p className="text-xs text-fg-muted">Deposit held</p>
+              <p className="text-lg font-bold text-fg tabular-nums">{formatThb(booking.depositAmount)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly schedule */}
+      {rentPayments.length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg">Monthly schedule</h3>
+            <span className="text-xs font-semibold text-fg-muted">
+              {paidRentCount} / {rentPayments.length} months
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {rentPayments.map((p) => {
+              const isPaid = p.status === "Paid";
+              const dueDate = p.dueDate ? new Date(p.dueDate) : null;
+              dueDate?.setHours(0, 0, 0, 0);
+              const isPast = dueDate ? dueDate < today : false;
+              const isCurrent = dueDate
+                ? dueDate.getFullYear() === today.getFullYear() && dueDate.getMonth() === today.getMonth()
+                : false;
+              const isOverdue = !isPaid && isPast && !isCurrent;
+              const isDueThisMonth = !isPaid && isCurrent;
+              const isUpcoming = !isPaid && !isPast && !isCurrent;
+              const isNext = !isPaid && nextRent?.id === p.id;
+              const label = p.dueDate
+                ? new Date(p.dueDate).toLocaleString("en", { month: "long", year: "numeric" })
+                : `Month ${p.monthIndex}`;
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "px-5 py-3 flex items-center justify-between gap-3",
+                    isDueThisMonth && "bg-warning/5",
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={cn(
+                      "w-2 h-2 rounded-full shrink-0",
+                      isPaid ? "bg-success" : isOverdue || isDueThisMonth ? "bg-warning" : "bg-fg-subtle/40",
+                    )} />
+                    <div className="min-w-0">
+                      <p className={cn("text-sm font-medium", isUpcoming ? "text-fg-muted" : "text-fg")}>
+                        {label}{isNext && <span className="text-fg-muted"> · next</span>}
+                      </p>
+                      {p.dueDate && (
+                        <p className="text-[11px] text-fg-subtle">
+                          {isPaid ? "Paid" : isOverdue ? "Overdue" : isDueThisMonth ? "Due this month" : `Due ${formatDate(p.dueDate)}`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <span className={cn("text-sm font-semibold tabular-nums", isUpcoming ? "text-fg-muted" : "text-fg")}>
+                      {formatThb(p.amount)}
+                    </span>
+                    {isPaid ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-success/10 text-success">Paid</span>
+                    ) : isOverdue ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-danger/10 text-danger">Overdue</span>
+                    ) : isDueThisMonth || isNext ? (
+                      <Button
+                        size="sm"
+                        className="h-7 text-[11px] rounded-lg bg-brand hover:bg-[var(--color-primary-hover)] text-white px-2.5"
+                        onClick={() => openGateway(p.amount, p.id)}
+                      >
+                        Pay
+                      </Button>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-subtle">Upcoming</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Deposit row (always visible if there's a deposit) */}
+      {booking.depositAmount > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-bg-subtle flex items-center justify-center shrink-0">
+            <Shield size={16} className="text-fg-muted" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Security deposit</p>
+            <p className="text-xs text-fg-muted">Held in escrow · refunded after move-out {formatDate(booking.checkOutDate)}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm font-semibold text-fg tabular-nums">{formatThb(booking.depositAmount)}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-muted">Held</span>
+          </div>
+        </div>
+      )}
+
+      {/* Cancellation status — declined / expired / withdrawn (already shown on Stay, but also surface on Payments) */}
+      {cancellation && (cancellation.status === "Declined" || cancellation.status === "Expired" || cancellation.status === "Withdrawn") && (
+        <div className="bg-bg-subtle border border-border rounded-2xl p-5 space-y-2">
+          <h3 className="text-sm font-semibold text-fg">Early exit — {cancellation.status.toLowerCase()}</h3>
+          {cancellation.status === "Declined" && cancellation.declineReason && (
+            <p className="text-xs text-fg-muted"><span className="font-medium text-fg">Reason:</span> {cancellation.declineReason}</p>
+          )}
+          {cancellation.status === "Expired" && (
+            <p className="text-xs text-fg-muted">The 72-hour response window passed without action.</p>
+          )}
+        </div>
+      )}
+
+      {/* Landlord termination banner (also at top-level alert when active) */}
       {cancellation && cancellation.status === "Requested" && cancellation.initiator === "Landlord" && (() => {
-        // Backend usually fills outstandingAmount; if it doesn't, sum the tenant's
-        // overdue MonthlyRent records so the cure amount is never just "all of it".
-        const today = new Date(); today.setHours(0, 0, 0, 0);
         const fallback = (payment?.payments ?? [])
           .filter((p) => p.type === "MonthlyRent" && p.status !== "Paid" && p.dueDate && new Date(p.dueDate) < today)
           .reduce((sum, p) => sum + p.amount, 0);
@@ -405,330 +1347,345 @@ export function GuestBookingDetailPage() {
             cancellation={cancellation}
             bookingId={id!}
             fallbackOutstandingAmount={fallback}
-            onPay={() => {
-              const target = document.getElementById("monthly-rent-section");
-              target?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
           />
         );
       })()}
 
-      {/* Hero photo — full width, links to listing */}
-      {listing?.slug ? (
-        <Link
-          to={`/listings/${listing.slug}`}
-          className="group relative block h-48 sm:h-64 bg-bg-subtle rounded-2xl overflow-hidden mb-6 cursor-pointer"
-        >
-          {heroUrl ? (
-            <img
-              src={heroUrl}
-              alt="Property"
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-              style={{ imageOrientation: "from-image" }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-fg-subtle">
-              <Home size={48} />
-            </div>
-          )}
-          {/* Dark overlay on hover */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 rounded-2xl" />
-          {/* CTA label — slides up on hover */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="inline-flex items-center gap-2 bg-white/95 text-fg text-sm font-semibold px-4 py-2 rounded-full shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
-              <ExternalLink size={14} />
-              View listing
-            </span>
+      {/* Other invoices */}
+      {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border">
+            <h3 className="text-sm font-semibold text-fg">Other invoices</h3>
           </div>
-        </Link>
-      ) : (
-        <div className="h-48 sm:h-64 bg-bg-subtle rounded-2xl overflow-hidden mb-6">
-          {heroUrl ? (
-            <img src={heroUrl} alt="Property" className="w-full h-full object-cover" style={{ imageOrientation: "from-image" }} />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-fg-subtle">
-              <Home size={48} />
-            </div>
-          )}
+          <div className="divide-y divide-border">
+            {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").map((inv) => (
+              <div key={inv.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
+                  {inv.dueDate && <p className="text-xs text-fg-muted">Due {formatDate(inv.dueDate)}</p>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {inv.amount != null && <p className="text-sm font-semibold text-fg tabular-nums">{formatThb(inv.amount)}</p>}
+                  <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", {
+                    "bg-success/10 text-success": inv.status === "Paid",
+                    "bg-warning/10 text-warning": inv.status === "Pending",
+                  })}>
+                    {inv.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
+      {/* Escrow footer */}
+      <div className="bg-bg-subtle border border-border rounded-xl p-3 text-[11px] text-fg-muted leading-relaxed">
+        Payments are protected by Siamo escrow. If anything goes wrong, you're covered until your host has met their obligations.
+      </div>
+    </div>
+  );
 
-        {/* LEFT — action items */}
-        <div className="space-y-4">
+  // ─── PROPERTY PANE ───────────────────────────────────────────────────────────
+  const propertyPane = (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-          {/* ── What's next (Confirmed = paid, waiting for check-in) ── */}
-          {isConfirmed && (() => {
-            const method = listing?.checkInMethod as CheckInMethod | null | undefined;
+      {/* Left column: address + rules + amenities */}
+      <div className="space-y-5">
 
-            // Per-method action guidance
-            type ActionGuide = { urgent: boolean; title: string; body: string; Icon: React.ElementType };
-            const ACTION_GUIDE: Partial<Record<CheckInMethod, ActionGuide>> = {
-              KeyHandover: {
-                urgent: true,
-                title: "Contact your host to arrange check-in",
-                body: "You'll receive the keys in person — reach out before your check-in date to agree on a meeting time.",
-                Icon: MessageCircle,
-              },
-              Smartlock: {
-                urgent: false,
-                title: "Your door code is on its way",
-                body: "Your host will send you the smart lock code before check-in. No action needed from you.",
-                Icon: Lock,
-              },
-              Keybox: {
-                urgent: false,
-                title: "Your keybox code is on its way",
-                body: "Your host will share the keybox code before check-in. No action needed from you.",
-                Icon: Lock,
-              },
-              Reception: {
-                urgent: false,
-                title: "Head to the reception when you arrive",
-                body: "Staff will check you in at the front desk — no prior coordination needed.",
-                Icon: ConciergeBell,
-              },
-              Other: {
-                urgent: false,
-                title: "Check your host's instructions",
-                body: "Your host has provided check-in details below.",
-                Icon: Key,
-              },
-            };
-            const guide: ActionGuide | null = method ? (ACTION_GUIDE[method] ?? null) : null;
-
-            return (
-              <>
-                {/* Status hero — adapts to booking phase */}
-                {isCompleted ? (
-                  <div className="space-y-3">
-                    <div className="bg-bg-card rounded-2xl shadow-card px-5 py-6 text-center space-y-2">
-                      <div className="w-12 h-12 rounded-full bg-success/10 mx-auto flex items-center justify-center">
-                        <Check size={22} className="text-success" />
-                      </div>
-                      <div>
-                        <p className="text-base font-semibold text-fg">Lease completed</p>
-                        <p className="text-xs text-fg-muted mt-1">
-                          Your stay ended on {formatDate(booking.checkOutDate)}. Thank you!
-                        </p>
-                      </div>
-                    </div>
-                    {payment?.payments?.find((p) => p.type === "Deposit" && p.status === "Paid") && (
-                      <DepositSettlementCard
-                        bookingId={id!}
-                        role="tenant"
-                        depositAmount={booking.depositAmount}
-                        checkOutDate={booking.checkOutDate}
-                      />
-                    )}
-                  </div>
-                ) : isCancelled ? (() => {
-                  const c = cancellation;
-                  const voided = contract?.status === "Voided";
-                  let headline = "Booking cancelled";
-                  let detail = "This stay has been ended.";
-                  if (voided) {
-                    headline = "Booking cancelled — contract expired";
-                    detail = "The 72h signing window passed without both parties signing. Any payments will be refunded.";
-                  } else if (c?.reason === "NonPayment") {
-                    headline = "Booking terminated — unpaid rent";
-                    detail = "The cure deadline passed without payment. Your deposit was applied to the outstanding rent.";
-                  } else if (c?.reason === "Breach") {
-                    headline = "Booking terminated — breach of agreement";
-                    detail = "Contact Siamo support if you believe this was wrong.";
-                  } else if (c?.reason === "TenantEarlyExit") {
-                    headline = "Booking ended early";
-                    detail = "Your early-exit request was confirmed. The 1-month penalty applies.";
-                  } else if (c?.reason === "MutualAgreement") {
-                    headline = "Booking cancelled by mutual agreement";
-                    detail = "Your full deposit will be returned after the deposit-settlement window.";
-                  }
-                  return (
-                    <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 space-y-3">
-                      <div className="flex items-start gap-3">
-                        <span className="w-8 h-8 rounded-full bg-fg-subtle/20 flex items-center justify-center shrink-0">
-                          <DoorOpen size={16} className="text-fg-muted" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-fg">{headline}</p>
-                          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{detail}</p>
-                          {c?.initiatorNote && (
-                            <p className="text-xs text-fg mt-2 italic">"{c.initiatorNote}"</p>
-                          )}
-                        </div>
-                      </div>
-                      <Button asChild variant="outline" size="sm" className="w-full rounded-lg h-9 text-xs">
-                        <Link to="/listings">Browse other properties</Link>
-                      </Button>
-                    </div>
-                  );
-                })() : (
-                  <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-success flex items-center justify-center shrink-0">
-                      <Check size={16} className="text-white" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-success">Booking confirmed</p>
-                      <p className="text-xs text-fg-muted mt-0.5">Your stay is secured. See your check-in plan below.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Payment status banner — only shown when there's something to surface */}
-                {(isActive || isConfirmed) && payment?.payments && (
-                  <TenantPaymentBanner
-                    health={computePaymentHealth(payment.payments)}
-                    onPay={() => {
-                      const target = document.getElementById("monthly-rent-section");
-                      target?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                  />
-                )}
-
-                {/* Non-rent invoices (utilities, damage, cleaning, etc.) — separate signal */}
-                {(isActive || isConfirmed) && invoices && (
-                  <TenantOtherInvoicesBanner invoices={invoices} />
-                )}
-
-                {/* Check-in plan card */}
-                <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-                  {/* Header */}
-                  <div className="px-5 pt-4 pb-3 border-b border-border">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted mb-0.5">
-                      Check-in · {formatDate(booking.checkInDate)}
-                    </p>
-                    <h3 className="text-sm font-semibold text-fg">Your check-in plan</h3>
-                  </div>
-
-                  <div className="p-4 space-y-3">
-                    {/* Action callout */}
-                    {guide && (
-                      <div className={cn(
-                        "rounded-xl px-4 py-3 flex items-start gap-3",
-                        guide.urgent
-                          ? "bg-warning/10 border border-warning/20"
-                          : "bg-brand/8 border border-brand/15"
-                      )}>
-                        <guide.Icon size={15} className={cn("shrink-0 mt-0.5", guide.urgent ? "text-warning" : "text-brand")} />
-                        <div>
-                          <p className={cn("text-sm font-semibold", guide.urgent ? "text-warning" : "text-brand")}>
-                            {guide.title}
-                          </p>
-                          <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">{guide.body}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Host's custom instructions */}
-                    {listing?.checkInInstructions && (
-                      <div className="rounded-xl bg-bg-subtle px-4 py-3">
-                        <p className="text-xs font-semibold text-fg-muted mb-1">From your host</p>
-                        <p className="text-sm text-fg whitespace-pre-line leading-relaxed">
-                          {listing.checkInInstructions}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* CTA for key-handover — tenant needs to act */}
-                    {guide?.urgent && (
-                      <Button
-                        asChild
-                        variant="outline"
-                        className="w-full rounded-xl h-9 text-sm border-warning/30 text-warning hover:bg-warning/5"
-                      >
-                        <Link to={`/me/guest/tickets`}>
-                          <MessageCircle size={14} className="mr-1.5" />Contact your host
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Getting there */}
-                {(listing?.transportInfo || listing?.nearbyPlaces || asset?.googleMapsUrl || asset?.legalAddress) && (
-                  <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-                    <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
-                      <MapPin size={14} className="text-fg-muted" />
-                      <h3 className="text-sm font-semibold text-fg">Getting there</h3>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {asset?.legalAddress && (
-                        <div className="flex items-start gap-3 px-5 py-3.5">
-                          <FileText size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                          <p className="text-sm text-fg-muted leading-relaxed">{asset.legalAddress}</p>
-                        </div>
-                      )}
-                      {asset?.googleMapsUrl && (
-                        <div className="flex items-start gap-3 px-5 py-3.5">
-                          <ExternalLink size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                          <a
-                            href={asset.googleMapsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-brand hover:underline"
-                          >
-                            View on Google Maps
-                          </a>
-                        </div>
-                      )}
-                      {listing?.transportInfo && (
-                        <div className="flex items-start gap-3 px-5 py-3.5">
-                          <Bus size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                          <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
-                            {listing.transportInfo}
-                          </p>
-                        </div>
-                      )}
-                      {listing?.nearbyPlaces && (
-                        <div className="flex items-start gap-3 px-5 py-3.5">
-                          <Building2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                          <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">
-                            {listing.nearbyPlaces}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-
-          {/* ── Co-residents — required step before signing ── */}
-          {isPendingPayment && contract?.status === "PendingTenantSignature" && (
-            <div className={cn(
-              "bg-bg-card rounded-2xl shadow-card overflow-hidden",
-              !guestsReady && "ring-2 ring-warning/40",
-            )}>
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users size={15} className={guestsReady ? "text-success" : "text-warning"} />
-                  <h3 className="text-sm font-semibold text-fg">Who will be living here?</h3>
-                </div>
-                {guestsReady && (
-                  <span className="text-xs font-semibold text-success flex items-center gap-1">
-                    <Check size={11} strokeWidth={3} /> Confirmed
-                  </span>
-                )}
+        {/* Address / get there */}
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+            <MapPin size={15} className="text-fg-muted" />
+            <h3 className="text-sm font-semibold text-fg">Address</h3>
+          </div>
+          <div className="divide-y divide-border">
+            {asset?.legalAddress ? (
+              <div className="px-5 py-3.5">
+                <p className="text-sm text-fg leading-relaxed">{asset.legalAddress}</p>
               </div>
-              <div className="px-5 py-4 space-y-3">
-                <p className="text-xs text-fg-muted leading-relaxed">
-                  For TM-30 immigration registration, all residents must be listed before you sign the agreement. Add co-residents below, or confirm you'll be living alone.
+            ) : (
+              <div className="px-5 py-3.5">
+                <p className="text-sm text-fg-muted">Exact address shared after check-in confirmed.</p>
+              </div>
+            )}
+            {asset?.googleMapsUrl && (
+              <div className="px-5 py-3 flex items-start gap-3">
+                <ExternalLink size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                <a
+                  href={asset.googleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-brand hover:underline"
+                >
+                  Open in Google Maps
+                </a>
+              </div>
+            )}
+            {listing?.transportInfo && (
+              <div className="px-5 py-3 flex items-start gap-3">
+                <Bus size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">{listing.transportInfo}</p>
+              </div>
+            )}
+            {listing?.nearbyPlaces && (
+              <div className="px-5 py-3 flex items-start gap-3">
+                <Building2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
+                <p className="text-sm text-fg-muted whitespace-pre-line leading-relaxed">{listing.nearbyPlaces}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* House rules */}
+        {listing?.houseRules && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border">
+              <h3 className="text-sm font-semibold text-fg">House rules</h3>
+            </div>
+            <p className="px-5 py-4 text-sm text-fg-muted whitespace-pre-line leading-relaxed">
+              {listing.houseRules}
+            </p>
+          </div>
+        )}
+
+        {/* Amenities */}
+        {presentAmenities.length > 0 && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border">
+              <h3 className="text-sm font-semibold text-fg">Amenities</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 px-5 py-4">
+              {presentAmenities.map((a) => (
+                <div key={a.amenityId} className="inline-flex items-center gap-2 text-sm text-fg">
+                  <Check size={12} className="text-success shrink-0" />
+                  <span className="truncate">{a.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right column: wifi / host / documents / check-in instructions */}
+      <div className="space-y-5">
+
+        {/* WiFi */}
+        {listing && (listing.wifiName || listing.wifiPassword) && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+              <Wifi size={15} className="text-fg-muted" />
+              <h3 className="text-sm font-semibold text-fg">Wi-Fi</h3>
+            </div>
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-border last:border-none">
+              <div className="flex-1 text-sm font-medium text-fg">{listing.wifiName ?? "Network"}</div>
+              {listing.wifiName && <CopyBtn text={listing.wifiName} />}
+            </div>
+            {listing.wifiPassword && (
+              <div className="flex items-center gap-3 px-5 py-3">
+                <div className="flex-1 text-sm font-mono text-fg">
+                  {showWifiPwd ? listing.wifiPassword : "•".repeat(Math.min(listing.wifiPassword.length, 14))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowWifiPwd((v) => !v)}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-bg-subtle hover:bg-border text-fg-muted hover:text-fg transition-colors"
+                  >
+                    {showWifiPwd ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                  <CopyBtn text={listing.wifiPassword} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Host contact */}
+        {booking.landlordContact && (
+          booking.landlordContact.contactChannels.length > 0 || booking.landlordContact.phone
+        ) && <LandlordContactCard contact={booking.landlordContact} />}
+
+        {/* Check-in instructions */}
+        {(listing?.checkInInstructions || listing?.checkInMethod) && (
+          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+              <Key size={15} className="text-fg-muted" />
+              <h3 className="text-sm font-semibold text-fg">Check-in instructions</h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              {listing?.checkInMethod && (() => {
+                const meta = CHECK_IN_METHOD_LABEL[listing.checkInMethod];
+                if (!meta) return null;
+                return (
+                  <div className="inline-flex items-center gap-2 text-xs font-semibold text-fg-muted bg-bg-subtle px-2.5 py-1 rounded-full">
+                    <meta.Icon size={12} />{meta.label}
+                  </div>
+                );
+              })()}
+              {listing?.checkInInstructions && (
+                <p className="text-sm text-fg whitespace-pre-line leading-relaxed">{listing.checkInInstructions}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Documents */}
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+            <FileText size={15} className="text-fg-muted" />
+            <h3 className="text-sm font-semibold text-fg">Documents</h3>
+          </div>
+          <div className="divide-y divide-border">
+            {contract?.finalPdfUrl ? (
+              <a
+                href={contract.finalPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-bg-subtle transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 text-sm text-fg">
+                  <FileText size={14} className="text-fg-muted" />Tenancy agreement
+                </span>
+                <span className="text-xs text-fg-muted">PDF →</span>
+              </a>
+            ) : (
+              <div className="px-5 py-3 flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-sm text-fg-muted">
+                  <FileText size={14} />Tenancy agreement
+                </span>
+                <span className="text-xs text-fg-muted">Not yet finalised</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── CO-RESIDENTS PANE ───────────────────────────────────────────────────────
+  const residentsPane = (
+    <div className="space-y-5">
+
+      {/* TM-30 summary banner */}
+      {foreignGuests.length > 0 ? (
+        <TmSummaryBanner bookingId={id!} guests={foreignGuests} />
+      ) : (
+        <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 flex items-start gap-3">
+          <Shield size={16} className="text-fg-muted shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-fg">No foreign-guest filings needed</p>
+            <p className="text-xs text-fg-muted mt-0.5">TM-30 only applies to non-Thai nationals — none on this booking.</p>
+          </div>
+        </div>
+      )}
+
+      {/* TM-30 status per guest (also shown in summary) */}
+      {foreignGuests.length > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border">
+            <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">TM-30 filings</p>
+          </div>
+          <div className="px-5">
+            {foreignGuests.map((g) => (
+              <GuestTm30Row
+                key={g.id}
+                bookingId={id!}
+                guestId={g.id}
+                guestName={[g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest"}
+                isMain={g.isMainTenant}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TM-30 urgency banner (when overdue / window open) */}
+      {isActive && (() => {
+        const rec = (myTm30 ?? []).find((r) => r.bookingId === id);
+        if (!rec || rec.status === "Filed") return null;
+        const deadlineMs = rec.filingDeadline
+          ? new Date(rec.filingDeadline).getTime()
+          : new Date(rec.checkInDate).getTime() + 24 * 3600_000;
+        const windowOpensMs = deadlineMs - 24 * 3600_000;
+        const nowMs = Date.now();
+        if (nowMs < windowOpensMs) return null;
+        const inWindow = nowMs < deadlineMs;
+        const hoursLeft = inWindow ? Math.floor((deadlineMs - nowMs) / 3_600_000) : 0;
+        const daysOverdue = inWindow ? 0 : Math.floor((nowMs - deadlineMs) / 86_400_000) + 1;
+        return (
+          <div
+            className={cn(
+              "rounded-2xl border p-4 space-y-2",
+              inWindow
+                ? "bg-warning/8 border-warning/30"
+                : daysOverdue >= 3
+                  ? "bg-danger/8 border-danger/30"
+                  : "bg-danger/5 border-danger/20",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <Shield size={18} className={cn("shrink-0 mt-0.5", inWindow ? "text-warning" : "text-danger")} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-fg">
+                  {inWindow
+                    ? `TM-30 filing — 24h window open (${hoursLeft}h left)`
+                    : `TM-30 overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}`}
                 </p>
-                {/* Guest list */}
-                {(guests ?? []).map((g) => (
-                  <div key={g.id} className="flex items-center justify-between py-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-bg-subtle flex items-center justify-center text-[10px] font-bold text-fg-muted">
-                        {(g.firstName?.[0] ?? "?").toUpperCase()}
-                      </div>
-                      <p className="text-sm text-fg">
-                        {[g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest"}
+                <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                  Thai immigration requires landlords to report foreign-guest check-in within 24 hours.
+                  Your host files this — but if it's still pending, nudge them.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Guest cards grid */}
+      <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-fg">Residents</h3>
+          {(isPendingPayment || isActive || isConfirmed) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg h-8 text-xs"
+              onClick={() => { setNewResident({}); setResidentPhotos([]); setAddGuestOpen(true); }}
+            >
+              <Plus size={12} className="mr-1" />Add resident
+            </Button>
+          )}
+        </div>
+        {!guests?.length ? (
+          <div className="px-5 py-8 text-center">
+            <Users size={24} className="text-fg-subtle mx-auto mb-2" />
+            <p className="text-sm text-fg-muted">No residents listed yet.</p>
+            <p className="text-xs text-fg-subtle mt-1">Add yourself and anyone else who'll be living here.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+            {guests.map((g) => {
+              const name = [g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest";
+              const initials = `${g.firstName?.[0] ?? ""}${g.lastName?.[0] ?? ""}`.toUpperCase() || "?";
+              const hasPassport = !!(g.passportNumber || g.nationality || g.visaType);
+              return (
+                <div key={g.id} className="bg-bg rounded-xl border border-border p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-full bg-bg-subtle flex items-center justify-center text-xs font-semibold text-fg shrink-0">
+                      {initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-fg">
+                        {name}
+                        {g.isMainTenant && <span className="ml-2 text-[10px] font-normal text-fg-muted">(you)</span>}
                       </p>
-                      {g.isMainTenant && (
-                        <span className="text-[10px] font-semibold text-fg-muted bg-bg-subtle px-1.5 py-0.5 rounded-md">You</span>
+                      {hasPassport && (
+                        <div className="mt-1 space-y-0.5 text-xs text-fg-muted">
+                          {g.nationality && <p>{g.nationality}{g.gender ? ` · ${g.gender === "M" ? "Male" : "Female"}` : ""}</p>}
+                          {g.passportNumber && <p className="font-mono">Passport {g.passportNumber}</p>}
+                        </div>
+                      )}
+                      {!hasPassport && (
+                        <p className="text-[11px] text-fg-subtle mt-1 italic">Passport not submitted</p>
                       )}
                     </div>
                     {!g.isMainTenant && (
@@ -737,956 +1694,268 @@ export function GuestBookingDetailPage() {
                           try { await removeGuest.mutateAsync(g.id); toast.success("Removed"); }
                           catch { toast.error("Failed to remove"); }
                         }}
-                        className="w-6 h-6 rounded-lg flex items-center justify-center text-fg-muted hover:text-danger hover:bg-danger/5 transition-colors"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-muted hover:text-danger hover:bg-danger/5 transition-colors"
+                        title="Remove resident"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={13} />
                       </button>
                     )}
                   </div>
-                ))}
-                {/* Actions */}
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 rounded-xl h-9 text-xs"
-                    onClick={() => { setNewResident({}); setResidentPhotos([]); setAddGuestOpen(true); }}
-                  >
-                    <Plus size={12} className="mr-1.5" />Add co-resident
-                  </Button>
-                  {!guestsConfirmed && coResidents.length === 0 && (
-                    <Button
-                      size="sm"
-                      className="flex-1 rounded-xl h-9 text-xs bg-fg text-bg hover:bg-fg/90"
-                      onClick={confirmGuestsAlone}
-                    >
-                      I'll be living alone
-                    </Button>
+                  {/* TM-30 row inline (only when passport on file) */}
+                  {g.passportNumber && (
+                    <div className="pt-3 border-t border-border">
+                      <GuestTm30Row
+                        bookingId={id!}
+                        guestId={g.id}
+                        guestName=""
+                        isMain={false}
+                      />
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
-          )}
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-          {/* ── Contract status banner ── */}
-          {(isPendingPayment || isConfirmed) && contract && (
-            <>
-              {contract.status === "PendingTenantSignature" && (() => {
-                const deadline = contractSigningDeadline(contract);
-                const msLeft = new Date(deadline).getTime() - Date.now();
-                const hoursLeft = msLeft / 3600_000;
-                // Visual escalation: <12h → danger, <36h → warning, else neutral
-                const isUrgent = hoursLeft < 12;
-                const isElevated = hoursLeft < 36;
-                const palette = isUrgent
-                  ? "bg-danger/10 border-danger/30"
-                  : isElevated
-                    ? "bg-warning/15 border-warning/30"
-                    : "bg-warning/10 border-warning/20";
-                const accent = isUrgent ? "text-danger" : "text-warning";
-                return (
-                  <div className={cn("rounded-2xl border p-4 space-y-3", palette)}>
-                    <div className="flex items-start gap-3">
-                      <FileText size={18} className={cn("shrink-0 mt-0.5", accent)} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className={cn("text-sm font-semibold", accent)}>
-                            {isUrgent ? "Sign now — booking expires soon" : "Sign your rental agreement"}
-                          </p>
-                          <CountdownPill deadline={deadline} prefix="Expires in" expiredLabel="Expired — booking cancelled" />
-                        </div>
-                        <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-                          {guestsReady
-                            ? "Both signatures are required before your booking is confirmed."
-                            : "Confirm who will be living at the property above, then sign the agreement."}
-                          {" "}
-                          <span className="font-medium text-fg">
-                            If unsigned by the deadline, this booking will be automatically cancelled and any payments refunded.
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      disabled={!guestsReady}
-                      asChild={guestsReady}
-                      className={cn(
-                        "w-full rounded-xl h-9 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed",
-                        isUrgent
-                          ? "bg-danger hover:bg-danger/90 text-white"
-                          : "bg-warning hover:bg-warning/90 text-white",
-                      )}
-                    >
-                      {guestsReady ? (
-                        <Link to={`/me/guest/bookings/${id}/contract`}>
-                          Read &amp; sign agreement
-                        </Link>
-                      ) : (
-                        <span>Read &amp; sign agreement</span>
-                      )}
-                    </Button>
-                  </div>
-                );
-              })()}
+      {/* What is TM-30 explainer */}
+      <div className="bg-bg-subtle border border-border rounded-2xl px-5 py-4 space-y-1">
+        <p className="text-sm font-semibold text-fg">What is TM-30?</p>
+        <p className="text-xs text-fg-muted leading-relaxed">
+          By Thai law, your landlord must report every foreign guest staying at their property within 24h of arrival. Keep your receipt PDF in case immigration asks for it during visa extension.
+        </p>
+      </div>
+    </div>
+  );
 
-              {contract.status === "PendingLandlordSignature" && (
-                <div className="bg-success/10 border border-success/20 rounded-2xl p-4 flex items-start gap-3">
-                  <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-success">You've signed ✓</p>
-                    <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
-                      Waiting for your landlord's signature. Payment is now unlocked.
-                    </p>
-                  </div>
-                </div>
-              )}
+  // ─── ISSUES PANE ─────────────────────────────────────────────────────────────
+  const issuesPane = (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-              {contract.status === "FullySigned" && (
-                <div className="bg-bg-subtle border border-border rounded-2xl p-4 flex items-start gap-3">
-                  <CheckCircle2 size={18} className="text-success shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-fg">Agreement fully signed ✓</p>
-                    {contract.finalPdfUrl && (
-                      <a
-                        href={contract.finalPdfUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-brand hover:underline mt-1"
-                      >
-                        <FileText size={12} />Download signed agreement
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
+      {/* Left column: inline form */}
+      <div className="space-y-5">
+        <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-fg">Report an issue</h3>
+            <p className="text-xs text-fg-muted leading-relaxed">
+              Describe what's wrong. Your host gets notified instantly and you can track progress here.
+            </p>
+          </div>
 
-              {contract.status === "Voided" && (
-                <div className="bg-danger/10 border border-danger/20 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <XCircle size={18} className="text-danger shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-fg">Agreement was voided</p>
-                      <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-                        The signing window closed before both parties signed.
-                        This booking is cancelled and any payments will be refunded automatically.
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="w-full rounded-xl h-9 text-sm font-medium"
-                  >
-                    <Link to="/listings">Browse other properties</Link>
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── TM-30 urgency banner ── */}
-          {isActive && (() => {
-            const rec = (myTm30 ?? []).find((r) => r.bookingId === id);
-            if (!rec || rec.status === "Filed") return null;
-            // Prefer the server-computed deadline; fall back to checkIn + 24h for legacy.
-            const deadlineMs = rec.filingDeadline
-              ? new Date(rec.filingDeadline).getTime()
-              : new Date(rec.checkInDate).getTime() + 24 * 3600_000;
-            const windowOpensMs = deadlineMs - 24 * 3600_000;
-            const nowMs = Date.now();
-            if (nowMs < windowOpensMs) return null; // window not yet open
-            const inWindow = nowMs < deadlineMs;
-            const hoursLeft = inWindow ? Math.floor((deadlineMs - nowMs) / 3_600_000) : 0;
-            const daysOverdue = inWindow ? 0 : Math.floor((nowMs - deadlineMs) / 86_400_000) + 1;
-            return (
-              <div
-                className={cn(
-                  "rounded-2xl border p-4 space-y-2",
-                  inWindow
-                    ? "bg-warning/8 border-warning/30"
-                    : daysOverdue >= 3
-                      ? "bg-danger/8 border-danger/30"
-                      : "bg-danger/5 border-danger/20",
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <Shield size={18} className={cn("shrink-0 mt-0.5", inWindow ? "text-warning" : "text-danger")} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-fg">
-                      {inWindow
-                        ? `TM-30 filing — 24h window open (${hoursLeft}h left)`
-                        : `TM-30 overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}`}
-                    </p>
-                    <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-                      Thai immigration requires landlords to report foreign-guest check-in within 24 hours.
-                      Your host files this — but if it's still pending, nudge them. They risk a fine of up
-                      to ฿2,000 per unfiled guest.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="rounded-lg h-8 text-xs ml-7"
+          {/* Category chips */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-fg-muted">Category</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { id: TicketType.Maintenance, label: "Maintenance" },
+                { id: TicketType.Cleaning,    label: "Cleaning" },
+                { id: TicketType.Utilities,   label: "Utilities (Wi-Fi, water…)" },
+                { id: TicketType.Complaint,   label: "Complaint" },
+                { id: TicketType.Request,     label: "Request" },
+                { id: TicketType.Other,       label: "Other" },
+              ] as const).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setIssueType(c.id)}
+                  className={cn(
+                    "flex items-center justify-center px-3 py-2 rounded-xl border text-xs font-medium transition-colors",
+                    issueType === c.id
+                      ? "border-brand bg-brand/5 text-brand"
+                      : "border-border text-fg-muted hover:border-fg-muted",
+                  )}
                 >
-                  <Link to="/me/guest/tm30">View TM-30 status</Link>
-                </Button>
-              </div>
-            );
-          })()}
-
-          {/* ── End-of-stay coordination (last 14 days of an active lease) ── */}
-          {isActive && daysLeft != null && daysLeft <= 14 && daysLeft >= 0 && (() => {
-            const urgent = daysLeft <= 3;
-            const palette = urgent
-              ? "bg-danger/8 border-danger/30"
-              : daysLeft <= 7
-                ? "bg-warning/10 border-warning/30"
-                : "bg-warning/5 border-warning/20";
-            const accent = urgent ? "text-danger" : "text-warning";
-            return (
-              <div className={cn("rounded-2xl border p-4 space-y-3", palette)}>
-                <div className="flex items-start gap-3">
-                  <DoorOpen size={18} className={cn("shrink-0 mt-0.5", accent)} />
-                  <div className="flex-1 min-w-0">
-                    <p className={cn("text-sm font-semibold", accent)}>
-                      {daysLeft === 0
-                        ? "Move-out today"
-                        : `Move-out in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}`}
-                    </p>
-                    <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-                      Your lease ends {formatDate(booking.checkOutDate)}. Before you leave, sort the items below so the
-                      deposit settlement goes smoothly — the host has a 7-day window to inspect after check-out.
-                    </p>
-                  </div>
-                </div>
-                <ul className="space-y-2 pl-1 text-sm">
-                  <li className="flex items-start gap-2.5">
-                    <Camera size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                    <span className="text-fg-muted leading-snug">
-                      <span className="text-fg font-medium">Photo the property</span> on the day you leave (every room,
-                      fridge, walls, appliances). Your evidence if the host claims damage later.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2.5">
-                    <Key size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                    <span className="text-fg-muted leading-snug">
-                      <span className="text-fg font-medium">Agree key/access return</span> with your host —
-                      handover, keybox code reset, or front-desk drop-off.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2.5">
-                    <CheckCircle2 size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                    <span className="text-fg-muted leading-snug">
-                      <span className="text-fg font-medium">Check final utilities/cleaning charges</span> are settled —
-                      anything unpaid will be deducted from your deposit.
-                    </span>
-                  </li>
-                </ul>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg h-8 text-xs"
-                    onClick={() => setRenewOpen(true)}
-                  >
-                    Renew lease
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg h-8 text-xs"
-                    onClick={() => {
-                      setIssueTitle("Move-out coordination");
-                      setIssueDescription(`I'm checking out on ${formatDate(booking.checkOutDate)}. Can we agree on time and key/access return?`);
-                      setIssueType(TicketType.Request);
-                      setIssuePriority(TicketPriority.Normal);
-                      setReportIssueOpen(true);
-                    }}
-                  >
-                    Coordinate move-out
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ── Payment tracker (active / confirmed bookings) ── */}
-          {(isActive || isConfirmed) && payment && (() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            // Source of truth: MonthlyRent payment records — complete, have dueDate + id
-            const rentPayments = (payment.payments ?? [])
-              .filter((p) => p.type === "MonthlyRent")
-              .sort((a, b) => (a.monthIndex ?? 0) - (b.monthIndex ?? 0));
-
-            if (rentPayments.length === 0) return null;
-
-            const paidRentCount = rentPayments.filter((p) => p.status === "Paid").length;
-            const nextPayment = rentPayments.find((p) => p.status === "Pending") ?? null;
-
-            const depositPayment = payment.payments.find(
-              (p) => p.type === "Deposit" && p.status === "Paid",
-            );
-
-            const totalMonths = rentPayments.length;
-            const progressPct = Math.round((paidRentCount / totalMonths) * 100);
-
-            const nextDueDate = nextPayment?.dueDate ? (() => {
-              const d = new Date(nextPayment.dueDate!);
-              d.setHours(0, 0, 0, 0);
-              return d;
-            })() : null;
-            const payWindowOpen = nextDueDate
-              ? (() => { const d = new Date(nextDueDate); d.setDate(d.getDate() - 7); return d; })()
-              : null;
-            const daysUntilWindow = payWindowOpen
-              ? Math.ceil((payWindowOpen.getTime() - today.getTime()) / 86_400_000)
-              : null;
-            const windowIsOpen = daysUntilWindow !== null && daysUntilWindow <= 0;
-            const daysUntilDue = nextDueDate
-              ? Math.ceil((nextDueDate.getTime() - today.getTime()) / 86_400_000)
-              : null;
-
-            const pmtLabel = (p: typeof rentPayments[0]) =>
-              p.dueDate
-                ? new Date(p.dueDate).toLocaleString("en", { month: "long", year: "numeric" })
-                : `Month ${p.monthIndex}`;
-
-            const firstPmt = rentPayments[0];
-            const lastPmt = rentPayments[rentPayments.length - 1];
-
-            return (
-              <div id="monthly-rent-section" className="bg-bg-card rounded-2xl shadow-card overflow-hidden scroll-mt-24">
-
-                {/* ── Header with segmented progress bar ── */}
-                <div className="px-5 pt-5 pb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-fg">Monthly rent</h3>
-                    <span className="text-xs font-bold text-fg-muted">
-                      <span className="text-success">{paidRentCount}</span>
-                      <span className="text-fg-subtle"> / {totalMonths} months</span>
-                    </span>
-                  </div>
-                  {/* Segmented bar — one slot per month, hover shows tooltip */}
-                  <div className="flex gap-0.5 h-2.5">
-                    {rentPayments.map((p, i) => {
-                      const isPaid = p.status === "Paid";
-                      const dueDate = p.dueDate ? new Date(p.dueDate) : null;
-                      dueDate?.setHours(0, 0, 0, 0);
-                      const isOverdue = !isPaid && dueDate ? dueDate < today : false;
-                      const isDueThisMonth = !isPaid && dueDate
-                        ? dueDate.getFullYear() === today.getFullYear() && dueDate.getMonth() === today.getMonth()
-                        : false;
-                      const label = p.dueDate
-                        ? new Date(p.dueDate).toLocaleString("en", { month: "short", year: "numeric" })
-                        : `Month ${p.monthIndex}`;
-                      const statusText = isPaid ? "Paid" : isOverdue ? "Overdue" : isDueThisMonth ? "Due this month" : "Upcoming";
-                      const isFirst = i === 0;
-                      const isLast = i === totalMonths - 1;
-                      return (
-                        <div
-                          key={p.id}
-                          className="relative flex-1 group cursor-default"
-                        >
-                          <div className={cn(
-                            "h-full transition-all duration-150 group-hover:scale-y-150 group-hover:brightness-90",
-                            isFirst ? "rounded-l-full" : "",
-                            isLast ? "rounded-r-full" : "",
-                            isPaid ? "bg-success" : isOverdue || isDueThisMonth ? "bg-warning" : "bg-border",
-                          )} />
-                          {/* Tooltip */}
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-10 pointer-events-none">
-                            <div className="bg-fg text-bg text-[11px] font-medium px-2 py-1 rounded-lg whitespace-nowrap shadow-lg">
-                              {label} · {statusText}
-                            </div>
-                            <div className="w-1.5 h-1.5 bg-fg rotate-45 -mt-1" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex justify-between mt-1.5">
-                    <span className="text-[10px] text-fg-subtle">
-                      {firstPmt?.dueDate ? new Date(firstPmt.dueDate).toLocaleString("en", { month: "short" }) : ""}
-                    </span>
-                    <span className="text-[10px] text-fg-subtle">
-                      {lastPmt?.dueDate ? (() => {
-                        const d = new Date(lastPmt.dueDate!);
-                        return `${d.toLocaleString("en", { month: "short" })} '${d.getFullYear().toString().slice(2)}`;
-                      })() : ""}
-                    </span>
-                  </div>
-                </div>
-
-                {/* ── Next payment ── */}
-                {nextPayment ? (
-                  <div className={cn(
-                    "mx-4 mb-4 rounded-xl overflow-hidden border",
-                    windowIsOpen ? "border-brand/30" : "border-border",
-                  )}>
-                    <div className={cn(
-                      "px-4 py-2 flex items-center justify-between",
-                      windowIsOpen
-                        ? "bg-brand text-white"
-                        : daysUntilWindow !== null && daysUntilWindow <= 5
-                          ? "bg-warning/10"
-                          : "bg-bg-subtle",
-                    )}>
-                      {windowIsOpen ? (
-                        <span className="text-xs font-bold">⚡ Pay now — window is open</span>
-                      ) : daysUntilWindow !== null && daysUntilWindow <= 5 ? (
-                        <span className="text-xs font-semibold text-warning">
-                          Payment window opens in {daysUntilWindow} day{daysUntilWindow !== 1 ? "s" : ""}
-                        </span>
-                      ) : (
-                        <span className="text-xs font-semibold text-fg-muted">Next payment</span>
-                      )}
-                      {daysUntilDue !== null && daysUntilDue >= 0 && (
-                        <span className={cn(
-                          "text-[10px] font-bold",
-                          windowIsOpen ? "text-white/80"
-                          : daysUntilDue <= 3 ? "text-danger"
-                          : daysUntilDue <= 7 ? "text-warning"
-                          : "text-fg-muted",
-                        )}>
-                          {daysUntilDue === 0 ? "Due today" : daysUntilDue <= 30 ? `${daysUntilDue}d left` : ""}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-base font-bold text-fg">{pmtLabel(nextPayment)}</p>
-                        {nextDueDate && (
-                          <p className="text-xs text-fg-muted mt-0.5">
-                            Due {formatDate(nextDueDate.toISOString().slice(0, 10))}
-                          </p>
-                        )}
-                        {payWindowOpen && !windowIsOpen && (
-                          <p className="text-[11px] text-fg-subtle mt-0.5">
-                            You can pay from {formatDate(payWindowOpen.toISOString().slice(0, 10))}
-                          </p>
-                        )}
-                      </div>
-                      <p className="text-2xl font-bold text-fg shrink-0">{formatThb(nextPayment.amount)}</p>
-                    </div>
-
-                    <div className="px-4 pb-3">
-                      <Button
-                        className={cn(
-                          "w-full rounded-xl h-9 text-sm font-semibold",
-                          windowIsOpen
-                            ? "bg-brand hover:bg-[var(--color-primary-hover)] text-white"
-                            : "bg-bg-subtle hover:bg-border text-fg border border-border",
-                        )}
-                        onClick={() => openGateway(nextPayment.amount, nextPayment.id)}
-                      >
-                        <CreditCard size={14} className="mr-1.5" />
-                        Pay {pmtLabel(nextPayment)} now
-                      </Button>
-                      {!windowIsOpen && (
-                        <p className="text-[10px] text-fg-subtle text-center mt-1.5">
-                          You can pay early — no extra charge
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mx-4 mb-4 rounded-xl bg-success/8 border border-success/20 px-4 py-3 flex items-center gap-3">
-                    <span className="text-xl">🎉</span>
-                    <div>
-                      <p className="text-sm font-bold text-success">All months paid!</p>
-                      <p className="text-xs text-fg-muted mt-0.5">Lease ends {formatDate(booking.checkOutDate)}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Paid history ── */}
-                <div className="border-t border-border">
-                  <div className="px-4 py-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-fg-subtle">Paid</span>
-                  </div>
-                  <div className="divide-y divide-border">
-                    {rentPayments.filter((p) => p.status === "Paid").map((p) => (
-                      <div key={p.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xs text-success font-bold w-4 text-center">✓</span>
-                          <p className="text-sm text-fg">{pmtLabel(p)}</p>
-                        </div>
-                        <span className="text-sm font-semibold text-success">{formatThb(p.amount)}</span>
-                      </div>
-                    ))}
-                    {depositPayment && (
-                      <div className="flex items-center justify-between px-4 py-2.5 gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xs text-success font-bold w-4 text-center">✓</span>
-                          <div>
-                            <p className="text-sm text-fg">Security deposit</p>
-                            <p className="text-[11px] text-fg-subtle">Held by Siamo until move-out</p>
-                          </div>
-                        </div>
-                        <span className="text-sm font-semibold text-success">{formatThb(depositPayment.amount)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            );
-          })()}
-
-          {/* ── Passport / identity notice ── */}
-          {isPendingPayment && contract?.status === "PendingTenantSignature" && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
-                <Shield size={15} className="text-fg-muted" />
-                <h3 className="text-sm font-semibold text-fg">Passport details required</h3>
-              </div>
-              <div className="px-5 py-4 space-y-3">
-                <p className="text-xs text-fg-muted leading-relaxed">
-                  Your passport details and a photo are required for TM-30 immigration reporting. They will be collected when you sign the rental agreement.
-                </p>
-                <p className="text-xs text-fg-muted">
-                  🔒 Stored encrypted, accessible only to you and this property's landlord.
-                </p>
-              </div>
+                  {c.label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
-          {/* Payment status card — shown while booking is PendingPayment */}
-          {isPendingPayment && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-fg">Payment</h3>
-                {pendingPayments.length > 0 && (
-                  <span className="text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
-                    {formatThb(totalPending)} due
-                  </span>
-                )}
-              </div>
+          {/* Title */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-fg-muted">Title</Label>
+            <Input
+              value={issueTitle}
+              onChange={(e) => setIssueTitle(e.target.value)}
+              placeholder="e.g. AC not cooling in bedroom"
+              maxLength={120}
+            />
+          </div>
 
-              {/* Per-payment breakdown */}
-              {payment && initialPayments.length > 0 ? (
-                <div className="divide-y divide-border">
-                  {initialPayments.map((p) => {
-                    const isPaid = p.status === "Paid";
-                    const label = p.type === "Deposit" ? "Security deposit"
-                      : p.type === "MonthlyRent" ? "First month's rent"
-                      : p.type === "EarlyExitPenalty" ? "Early exit penalty"
-                      : "Payment";
-                    return (
-                      <div key={p.id} className="flex items-center justify-between px-5 py-3">
-                        <div>
-                          <p className="text-sm text-fg">{label}</p>
-                          <p className="text-xs text-fg-muted">{formatThb(p.amount)}</p>
-                        </div>
-                        {isPaid ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success/10 px-2.5 py-0.5 rounded-full">
-                            <Check size={10} strokeWidth={3} /> Paid
-                          </span>
-                        ) : (
-                          <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full">Due</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Payment data not loaded yet — show skeleton rows */
-                <div className="divide-y divide-border">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="flex items-center justify-between px-5 py-3">
-                      <div className="space-y-1.5">
-                        <div className="h-3 w-32 bg-bg-subtle rounded animate-pulse" />
-                        <div className="h-2.5 w-16 bg-bg-subtle rounded animate-pulse" />
-                      </div>
-                      <div className="h-5 w-10 bg-bg-subtle rounded-full animate-pulse" />
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* Description */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-fg-muted">Describe what's wrong</Label>
+            <Textarea
+              value={issueDescription}
+              onChange={(e) => setIssueDescription(e.target.value)}
+              placeholder="When did it start? What have you tried?"
+              rows={5}
+              className="resize-none"
+            />
+          </div>
 
-              {/* Pay button — only if there's something to pay */}
-              {pendingPayments.length > 0 && (
-                <div className="px-5 py-4 border-t border-border space-y-3">
-                  {contract?.status === "PendingTenantSignature" ? (
-                    <>
-                      <Button
-                        disabled
-                        className="w-full bg-brand/50 text-white rounded-xl h-10 text-sm font-semibold cursor-not-allowed opacity-60"
-                      >
-                        <CreditCard size={14} className="mr-1.5" />Sign the agreement first
-                      </Button>
-                      <p className="text-[11px] text-fg-muted text-center">
-                        Sign your rental agreement above to unlock payment
-                      </p>
-                    </>
-                  ) : payment && payment.isLandlordReady === false ? (
-                    <>
-                      <Button
-                        disabled
-                        className="w-full bg-brand/50 text-white rounded-xl h-10 text-sm font-semibold cursor-not-allowed opacity-60"
-                      >
-                        <CreditCard size={14} className="mr-1.5" />Payment not yet available
-                      </Button>
-                      <div className="rounded-xl bg-warning/8 border border-warning/20 px-3 py-2.5 space-y-1">
-                        <p className="text-xs font-semibold text-warning">Landlord payment details not ready</p>
-                        {(payment.notReadyReasons ?? []).map((r, i) => (
-                          <p key={i} className="text-xs text-fg-muted leading-relaxed">{r}</p>
-                        ))}
-                        <p className="text-[11px] text-fg-muted mt-1">Reach out to your landlord before paying.</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm font-semibold"
-                        onClick={() => openGateway(totalPending)}
-                      >
-                        <CreditCard size={14} className="mr-1.5" />Pay {formatThb(totalPending)} now
-                      </Button>
-                      <p className="text-[11px] text-fg-muted text-center">
-                        Complete payment to activate your booking
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Urgency */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-fg-muted">Urgency</Label>
+            <Select value={issuePriority} onValueChange={(v) => setIssuePriority(v as TicketPriority)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TicketPriority.Low}>Low — can wait a few days</SelectItem>
+                <SelectItem value={TicketPriority.Normal}>Normal — within 24-48h please</SelectItem>
+                <SelectItem value={TicketPriority.High}>High — affects daily life</SelectItem>
+                <SelectItem value={TicketPriority.Urgent}>Emergency — unsafe / no utilities</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          {/* Guests — shown after signing (read-only list for active/confirmed bookings) */}
-          {(isActive || isConfirmed) && (guests ?? []).length > 0 && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
-                <Users size={15} className="text-fg-muted" />
-                <h3 className="text-sm font-semibold text-fg">Co-residents</h3>
-              </div>
-              <div className="divide-y divide-border">
-                {(guests ?? []).map((g) => (
-                  <div key={g.id} className="px-5 py-3">
-                    <p className="text-sm font-medium text-fg">
-                      {[g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest"}
-                      {g.isMainTenant && <span className="ml-2 text-xs text-fg-muted bg-bg-subtle px-1.5 py-0.5 rounded-md">Main tenant</span>}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="px-5 py-3 bg-bg-subtle border-t border-border">
-                <p className="text-[11px] text-fg-muted">
-                  All guests residing at the property must be listed for TM-30 registration.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Early-exit: request button — only when there's no active cancellation; landlord-initiated takes precedence */}
-          {(isConfirmed || isActive) &&
-            (!cancellation || cancellation.status === "Declined" || cancellation.status === "Expired" || cancellation.status === "Withdrawn") &&
-            (cancellation?.initiator ?? "Tenant") === "Tenant" && (
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+            <p className="text-[11px] text-fg-muted">
+              Your host will be notified instantly.
+            </p>
             <Button
-              variant="outline"
-              className="w-full rounded-xl h-10 text-sm border-border hover:bg-bg-subtle"
-              onClick={() => setExitDialogOpen(true)}
+              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-9"
+              disabled={
+                createTicket.isPending ||
+                issueTitle.trim().length < 3 ||
+                issueDescription.trim().length < 5
+              }
+              onClick={async () => {
+                try {
+                  await createTicket.mutateAsync({
+                    assetId: booking.assetId,
+                    bookingId: id!,
+                    title: issueTitle.trim(),
+                    description: issueDescription.trim(),
+                    type: issueType,
+                    kind: TicketKind.Incident,
+                    priority: issuePriority,
+                    estimatedCost: 0,
+                  });
+                  toast.success("Issue reported — your host has been notified");
+                  setIssueTitle("");
+                  setIssueDescription("");
+                  setIssueType(TicketType.Maintenance);
+                  setIssuePriority(TicketPriority.Normal);
+                } catch {
+                  toast.error("Failed to report issue");
+                }
+              }}
             >
-              <DoorOpen size={15} className="mr-2" />
-              {cancellation ? "Submit new request" : "Request early exit"}
+              {createTicket.isPending ? "Submitting…" : "Submit report"}
             </Button>
-          )}
-
-          {/* Early-exit: pending response from host (own request only) */}
-          {cancellation && cancellation.status === "Requested" && (cancellation.initiator ?? "Tenant") === "Tenant" && (
-            <div className="bg-bg-card rounded-xl shadow-card overflow-hidden">
-              <div className="px-4 py-3 flex items-start justify-between gap-3 border-b border-border">
-                <div className="flex items-start gap-2 min-w-0">
-                  <DoorOpen size={14} className="text-fg-muted shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-fg">Early exit requested</p>
-                    <p className="text-xs text-fg-muted">Earliest exit: {formatDate(cancellation.earliestExitDate)}</p>
-                  </div>
-                </div>
-                <CountdownPill deadline={cancellationDeadline(cancellation)} prefix="Host responds in" expiredLabel="Expired" />
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await withdrawCancellation.mutateAsync(cancellation.id);
-                    toast.success("Request withdrawn");
-                  } catch {
-                    toast.error("Failed to withdraw");
-                  }
-                }}
-                disabled={withdrawCancellation.isPending}
-                className="w-full text-xs text-fg-muted hover:text-fg py-2 transition-colors disabled:opacity-50"
-              >
-                {withdrawCancellation.isPending ? "Withdrawing…" : "Withdraw request"}
-              </button>
-            </div>
-          )}
-
-          {/* Early-exit: declined — host rejected with reason */}
-          {cancellation && cancellation.status === "Declined" && (
-            <div className="bg-danger/5 border border-danger/20 rounded-xl px-4 py-3 space-y-1.5">
-              <p className="text-sm font-medium text-fg">Your request was declined</p>
-              {cancellation.declineReason ? (
-                <p className="text-xs text-fg-muted leading-relaxed">
-                  <span className="font-medium text-fg">Host's reason:</span> {cancellation.declineReason}
-                </p>
-              ) : (
-                <p className="text-xs text-fg-muted">The host declined without providing a reason.</p>
-              )}
-            </div>
-          )}
-
-          {/* Early-exit: expired — no host response */}
-          {cancellation && cancellation.status === "Expired" && (
-            <div className="bg-bg-subtle border border-border rounded-xl px-4 py-3 space-y-1">
-              <p className="text-sm font-medium text-fg">Your request expired</p>
-              <p className="text-xs text-fg-muted">The host didn't respond within 72 hours. You can submit a new request.</p>
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT — info & details */}
-        <div className="space-y-3 lg:sticky lg:top-8">
-
-          {/* Status */}
-          <div className="bg-bg-card rounded-2xl shadow-card px-5 py-4">
-            <StatusPill status={booking.status} />
           </div>
-
-          {/* Lease progress (active bookings) */}
-          {isActive && daysLeft != null && leaseProgress !== null && (
-            <div className="bg-bg-card rounded-2xl shadow-card px-5 py-4">
-              <div className="flex items-end justify-between mb-2">
-                <div>
-                  <p className={cn("text-2xl font-bold", daysLeft <= 14 ? "text-danger" : daysLeft <= 30 ? "text-warning" : "text-fg")}>
-                    {daysLeft} <span className="text-base font-semibold">days left</span>
-                  </p>
-                  {monthsLeft != null && monthsLeft > 0 && (
-                    <p className="text-xs text-fg-muted mt-0.5">≈ {monthsLeft} month{monthsLeft !== 1 ? "s" : ""} remaining</p>
-                  )}
-                </div>
-                <p className="text-sm font-medium text-fg-muted">{leaseProgress}% used</p>
-              </div>
-              <div className="h-2 bg-bg-subtle rounded-full overflow-hidden">
-                <div className={cn("h-full rounded-full transition-all", daysLeft <= 14 ? "bg-danger" : daysLeft <= 30 ? "bg-warning" : "bg-success")} style={{ width: `${leaseProgress}%` }} />
-              </div>
-              <div className="flex justify-between text-xs text-fg-muted mt-1.5">
-                <span>{formatDate(booking.checkInDate)}</span>
-                <span>{formatDate(booking.checkOutDate)}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Dates + lease details */}
-          <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-              <CalendarDays size={15} className="text-fg-muted shrink-0" />
-              <div className="flex-1 flex justify-between text-sm">
-                <span className="text-fg-muted">Check-in</span>
-                <span className="font-medium text-fg">{formatDate(booking.checkInDate)}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-              <CalendarDays size={15} className="text-fg-muted shrink-0" />
-              <div className="flex-1 flex justify-between text-sm">
-                <span className="text-fg-muted">Check-out</span>
-                <span className="font-medium text-fg">{formatDate(booking.checkOutDate)}</span>
-              </div>
-            </div>
-            {durationMonths > 0 && (
-              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-                <Timer size={15} className="text-fg-muted shrink-0" />
-                <div className="flex-1 flex justify-between text-sm">
-                  <span className="text-fg-muted">Duration</span>
-                  <span className="font-medium text-fg">{durationMonths} month{durationMonths !== 1 ? "s" : ""}</span>
-                </div>
-              </div>
-            )}
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-              <Coins size={15} className="text-fg-muted shrink-0" />
-              <div className="flex-1 flex justify-between text-sm">
-                <span className="text-fg-muted">Monthly rent</span>
-                <span className="font-bold text-fg">{formatThb(monthlyRate)}</span>
-              </div>
-            </div>
-            {booking.depositAmount > 0 && (
-              <div className="flex items-center gap-3 px-5 py-3.5">
-                <Timer size={15} className="text-fg-muted shrink-0 opacity-0" />
-                <div className="flex-1 flex justify-between text-sm">
-                  <span className="text-fg-muted">Deposit</span>
-                  <span className="font-medium text-fg">{formatThb(booking.depositAmount)}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* TM-30 */}
-          {(isActive || isConfirmed || isPendingPayment) && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-fg">TM-30 Registration</h3>
-                <p className="text-xs text-fg-muted mt-0.5">
-                  Your host registers each guest with Thai immigration within 24 hours of check-in.
-                </p>
-              </div>
-              {guests && guests.filter(g => !!g.passportNumber).length > 0 ? (
-                <div className="px-5">
-                  {guests.filter(g => !!g.passportNumber).map((g) => (
-                    <GuestTm30Row
-                      key={g.id}
-                      bookingId={id!}
-                      guestId={g.id}
-                      guestName={[g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest"}
-                      isMain={g.isMainTenant}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="px-5 py-3.5">
-                  <p className="text-xs text-fg-muted leading-relaxed">
-                    Passport details required before TM-30 can be filed. Add them above.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Landlord contact */}
-          {(isActive || isConfirmed) && booking.landlordContact && (
-            booking.landlordContact.contactChannels.length > 0 || booking.landlordContact.phone
-          ) && (
-            <LandlordContactCard contact={booking.landlordContact} />
-          )}
-
-          {/* Open issues (tickets) */}
-          {(isActive || isConfirmed) && (() => {
-            const tickets = bookingTickets ?? [];
-            const openTickets = tickets.filter(
-              (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
-            );
-            return (
-              <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-                <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Wrench size={14} className="text-fg-muted" />
-                    <h3 className="text-sm font-semibold text-fg">
-                      Issues {openTickets.length > 0 && <span className="text-fg-muted">· {openTickets.length} open</span>}
-                    </h3>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg h-8 text-xs"
-                    onClick={() => setReportIssueOpen(true)}
-                  >
-                    <Plus size={12} className="mr-1" />Report
-                  </Button>
-                </div>
-                {tickets.length === 0 ? (
-                  <p className="px-5 py-4 text-xs text-fg-muted leading-relaxed">
-                    Anything broken, dirty, or unsafe? Report it here and your host gets notified.
-                  </p>
-                ) : (
-                  <div className="divide-y divide-border">
-                    {tickets.slice(0, 5).map((t) => (
-                      <Link
-                        key={t.id}
-                        to={`/me/guest/tickets/${t.id}`}
-                        className="flex items-start gap-3 px-5 py-3 hover:bg-bg-subtle transition-colors"
-                      >
-                        <span className="text-base shrink-0 mt-0.5">{ticketKindIcon(t.kind)}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-fg line-clamp-1">{t.title}</p>
-                          <p className="text-[11px] text-fg-muted mt-0.5">{formatDate(t.createdAt)}</p>
-                        </div>
-                        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
-                          {tenantTicketStatusLabel(t.status)}
-                        </span>
-                      </Link>
-                    ))}
-                    {tickets.length > 5 && (
-                      <Link
-                        to="/me/guest/tickets"
-                        className="block px-5 py-2.5 text-xs text-brand hover:underline text-center"
-                      >
-                        View all {tickets.length} issues →
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* PEA electricity */}
-          {(isActive || isConfirmed) && (
-            <GuestPeaBillCard bookingId={id!} />
-          )}
-
-          {/* WiFi — shown when active/confirmed */}
-          {(isActive || isConfirmed) && listing && (listing.wifiName || listing.wifiPassword) && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-fg">WiFi</h3>
-              </div>
-              <div className="flex items-center gap-3 px-5 py-3 border-b border-border last:border-none">
-                <Wifi size={16} className="text-fg-muted shrink-0" />
-                <div className="flex-1 text-sm font-medium text-fg">{listing.wifiName ?? "Network"}</div>
-                {listing.wifiName && <CopyBtn text={listing.wifiName} />}
-              </div>
-              {listing.wifiPassword && (
-                <div className="flex items-center gap-3 px-5 py-3">
-                  <div className="w-4 shrink-0" />
-                  <div className="flex-1 text-sm font-mono text-fg">
-                    {showWifiPwd ? listing.wifiPassword : "•".repeat(Math.min(listing.wifiPassword.length, 14))}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setShowWifiPwd((v) => !v)}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-bg-subtle hover:bg-border text-fg-muted hover:text-fg transition-colors"
-                    >
-                      {showWifiPwd ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                    <CopyBtn text={listing.wifiPassword} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* House rules */}
-          {(isActive || isConfirmed) && listing?.houseRules && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-fg">House rules</h3>
-              </div>
-              <p className="px-5 py-4 text-sm text-fg-muted whitespace-pre-line leading-relaxed">
-                {listing.houseRules}
-              </p>
-            </div>
-          )}
-
-          {/* Amenities */}
-          {presentAmenities.length > 0 && (
-            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border">
-                <h3 className="text-sm font-semibold text-fg">Amenities</h3>
-              </div>
-              <div className="flex flex-wrap gap-2 px-5 py-4">
-                {presentAmenities.map((a) => (
-                  <span key={a.amenityId} className="inline-flex items-center gap-1.5 bg-bg-subtle rounded-full px-3 py-1.5 text-xs font-medium text-fg">
-                    {a.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Right column: existing reports + emergency */}
+      <div className="space-y-5">
+
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg">
+              Your reports {openTickets.length > 0 && <span className="text-fg-muted font-normal">· {openTickets.length} open</span>}
+            </h3>
+          </div>
+          {!bookingTickets?.length ? (
+            <div className="px-5 py-8 text-center">
+              <Wrench size={24} className="text-fg-subtle mx-auto mb-2" />
+              <p className="text-sm font-semibold text-fg">No active reports</p>
+              <p className="text-xs text-fg-muted mt-1">Submitted reports show up here with your host's reply and resolution status.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {bookingTickets.map((t) => (
+                <Link
+                  key={t.id}
+                  to={`/me/guest/tickets/${t.id}`}
+                  className="flex items-start gap-3 px-5 py-3 hover:bg-bg-subtle transition-colors"
+                >
+                  <span className="text-base shrink-0 mt-0.5">{ticketKindIcon(t.kind)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-fg line-clamp-1">{t.title}</p>
+                    <p className="text-[11px] text-fg-muted mt-0.5">{formatDate(t.createdAt)}</p>
+                  </div>
+                  <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
+                    {tenantTicketStatusLabel(t.status)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={15} className="text-danger" />
+            <h3 className="text-sm font-semibold text-fg">Emergency?</h3>
+          </div>
+          <p className="text-xs text-fg-muted leading-relaxed">
+            For life-safety issues (gas, fire, flood, break-in) — call emergency services first, then your host.
+          </p>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-fg-muted">Police</span><a href="tel:191" className="font-mono font-semibold text-fg">191</a></div>
+            <div className="flex justify-between"><span className="text-fg-muted">Ambulance</span><a href="tel:1669" className="font-mono font-semibold text-fg">1669</a></div>
+            <div className="flex justify-between"><span className="text-fg-muted">Tourist police</span><a href="tel:1155" className="font-mono font-semibold text-fg">1155</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── Header meta ──
+  const metaParts: React.ReactNode[] = [];
+  metaParts.push(<span key="dates" className="font-medium text-fg">{formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}</span>);
+  if (durationMonths > 0) metaParts.push(<span key="dur">{durationMonths} month{durationMonths !== 1 ? "s" : ""}</span>);
+  metaParts.push(<span key="host">Hosted by <span className="text-fg font-medium">your host</span></span>);
+
+  return (
+    <div className="space-y-5">
+
+      {/* Breadcrumb */}
+      <Link
+        to="/me/guest/bookings"
+        className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg transition-colors"
+      >
+        <ArrowLeft size={16} />My stays
+      </Link>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold text-fg">
+            {listing?.title ?? booking.assetName ?? "My stay"}
+          </h1>
+          <div className="flex items-center gap-2 flex-wrap text-sm text-fg-muted mt-1">
+            {metaParts.map((node, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <span className="w-1 h-1 rounded-full bg-fg-subtle" />}
+                {node}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        <StatusPill status={booking.status} />
+      </div>
+
+      {/* Glance strip */}
+      {glance}
+
+      {/* Single most-urgent alert */}
+      {alertBanner}
+
+      {/* Tabs */}
+      <TabsNav active={tab} onChange={setTab} counts={counts} />
+
+      <div role="tabpanel">
+        {tab === "stay"      && stayPane}
+        {tab === "payments"  && paymentsPane}
+        {tab === "property"  && propertyPane}
+        {tab === "residents" && residentsPane}
+        {tab === "issues"    && issuesPane}
+      </div>
+
+      {/* ─── Dialogs ─── */}
 
       {/* Add co-resident dialog — full passport form */}
       <Dialog open={addGuestOpen} onOpenChange={(v) => { setAddGuestOpen(v); if (!v) { setNewResident({}); setResidentPhotos([]); } }}>
@@ -1700,7 +1969,6 @@ export function GuestBookingDetailPage() {
 
           <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
 
-            {/* Name */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Name</p>
               <div className="grid grid-cols-2 gap-3">
@@ -1715,7 +1983,6 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
-            {/* Gender */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Gender</p>
               <div className="flex gap-3">
@@ -1737,7 +2004,6 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
-            {/* Passport details */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Passport</p>
               <div className="space-y-3">
@@ -1764,7 +2030,6 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
-            {/* Visa & Entry */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Visa & Entry into Thailand</p>
               <div className="space-y-3">
@@ -1800,7 +2065,6 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
-            {/* Passport photos */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Passport photos</p>
               <PassportPageGuide />
@@ -1895,7 +2159,7 @@ export function GuestBookingDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Report issue dialog */}
+      {/* Report issue dialog — kept for any external trigger callers */}
       <Dialog
         open={reportIssueOpen}
         onOpenChange={(v) => {
@@ -2069,9 +2333,6 @@ export function GuestBookingDetailPage() {
           promptPayId={payment?.promptPayId}
           onSuccess={async () => {
             const isInitialPayment = !gatewayPaymentId;
-            // Confirm the specific payment. If sandboxConfirm fails, surface it —
-            // a silent swallow here let users believe they'd paid when the
-            // invoice was still Pending, and they could be charged again on retry.
             const paymentIdToConfirm = gatewayPaymentId
               ?? (payment?.payments ?? []).find((p) => p.status !== "Paid")?.id;
             if (paymentIdToConfirm) {
@@ -2088,6 +2349,31 @@ export function GuestBookingDetailPage() {
           onClose={() => setGatewayOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── TM-30 summary banner used in Co-residents tab ────────────────────────────
+
+function TmSummaryBanner({
+  bookingId,
+  guests,
+}: {
+  bookingId: string;
+  guests: { id: string; firstName?: string; lastName?: string; isMainTenant: boolean }[];
+}) {
+  // We need the filing status for each guest. Re-use the row hook in aggregate.
+  // For a banner we don't need detail — just count.
+  return (
+    <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-start gap-3">
+      <Shield size={18} className="text-success shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-fg">TM-30 registration in progress</p>
+        <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+          Your host registers each guest with Thai immigration within 24h of check-in. Status per guest is shown below — keep your receipt PDF in case you need it for visa extension.
+        </p>
+        <p className="sr-only">Booking {bookingId} · {guests.length} foreign guests</p>
+      </div>
     </div>
   );
 }

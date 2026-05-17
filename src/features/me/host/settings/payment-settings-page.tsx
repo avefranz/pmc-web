@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyProfile, useUpdateProfile } from "@/lib/hooks/use-profile";
 
-export function PaymentSettingsPage() {
+export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { data: profile, isLoading } = useMyProfile();
   const updateProfile = useUpdateProfile();
 
@@ -51,16 +51,18 @@ export function PaymentSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl">
-      <div className="flex items-center gap-2 mb-6">
-        <Link
-          to="/me/profile"
-          className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
-        >
-          <ArrowLeft size={18} />
-        </Link>
-        <h1 className="text-2xl font-semibold text-fg">Payment details</h1>
-      </div>
+    <div className={embedded ? "" : "max-w-3xl"}>
+      {!embedded && (
+        <div className="flex items-center gap-2 mb-6">
+          <Link
+            to="/me/profile"
+            className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+          <h1 className="text-2xl font-semibold text-fg">Payment details</h1>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-4">
         <div className="bg-bg-card rounded-2xl shadow-card p-6 space-y-4">

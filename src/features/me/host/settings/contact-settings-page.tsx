@@ -21,7 +21,7 @@ const CHANNELS: { value: ContactChannel; label: string; emoji: string }[] = [
 
 const COUNTRY_CODES = ["+66", "+7", "+1", "+44", "+49", "+33", "+81", "+82", "+86", "+91"];
 
-export function ContactSettingsPage() {
+export function ContactSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { data: profile, isLoading } = useMyProfile();
   const updateProfile = useUpdateProfile();
   const location = useLocation();
@@ -80,26 +80,28 @@ export function ContactSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl">
-      <div className="flex items-center gap-2 mb-6">
-        {setupMode ? (
-          <button
-            type="button"
-            onClick={() => navigate(returnTo ?? "/me/host/properties")}
-            className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
-          >
-            <ArrowLeft size={18} />
-          </button>
-        ) : (
-          <Link
-            to="/me/profile"
-            className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
-          >
-            <ArrowLeft size={18} />
-          </Link>
-        )}
-        <h1 className="text-2xl font-semibold text-fg">Contact details</h1>
-      </div>
+    <div className={embedded ? "" : "max-w-3xl"}>
+      {!embedded && (
+        <div className="flex items-center gap-2 mb-6">
+          {setupMode ? (
+            <button
+              type="button"
+              onClick={() => navigate(returnTo ?? "/me/host/properties")}
+              className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          ) : (
+            <Link
+              to="/me/profile"
+              className="p-1.5 rounded-lg hover:bg-bg-subtle text-fg-muted hover:text-fg transition-colors"
+            >
+              <ArrowLeft size={18} />
+            </Link>
+          )}
+          <h1 className="text-2xl font-semibold text-fg">Contact details</h1>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-4">
         <div className="bg-bg-card rounded-2xl shadow-card p-6 space-y-5">

@@ -1,4 +1,5 @@
 import { useNavigate, Link } from "react-router-dom";
+import { Menu } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +13,7 @@ import { useMe } from "@/lib/hooks/use-auth";
 import { initials } from "@/lib/utils/format";
 import { useQueryClient } from "@tanstack/react-query";
 
-export function UserMenu({ compact }: { compact?: boolean } = {}) {
+export function UserMenu() {
   const navigate = useNavigate();
   const { token, clearAuth } = useAuthStore();
   const { data: caps } = useCapabilities();
@@ -41,11 +42,14 @@ export function UserMenu({ compact }: { compact?: boolean } = {}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2.5 rounded-pill border border-border px-3 py-1.5 hover:shadow-card transition-shadow bg-bg-card">
+        <button
+          className="flex items-center gap-2 rounded-pill border border-border pl-2.5 pr-1 py-1 hover:shadow-card transition-shadow bg-bg-card"
+          aria-label="Account menu"
+        >
+          <Menu size={16} className="text-fg-muted" />
           <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center">
             <span className="text-white text-xs font-semibold">{initials(name)}</span>
           </div>
-          {!compact && <span className="text-sm font-medium text-fg hidden sm:block">{name}</span>}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

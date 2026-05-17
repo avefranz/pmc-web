@@ -1,6 +1,32 @@
 import { apiClient } from "./client";
 import type { AssetDto, AssetMemberDto, AssetSummaryDto, CreateAssetRequest, UpdateAssetRequest, UpdateLocationRequest } from "../types";
 
+export type PoiCategory = "Transit" | "Food" | "Shopping" | "Health" | "Education";
+
+export type NearbyPoi = {
+  name:           string;
+  kind:           string;
+  category:       PoiCategory;
+  distanceMeters: number;
+  latitude:       number;
+  longitude:      number;
+};
+
+export type NearbyPoisResponse = {
+  assetId:      string;
+  latitude:     number;
+  longitude:    number;
+  radiusMeters: number;
+  transit:      NearbyPoi[];
+  food:         NearbyPoi[];
+  shopping:     NearbyPoi[];
+  health:       NearbyPoi[];
+  education:    NearbyPoi[];
+  source:       "osm";
+  cached:       boolean;
+  degraded:     boolean;
+};
+
 export const assetsApi = {
   getAll: () => apiClient.get<AssetDto[]>("/api/assets").then((r) => r.data),
 
@@ -26,4 +52,9 @@ export const assetsApi = {
   unlinkLandlord: (id: string) => apiClient.delete(`/api/assets/${id}/landlord`),
 
   delete: (id: string) => apiClient.delete(`/api/assets/${id}`),
+
+  getNearbyPois: (assetId: string, radius = 500) =>
+    apiClient
+      .get<{ data: NearbyPoisResponse }>(`/api/assets/${assetId}/nearby-pois`, { params: { radius } })
+      .then((r) => r.data.data),
 };

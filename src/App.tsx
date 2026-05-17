@@ -37,8 +37,7 @@ import { InviteLandlordPage } from "@/features/me/host/managed/invite-page";
 // Host properties
 import { HostHomePage } from "@/features/me/host/host-home-page";
 import { PropertiesListPage } from "@/features/me/host/properties/list-page";
-import { PropertyCreatePage } from "@/features/me/host/properties/create-page";
-import { PropertyDetailPage } from "@/features/me/host/properties/detail-page";
+import { PropertyEditorPage } from "@/features/me/host/properties/editor/property-editor-page";
 
 // Host requests
 import { HostRequestsPage } from "@/features/me/host/requests/list-page";
@@ -133,8 +132,8 @@ export default function App() {
         {/* Host context */}
         <Route path="/me/host" element={<HostHomePage />} />
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
-        <Route path="/me/host/properties/new" element={<PropertyCreatePage />} />
-        <Route path="/me/host/properties/:id" element={<PropertyDetailPage />} />
+        <Route path="/me/host/properties/new" element={<PropertyEditorPage />} />
+        <Route path="/me/host/properties/:id" element={<PropertyEditorPage />} />
         <Route path="/me/host/requests" element={<HostRequestsPage />} />
         <Route path="/me/host/requests/:id" element={<HostRequestDetailPage />} />
         <Route path="/me/host/bookings" element={<HostBookingsPage />} />

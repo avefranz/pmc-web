@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { MapPin } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { SiamoLogo } from "./siamo-logo";
@@ -47,42 +47,114 @@ function Logo({ to }: { to: string }) {
   );
 }
 
-function ContextSwitcher({ isHost }: { isHost: boolean }) {
+type CurrentRole = "host" | "guest" | null;
+
+// Two-capsule role toggle. Active capsule = current role; inactive capsules
+// are nav targets to that role's home. On role-neutral routes (Profile,
+// onboarding etc.) neither capsule is "active" — the toggle becomes a
+// "where would you like to go" control. Hidden entirely on onboarding flows
+// and outside `/me`.
+function RoleToggle() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { data: caps } = useCapabilities();
+
+  const currentRole: CurrentRole = pathname.startsWith("/me/host")
+    ? "host"
+    : pathname.startsWith("/me/guest")
+    ? "guest"
+    : null;
+
+  const ownedAssets = caps?.stats.ownedAssetsCount ?? 0;
+  const pendingApps = caps?.stats.pendingApplicationsCount ?? 0;
+
   return (
-    <div className="flex items-center bg-bg-subtle rounded-full p-0.5 gap-0.5">
-      <Link
-        to="/me/guest"
-        className={cn(
-          "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all",
-          !isHost ? "bg-bg-card text-fg shadow-sm" : "text-fg-muted hover:text-fg",
-        )}
-      >
-        Renting
-      </Link>
-      <Link
-        to="/me/host"
-        className={cn(
-          "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all",
-          isHost ? "bg-bg-card text-fg shadow-sm" : "text-fg-muted hover:text-fg",
-        )}
-      >
-        Hosting
-      </Link>
+    <div className="inline-flex h-9 rounded-pill border border-border bg-bg-card overflow-hidden shadow-sm">
+      <RoleCapsule
+        active={currentRole === "host"}
+        icon="🏡"
+        label="Hosting"
+        meta={ownedAssets > 0 ? String(ownedAssets) : undefined}
+        emptyHint={currentRole === "host" && ownedAssets === 0 ? "+ List" : undefined}
+        onClick={() => navigate("/me/host/properties")}
+      />
+      <div className="w-px bg-border" />
+      <RoleCapsule
+        active={currentRole === "guest"}
+        icon="🧳"
+        label="Renting"
+        meta={pendingApps > 0 ? String(pendingApps) : undefined}
+        emptyHint={currentRole === "guest" && pendingApps === 0 ? "Browse →" : undefined}
+        onClick={() => navigate("/me/guest/bookings")}
+      />
     </div>
   );
+}
+
+function RoleCapsule({
+  active,
+  icon,
+  label,
+  meta,
+  emptyHint,
+  onClick,
+}: {
+  active: boolean;
+  icon: string;
+  label: string;
+  meta?: string;
+  emptyHint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "px-3 h-full flex items-center gap-1.5 text-sm font-semibold transition-colors",
+        active
+          ? "bg-fg text-white"
+          : "text-fg-muted hover:text-fg hover:bg-bg-subtle",
+      )}
+    >
+      <span aria-hidden>{icon}</span>
+      <span>{label}</span>
+      {meta && (
+        <span
+          className={cn(
+            "tabular-nums",
+            active ? "text-white/70" : "text-fg-subtle",
+          )}
+        >
+          · {meta}
+        </span>
+      )}
+      {emptyHint && <span className="text-white/80 font-medium">· {emptyHint}</span>}
+    </button>
+  );
+}
+
+// Routes where the toggle should be hidden entirely — forced flows and
+// transient redirects where a role switch doesn't apply.
+function isToggleHidden(pathname: string): boolean {
+  if (!pathname.startsWith("/me")) return true;
+  if (pathname === "/me") return true;
+  if (pathname.startsWith("/me/onboarding")) return true;
+  return false;
 }
 
 export function TopBar() {
   const { pathname } = useLocation();
   const isHost  = pathname.startsWith("/me/host");
   const isGuest = pathname.startsWith("/me/guest");
-  const inMe    = pathname.startsWith("/me");
 
   const { data: caps } = useCapabilities();
   const unseenApps = useUnseenApplications();
 
   // Hide host nav tabs until at least one property exists (or user is a manager)
-  const hostHasContent = !caps || (caps.stats.ownedAssetsCount ?? 0) > 0 || caps.isManager;
+  const ownedAssets = caps?.stats.ownedAssetsCount ?? 0;
+  const hostHasContent = !caps || ownedAssets > 0 || caps.isManager;
   const nav = isHost ? (hostHasContent ? HOST_NAV : null) : isGuest ? GUEST_NAV : null;
 
   function getBadge(item: typeof HOST_NAV[number]) {
@@ -92,13 +164,23 @@ export function TopBar() {
     return undefined;
   }
 
+  const showToggle = !isToggleHidden(pathname);
+
   return (
     <header className="sticky top-0 z-40 h-[var(--topbar-h)] bg-bg-card border-b border-border flex items-center">
-      <div className="w-full px-4 md:px-8 lg:px-12 flex items-center gap-6">
-        <Logo to={isHost ? "/me/host/properties" : isGuest ? "/me/guest/bookings" : "/me"} />
+      <div className="w-full px-4 md:px-8 lg:px-12 flex items-center gap-4">
+        {/* Left: logo + role toggle */}
+        <div className="flex items-center gap-3 shrink-0">
+          <Logo to={isHost ? "/me/host/properties" : isGuest ? "/me/guest/bookings" : "/me"} />
+          {showToggle && (
+            <div className="hidden md:block">
+              <RoleToggle />
+            </div>
+          )}
+        </div>
 
-        {/* Desktop: sub-nav tabs */}
-        <nav className="hidden md:flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
+        {/* Center: nav */}
+        <nav className="hidden md:flex items-center gap-1 flex-1 justify-center min-w-0 overflow-x-auto">
           {nav && nav.map((item) => (
             <NavItem
               key={item.to}
@@ -107,23 +189,17 @@ export function TopBar() {
               badge={getBadge(item)}
             />
           ))}
-          {!nav && inMe && <div className="flex-1" />}
         </nav>
 
-        {/* Right: context switcher + Browse + avatar */}
-        <div className="flex items-center gap-3 ml-auto shrink-0">
-          {inMe && (
-            <div className="hidden md:block">
-              <ContextSwitcher isHost={isHost} />
-            </div>
-          )}
+        {/* Right: Browse CTA + user menu */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
           <Link
             to="/listings"
             className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
           >
             <MapPin size={14} />Browse rentals
           </Link>
-          <UserMenu compact={!!(isHost || isGuest)} />
+          <UserMenu />
         </div>
       </div>
     </header>

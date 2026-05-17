@@ -7,6 +7,7 @@ const keys = {
   detail: (id: string) => ["assets", id] as const,
   summary: (id: string) => ["assets", id, "summary"] as const,
   members: (id: string) => ["assets", id, "members"] as const,
+  nearbyPois: (id: string, radius: number) => ["assets", id, "nearby-pois", radius] as const,
 };
 
 export const useAssets = () =>
@@ -67,12 +68,27 @@ export const useUnlinkLandlord = (id: string) => {
   });
 };
 
+export const useNearbyPois = (assetId: string | undefined, radius = 500, enabled = true) =>
+  useQuery({
+    queryKey: keys.nearbyPois(assetId ?? "", radius),
+    queryFn: () => assetsApi.getNearbyPois(assetId!, radius),
+    enabled: !!assetId && enabled,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    retry: 0,
+  });
+
 export const useDeleteAsset = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => assetsApi.delete(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.all });
+    onSuccess: (_d, id) => {
+      // Immediately remove from list cache so navigation lands on a clean list.
+      qc.setQueryData<import("../types").AssetDto[]>(keys.all, (old) =>
+        old ? old.filter((a) => a.id !== id) : old,
+      );
+      qc.removeQueries({ queryKey: keys.detail(id) });
+      qc.removeQueries({ queryKey: keys.summary(id) });
       qc.invalidateQueries({ queryKey: ["finance"] });
     },
   });

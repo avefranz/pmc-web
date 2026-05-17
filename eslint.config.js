@@ -20,4 +20,13 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Section files intentionally co-locate a SectionDef config object and
+    // its Dialog component in one file. That's the whole point of the
+    // contract — one file per section. The fast-refresh warning is moot.
+    files: ['src/features/me/host/properties/editor/sections/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])
