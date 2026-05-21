@@ -1,0 +1,135 @@
+:root {
+  /* ── Color ── */
+  --color-bg:           #F9F8F5;
+  --color-bg-card:      #FFFFFF;
+  --color-bg-subtle:    #F2EDE8;
+  --color-fg:           #171412;
+  --color-fg-muted:     #6B6560;
+  --color-fg-subtle:    #B0AAA4;
+  --color-border:       #E8E3DC;
+  --color-border-strong:#D6D0C8;
+
+  --color-primary:      hsl(157, 40%, 46%);
+  --color-primary-hover:hsl(157, 40%, 38%);
+  --color-primary-fg:   #FFFFFF;
+
+  --color-success:      #2D8A4F;
+  --color-success-bg:   #E8F5EE;
+  --color-warning:      #B5670F;
+  --color-warning-bg:   #FFF4E0;
+  --color-danger:       #C13515;
+  --color-danger-bg:    #FDECE7;
+  --color-info:         #0C70AB;
+  --color-info-bg:      #E5F2FA;
+
+  --color-overlay:      rgba(0, 0, 0, 0.5);
+
+  /* ── Surface overrides (used in shell backgrounds) ── */
+  --color-header-bg:    rgba(249, 248, 245, 0.97);
+  --color-footer-bg:    rgba(242, 237, 232, 0.5);
+
+  /* ── Typography ── */
+  --font-sans:    "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-mono:    "JetBrains Mono", "Fira Code", monospace;
+
+  --text-xs:   12px;
+  --text-sm:   14px;
+  --text-base: 16px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  28px;
+  --text-3xl:  36px;
+  --text-4xl:  48px;
+  --text-hero: 64px;
+
+  --leading-tight:  1.15;
+  --leading-snug:   1.3;
+  --leading-normal: 1.5;
+  --leading-loose:  1.7;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ── Spacing ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-8:  48px;
+  --space-10: 64px;
+  --space-12: 96px;
+
+  /* ── Radius ── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-pill: 999px;
+
+  /* ── Shadow ── */
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-hover:0 4px 20px rgba(0, 0, 0, 0.10);
+  --shadow-pop:  0 8px 32px rgba(0, 0, 0, 0.14);
+  --shadow-modal:0 16px 48px rgba(0, 0, 0, 0.18);
+
+  /* ── Layout ── */
+  --topbar-h:  80px;
+  --container: 1280px;
+  --sidebar-w: 280px;
+}
+
+.dark {
+  /* ── Color overrides ── */
+  --color-bg:           #1A1D2E;
+  --color-bg-card:      #232740;
+  --color-bg-subtle:    #1E2235;
+  --color-fg:           #EEF0F6;
+  --color-fg-muted:     #8B95B0;
+  --color-fg-subtle:    #5B6380;
+  --color-border:       #2D3147;
+  --color-border-strong:#3D4260;
+
+  --color-primary:      hsl(157, 50%, 55%);
+  --color-primary-hover:hsl(157, 50%, 47%);
+
+  --color-success:      #44BD73;
+  --color-success-bg:   #0F2A1B;
+  --color-warning:      #E09425;
+  --color-warning-bg:   #2A1C08;
+  --color-danger:       #E8624A;
+  --color-danger-bg:    #2A0E08;
+  --color-info:         #3EB3E8;
+  --color-info-bg:      #07202F;
+
+  --color-header-bg:    rgba(25, 28, 42, 0.97);
+  --color-footer-bg:    rgba(15, 17, 28, 0.5);
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* { box-sizing: border-box; }
+
+button { font-family: inherit; cursor: pointer; }
+
+a { color: inherit; text-decoration: none; }
+
+img { display: block; max-width: 100%; }

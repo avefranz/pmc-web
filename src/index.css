@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 10px;
+    /* Siamo palette — light mode (converted from OKLCH) */
+    --background: 43 20% 97%;
+    --foreground: 0 0% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 18%;
+    --primary: 157 40% 46%;
+    --primary-foreground: 43 20% 98%;
+    --secondary: 43 10% 95%;
+    --secondary-foreground: 0 0% 18%;
+    --muted: 43 10% 95%;
+    --muted-foreground: 43 5% 45%;
+    --accent: 157 40% 46%;
+    --accent-foreground: 43 20% 98%;
+    --destructive: 12 65% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 87%;
+    --ring: 157 40% 46%;
+  }
+
+  .dark {
+    --background: 224 24% 13%;
+    --foreground: 220 5% 98%;
+    --card: 225 16% 21%;
+    --card-foreground: 220 5% 98%;
+    --popover: 225 16% 21%;
+    --popover-foreground: 220 5% 98%;
+    --primary: 220 10% 93%;
+    --primary-foreground: 225 16% 21%;
+    --secondary: 225 12% 28%;
+    --secondary-foreground: 220 5% 98%;
+    --muted: 225 12% 28%;
+    --muted-foreground: 225 8% 70%;
+    --accent: 225 12% 28%;
+    --accent-foreground: 220 5% 98%;
+    --destructive: 12 70% 65%;
+    --destructive-foreground: 220 5% 98%;
+    --border: 0 0% 20%;
+    --input: 0 0% 22%;
+    --ring: 225 8% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .scrollbar-hide,
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar,
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

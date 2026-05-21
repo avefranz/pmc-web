@@ -1,0 +1,220 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronDown, Search, X, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
+
+// ── Static fallback: [code, demonym] ─────────────────────────────────────
+// Value sent to backend = ISO 3166-1 alpha-2 code
+const FALLBACK: [string, string][] = [
+  ["AF","Afghan"],["AL","Albanian"],["DZ","Algerian"],["AR","Argentinian"],
+  ["AM","Armenian"],["AU","Australian"],["AT","Austrian"],["AZ","Azerbaijani"],
+  ["BH","Bahraini"],["BD","Bangladeshi"],["BY","Belarusian"],["BE","Belgian"],
+  ["BO","Bolivian"],["BA","Bosnian"],["BR","Brazilian"],["GB","British"],
+  ["BG","Bulgarian"],["KH","Cambodian"],["CA","Canadian"],["CL","Chilean"],
+  ["CN","Chinese"],["CO","Colombian"],["HR","Croatian"],["CZ","Czech"],
+  ["DK","Danish"],["NL","Dutch"],["EG","Egyptian"],["EE","Estonian"],
+  ["ET","Ethiopian"],["PH","Filipino"],["FI","Finnish"],["FR","French"],
+  ["GE","Georgian"],["DE","German"],["GH","Ghanaian"],["GR","Greek"],
+  ["GT","Guatemalan"],["HN","Honduran"],["HU","Hungarian"],["IN","Indian"],
+  ["ID","Indonesian"],["IR","Iranian"],["IQ","Iraqi"],["IE","Irish"],
+  ["IL","Israeli"],["IT","Italian"],["JP","Japanese"],["JO","Jordanian"],
+  ["KZ","Kazakhstani"],["KE","Kenyan"],["KR","Korean"],["KW","Kuwaiti"],
+  ["KG","Kyrgyz"],["LV","Latvian"],["LB","Lebanese"],["LT","Lithuanian"],
+  ["MY","Malaysian"],["MX","Mexican"],["MN","Mongolian"],["MA","Moroccan"],
+  ["NP","Nepalese"],["NZ","New Zealander"],["NG","Nigerian"],["NO","Norwegian"],
+  ["PK","Pakistani"],["PS","Palestinian"],["PE","Peruvian"],["PL","Polish"],
+  ["PT","Portuguese"],["QA","Qatari"],["RO","Romanian"],["RU","Russian"],
+  ["SA","Saudi"],["RS","Serbian"],["SG","Singaporean"],["SK","Slovak"],
+  ["ZA","South African"],["ES","Spanish"],["LK","Sri Lankan"],["SD","Sudanese"],
+  ["SE","Swedish"],["CH","Swiss"],["SY","Syrian"],["TW","Taiwanese"],
+  ["TJ","Tajik"],["TH","Thai"],["TN","Tunisian"],["TR","Turkish"],
+  ["TM","Turkmen"],["UA","Ukrainian"],["AE","Emirati"],["US","American"],
+  ["UY","Uruguayan"],["UZ","Uzbek"],["VE","Venezuelan"],["VN","Vietnamese"],
+  ["YE","Yemeni"],["ZW","Zimbabwean"],
+];
+
+// ── Fetch demonyms from restcountries ─────────────────────────────────────
+async function fetchNationalities(): Promise<[string, string][]> {
+  const res = await fetch(
+    "https://restcountries.com/v3.1/all?fields=cca2,demonyms",
+    { signal: AbortSignal.timeout(4000) },
+  );
+  if (!res.ok) throw new Error("non-ok");
+  const data: { cca2: string; demonyms?: { eng?: { m?: string } } }[] = await res.json();
+  const pairs: [string, string][] = data
+    .map((c): [string, string] | null => {
+      const dem = c.demonyms?.eng?.m?.trim();
+      return dem ? [c.cca2, dem] : null;
+    })
+    .filter((x): x is [string, string] => x !== null);
+  return pairs.sort((a, b) => a[1].localeCompare(b[1]));
+}
+
+// ── Component ─────────────────────────────────────────────────────────────
+interface NationalityInputProps {
+  /** ISO 3166-1 alpha-2 code, e.g. "RU", "TH" */
+  value?: string;
+  onChange?: (code: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+export function NationalityInput({
+  value = "",
+  onChange,
+  placeholder = "Select nationality…",
+  disabled,
+  className,
+}: NationalityInputProps) {
+  const [options, setOptions] = useState<[string, string][]>(FALLBACK);
+  const [apiDown, setApiDown] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlighted, setHighlighted] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Display label for current code value
+  const currentLabel = options.find(([code]) => code === value)?.[1] ?? value;
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchNationalities()
+      .then(setOptions)
+      .catch(() => setApiDown(true));
+  }, []);
+
+  const filtered = (() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    // match demonym OR code
+    const starts = options.filter(([code, dem]) =>
+      dem.toLowerCase().startsWith(q) || code.toLowerCase().startsWith(q)
+    );
+    const contains = options.filter(([code, dem]) =>
+      !dem.toLowerCase().startsWith(q) && !code.toLowerCase().startsWith(q) &&
+      (dem.toLowerCase().includes(q) || code.toLowerCase().includes(q))
+    );
+    return [...starts, ...contains];
+  })();
+
+  const select = useCallback((code: string) => {
+    onChange?.(code);
+    setQuery("");
+    setOpen(false);
+    setHighlighted(0);
+  }, [onChange]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    const item = listRef.current?.children[highlighted] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [highlighted]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter") { setOpen(true); e.preventDefault(); }
+      return;
+    }
+    if (e.key === "ArrowDown") { setHighlighted((h) => Math.min(h + 1, filtered.length - 1)); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { setHighlighted((h) => Math.max(h - 1, 0)); e.preventDefault(); }
+    else if (e.key === "Enter") { if (filtered[highlighted]) select(filtered[highlighted][0]); e.preventDefault(); }
+    else if (e.key === "Escape") { setOpen(false); setQuery(""); }
+  }
+
+  return (
+    <div ref={containerRef} className={cn("relative", className)}>
+      <div
+        className={cn(
+          "flex h-10 items-center w-full rounded-md border border-input bg-background px-3 text-sm gap-2",
+          "ring-offset-background cursor-pointer",
+          open && "ring-2 ring-ring ring-offset-2",
+          disabled && "opacity-50 cursor-not-allowed",
+        )}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setHighlighted(0); setTimeout(() => inputRef.current?.focus(), 0); } }}
+      >
+        {open ? (
+          <Search size={13} className="shrink-0 text-muted-foreground" />
+        ) : (
+          <Search size={13} className="shrink-0 text-muted-foreground" />
+        )}
+
+        {open ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            placeholder="Type to search…"
+            onChange={(e) => { setQuery(e.target.value); setHighlighted(0); }}
+            onKeyDown={handleKeyDown}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+            autoComplete="off"
+          />
+        ) : (
+          <span className={cn("flex-1 truncate", !value && "text-muted-foreground")}>
+            {value ? currentLabel : placeholder}
+          </span>
+        )}
+
+        {value && !open ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            onMouseDown={(e) => { e.stopPropagation(); onChange?.(""); }}
+            className="shrink-0 text-muted-foreground hover:text-fg transition-colors"
+          >
+            <X size={13} />
+          </button>
+        ) : (
+          <ChevronDown size={13} className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <ul
+          ref={listRef}
+          className="absolute z-50 mt-1 w-full max-h-52 overflow-auto rounded-xl border border-border bg-background shadow-lg py-1 text-sm"
+        >
+          {apiDown && (
+            <li className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-fg-muted border-b border-border mb-1">
+              <AlertCircle size={11} className="text-warning shrink-0" />
+              Showing offline list
+            </li>
+          )}
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-fg-muted text-xs">No results</li>
+          ) : filtered.map(([code, dem], i) => (
+            <li
+              key={code}
+              onMouseDown={(e) => { e.preventDefault(); select(code); }}
+              onMouseEnter={() => setHighlighted(i)}
+              className={cn(
+                "flex items-center justify-between px-3 py-2 cursor-pointer transition-colors",
+                i === highlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                code === value && "font-semibold",
+              )}
+            >
+              <span>{dem}</span>
+              <span className="text-[11px] text-fg-muted font-mono">{code}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
