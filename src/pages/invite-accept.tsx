@@ -45,7 +45,7 @@ export default function InviteAcceptPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button
-              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               onClick={() => navigate(`/register?redirect=${inviteRedirect}`)}
             >
               Create account
@@ -90,7 +90,7 @@ export default function InviteAcceptPage() {
             <>
               {error && <p className="text-destructive text-sm">{error}</p>}
               <Button
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
                 onClick={handleAccept}
                 disabled={accept.isPending}
               >

@@ -96,9 +96,9 @@ function CategoryGroup({ title, amenities, presentSet, pending, onToggle, compac
           <AmenityCard
             key={a.id}
             amenity={a}
-            isPresent={presentSet.has(a.id)}
-            isPending={!!pending[a.id]}
-            onToggle={() => onToggle(a.id, presentSet.has(a.id))}
+            isPresent={presentSet.has(Number(a.id))}
+            isPending={!!pending[Number(a.id)]}
+            onToggle={() => onToggle(Number(a.id), presentSet.has(Number(a.id)))}
             compact={compact}
           />
         ))}
@@ -108,7 +108,7 @@ function CategoryGroup({ title, amenities, presentSet, pending, onToggle, compac
 }
 
 export function AmenityToggleGrid({ amenities, categories = [], presentSet, pending, onToggle, compact = false }: AmenityToggleGridProps) {
-  const presentCount = amenities.filter((a) => presentSet.has(a.id)).length;
+  const presentCount = amenities.filter((a) => presentSet.has(Number(a.id))).length;
   if (!amenities.length) return null;
 
   if (!categories.length) {
@@ -127,9 +127,9 @@ export function AmenityToggleGrid({ amenities, categories = [], presentSet, pend
   const uncategorized: AmenityDefinition[] = [];
 
   for (const a of amenities) {
-    if (a.categoryId != null && catMap.has(a.categoryId)) {
-      if (!grouped.has(a.categoryId)) grouped.set(a.categoryId, []);
-      grouped.get(a.categoryId)!.push(a);
+    if (a.categoryId != null && catMap.has(Number(a.categoryId))) {
+      if (!grouped.has(Number(a.categoryId))) grouped.set(Number(a.categoryId), []);
+      grouped.get(Number(a.categoryId))!.push(a);
     } else {
       uncategorized.push(a);
     }

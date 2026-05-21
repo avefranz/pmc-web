@@ -166,12 +166,12 @@ function PreviewCard({
           )}
           {/* Badges — top-left */}
           {mode === "create" ? (
-            <span className="absolute top-2 left-2 bg-white text-fg text-[10px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
+            <span className="absolute top-2 left-2 bg-bg-card text-fg text-[10px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
               ★ New
             </span>
           ) : (
             status && (
-              <span className="absolute top-2 left-2 bg-white text-fg text-[10px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
+              <span className="absolute top-2 left-2 bg-bg-card text-fg text-[10px] font-semibold px-2.5 py-1 rounded-full shadow-sm">
                 {status}
               </span>
             )

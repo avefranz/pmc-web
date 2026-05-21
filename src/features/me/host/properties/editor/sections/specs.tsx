@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Building, Building2, Home, Box } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +21,7 @@ function pickIcon(code?: string, label?: string): JSX.Element {
   return ICONS.other;
 }
 
-function isHouseVilla(types: { id: number; code?: string; name: string | { en: string } }[], assetTypeId: number | null): boolean {
+function isHouseVilla(types: { id: number; code?: string; name: string | Record<string, string> }[], assetTypeId: number | null): boolean {
   if (assetTypeId === null) return false;
   const t = types.find((t) => t.id === assetTypeId);
   if (!t) return false;

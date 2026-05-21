@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { addMonths, addDays, format, parseISO, startOfMonth, isBefore, isAfter, max } from "date-fns";
+import { addMonths, addDays, format, parseISO, isBefore, isAfter, max } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -185,7 +185,6 @@ export function BookingWidget({
   }
 
   const monthRate = effectiveMonthlyRate(baseRate, duration, listing.discountTiers ?? []);
-  const total = monthRate * duration;
   const tier = getApplicableTier(duration, listing.discountTiers ?? []);
   const hasDiscount = !!tier;
   const moveOutFormatted = format(moveOut, "MMMM d, yyyy");
@@ -336,7 +335,7 @@ export function BookingWidget({
 
       {/* CTA */}
       <Button
-        className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-12 text-base font-semibold shadow-sm"
+        className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-12 text-base font-semibold shadow-sm"
         disabled={!isAvailable || conflict}
         onClick={() => onRequestBook(moveInStr, duration)}
       >

@@ -346,7 +346,7 @@ export function GuestTicketDetailPage() {
               size="sm"
               disabled={(!body.trim() && attachments.length === 0) || sending}
               onClick={handleSend}
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-lg gap-1.5"
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-lg gap-1.5"
             >
               <Send size={13} />
               {sending ? "Sending…" : "Send"}

@@ -55,7 +55,7 @@ export function LandlordTerminationBanner({
               deadline={isNonPayment ? cureDeadline : (cancellation.expiresAt ?? cureDeadline)}
               prefix={isNonPayment ? "Pay or vacate in" : "Effective in"}
               expiredLabel="Deadline passed"
-              className="bg-white/60"
+              className="bg-bg-card/60"
             />
           </div>
 
@@ -150,7 +150,7 @@ export function LandlordTerminationBanner({
                     deadline={disputeDeadline}
                     prefix="Dispute window closes in"
                     expiredLabel="Dispute window closed"
-                    className="bg-white/60"
+                    className="bg-bg-card/60"
                   />
                 </div>
                 <p className="text-xs text-fg-muted">

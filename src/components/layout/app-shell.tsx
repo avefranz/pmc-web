@@ -2,7 +2,6 @@ import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { TopBar } from "./topbar";
 import { cn } from "@/lib/utils/cn";
 import { useHostNotificationPoller, useGuestNotificationPoller } from "@/lib/hooks/use-notification-poller";
-import { useCapabilities } from "@/lib/hooks/use-capabilities";
 
 function MobileBottomNav() {
   const { pathname } = useLocation();

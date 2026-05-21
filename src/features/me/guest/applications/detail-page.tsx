@@ -193,7 +193,7 @@ export function GuestApplicationDetailPage() {
 
           {/* Status banner */}
           <div className={cn("rounded-2xl p-5 ring-1 flex items-start gap-4", cfg.bg, cfg.ring)}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white/60">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-bg-card/60">
               <Icon size={20} className={cfg.color} />
             </div>
             <div className="flex-1 min-w-0">
@@ -280,7 +280,7 @@ export function GuestApplicationDetailPage() {
 
           {/* CTAs based on status */}
           {app.status === "Approved" && (
-            <Button asChild className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm">
+            <Button asChild className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm">
               <Link to="/me/guest/bookings">
                 <BedDouble size={15} className="mr-2" />View your stays
               </Link>

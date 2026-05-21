@@ -125,7 +125,7 @@ export const aiApi = {
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401) throw err; // let auth interceptor handle
-      if (status === 400 && process.env.NODE_ENV !== "production") {
+      if (status === 400 && import.meta.env.MODE !== "production") {
         console.warn("[aiApi.suggestListingTitle] 400 from gateway, using local template", err);
       }
       return {
@@ -153,7 +153,7 @@ export const aiApi = {
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401) throw err;
-      if (status === 400 && process.env.NODE_ENV !== "production") {
+      if (status === 400 && import.meta.env.MODE !== "production") {
         console.warn("[aiApi.suggestFeatures] 400 from gateway, using local template", err);
       }
       return {

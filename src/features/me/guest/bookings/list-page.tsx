@@ -136,7 +136,7 @@ export function GuestBookingsPage() {
           title="No stays yet"
           description="Time to find your next place in Thailand."
           action={
-            <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button asChild className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               <Link to="/listings">Browse ads</Link>
             </Button>
           }
@@ -190,12 +190,12 @@ export function GuestBookingsPage() {
       {tab === "upcoming" && (
         upcoming.length > 0
           ? <div className="space-y-3">{upcoming.map((b) => <StayCard key={b.id} booking={b} />)}</div>
-          : <EmptyTab title="No upcoming stays" description="Your confirmed stays will appear here." />
+          : <EmptyTab title="No upcoming stays" desc="Your confirmed stays will appear here." />
       )}
       {tab === "past" && (
         past.length > 0
           ? <div className="space-y-3">{past.map((b) => <StayCard key={b.id} booking={b} />)}</div>
-          : <EmptyTab title="No past stays" description="Your completed stays will appear here." />
+          : <EmptyTab title="No past stays" desc="Your completed stays will appear here." />
       )}
     </div>
   );

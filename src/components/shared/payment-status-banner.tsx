@@ -195,7 +195,7 @@ export function TenantPaymentBanner({
           onClick={onPay}
           className={cn(
             "shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors",
-            isOverdue ? "bg-danger text-white hover:bg-danger/90" : "bg-fg text-white hover:bg-fg/90",
+            isOverdue ? "bg-danger text-white hover:bg-danger/90" : "bg-fg text-bg-card hover:bg-fg/90",
           )}
         >
           Pay now

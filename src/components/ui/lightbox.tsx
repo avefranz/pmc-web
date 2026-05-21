@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 export interface LightboxImage {

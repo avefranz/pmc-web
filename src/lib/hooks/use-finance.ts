@@ -37,7 +37,7 @@ export const useAssetAnalytics = (assetId: string, period = "1m") =>
 export const useMarkInvoicePaid = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (invoiceId: string) => financeApi.markInvoicePaid(invoiceId),
+    mutationFn: (invoiceId: string) => financeApi.markInvoicePaid(invoiceId, crypto.randomUUID()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bookings"] });
       qc.invalidateQueries({ queryKey: keys.overview() });

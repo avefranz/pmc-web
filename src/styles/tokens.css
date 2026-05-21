@@ -1,31 +1,48 @@
+/*
+ * Single source of truth for design tokens.
+ *
+ * Colors are stored as "R G B" channels so Tailwind opacity-modifier works:
+ *   bg-bg-card/95   → rgb(var(--color-bg-card) / 0.95)
+ *
+ * shadcn-style classes (border-border, bg-card, text-muted-foreground, …)
+ * are aliased onto these same variables in tailwind.config.ts — there is no
+ * second palette anywhere.
+ */
+
 :root {
-  /* ── Color ── */
-  --color-bg:           #FFFFFF;
-  --color-bg-card:      #FFFFFF;
-  --color-bg-subtle:    #F5F5F5;
-  --color-fg:           #1A1A1A;
-  --color-fg-muted:     #6B6B6B;
-  --color-fg-subtle:    #ADADAD;
-  --color-border:       #E8E4DE;
-  --color-border-strong:#D8D4CE;
+  /* ── Color ── (R G B channels) */
+  --color-bg:           249 248 245;  /* #F9F8F5 */
+  --color-bg-card:      255 255 255;  /* #FFFFFF */
+  --color-bg-subtle:    242 237 232;  /* #F2EDE8 */
+  --color-fg:           23 20 18;     /* #171412 */
+  --color-fg-muted:     107 101 96;   /* #6B6560 */
+  --color-fg-subtle:    176 170 164;  /* #B0AAA4 */
+  --color-border:       232 227 220;  /* #E8E3DC */
+  --color-border-strong:214 208 200;  /* #D6D0C8 */
 
-  --color-primary:      #1A1A1A;
-  --color-primary-hover:#333333;
-  --color-primary-fg:   #FFFFFF;
+  --color-primary:      70 164 128;   /* hsl(157 40% 46%) */
+  --color-primary-hover:58 136 106;   /* hsl(157 40% 38%) */
+  --color-primary-fg:   255 255 255;  /* #FFFFFF */
 
-  --color-success:      #2D8A4F;
-  --color-success-bg:   #E8F5EE;
-  --color-warning:      #B5670F;
-  --color-warning-bg:   #FFF4E0;
-  --color-danger:       #C13515;
-  --color-danger-bg:    #FDECE7;
-  --color-info:         #0C70AB;
-  --color-info-bg:      #E5F2FA;
+  --color-success:      45 138 79;    /* #2D8A4F */
+  --color-success-bg:   232 245 238;  /* #E8F5EE */
+  --color-warning:      181 103 15;   /* #B5670F */
+  --color-warning-bg:   255 244 224;  /* #FFF4E0 */
+  --color-danger:       193 53 21;    /* #C13515 */
+  --color-danger-bg:    253 236 231;  /* #FDECE7 */
+  --color-info:         12 112 171;   /* #0C70AB */
+  --color-info-bg:      229 242 250;  /* #E5F2FA */
 
   --color-overlay:      rgba(0, 0, 0, 0.5);
 
+  /* ── Surface overrides (used in shell backgrounds) ── */
+  --color-header-bg:    rgba(249, 248, 245, 0.97);
+  --color-footer-bg:    rgba(242, 237, 232, 0.5);
+
   /* ── Typography ── */
-  --font-sans: "Inter", -apple-system, system-ui, sans-serif;
+  --font-sans:    "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-mono:    "JetBrains Mono", "Fira Code", monospace;
 
   --text-xs:   12px;
   --text-sm:   14px;
@@ -65,6 +82,9 @@
   --radius-xl:   20px;
   --radius-pill: 999px;
 
+  /* shadcn-compat radius — keeps Radix components in sync */
+  --radius: 10px;
+
   /* ── Shadow ── */
   --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
@@ -78,13 +98,39 @@
   --sidebar-w: 280px;
 }
 
+.dark {
+  --color-bg:           26 29 46;     /* #1A1D2E */
+  --color-bg-card:      35 39 64;     /* #232740 */
+  --color-bg-subtle:    30 34 53;     /* #1E2235 */
+  --color-fg:           238 240 246;  /* #EEF0F6 */
+  --color-fg-muted:     139 149 176;  /* #8B95B0 */
+  --color-fg-subtle:    91 99 128;    /* #5B6380 */
+  --color-border:       45 49 71;     /* #2D3147 */
+  --color-border-strong:61 66 96;     /* #3D4260 */
+
+  --color-primary:      83 198 154;   /* hsl(157 50% 55%) */
+  --color-primary-hover:60 180 134;   /* hsl(157 50% 47%) */
+
+  --color-success:      68 189 115;   /* #44BD73 */
+  --color-success-bg:   15 42 27;     /* #0F2A1B */
+  --color-warning:      224 148 37;   /* #E09425 */
+  --color-warning-bg:   42 28 8;      /* #2A1C08 */
+  --color-danger:       232 98 74;    /* #E8624A */
+  --color-danger-bg:    42 14 8;      /* #2A0E08 */
+  --color-info:         62 179 232;   /* #3EB3E8 */
+  --color-info-bg:      7 32 47;      /* #07202F */
+
+  --color-header-bg:    rgba(20, 23, 38, 0.97);
+  --color-footer-bg:    rgba(15, 17, 28, 0.5);
+}
+
 html, body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  color: var(--color-fg);
-  background: var(--color-bg);
+  color: rgb(var(--color-fg));
+  background: rgb(var(--color-bg));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

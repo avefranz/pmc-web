@@ -3,6 +3,9 @@ import { AuthGuard, PublicOnlyGuard } from "@/components/layout/auth-guard";
 import { AppShell } from "@/components/layout/app-shell";
 import { PublicShell } from "@/components/layout/public-shell";
 
+// Public pages (partner's additions)
+import LandingPage from "@/pages/landing";
+
 // Auth pages
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
@@ -156,8 +159,10 @@ export default function App() {
         <Route path="/admin" element={<ComingSoon label="Admin panel" />} />
       </Route>
 
+      {/* Public landing pages (partner's additions) */}
+      <Route path="/" element={<LandingPage />} />
+
       {/* Catch-all */}
-      <Route path="/" element={<Navigate to="/listings" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

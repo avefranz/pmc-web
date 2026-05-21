@@ -135,7 +135,7 @@ export function CreateBookingPage() {
           <Button
             type="submit"
             disabled={!canSubmit}
-            className={cn("flex-1 bg-brand hover:bg-[var(--color-primary-hover)] text-white", !canSubmit && "opacity-50")}
+            className={cn("flex-1 bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white", !canSubmit && "opacity-50")}
           >
             {createBooking.isPending ? "Creating…" : "Create booking"}
           </Button>

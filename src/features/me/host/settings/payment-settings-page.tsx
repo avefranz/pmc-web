@@ -124,7 +124,7 @@ export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean }
 
         <Button
           type="submit"
-          className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-2xl h-12 font-medium"
+          className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-2xl h-12 font-medium"
           disabled={updateProfile.isPending}
         >
           {updateProfile.isPending ? "Saving…" : "Save"}

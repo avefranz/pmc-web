@@ -66,7 +66,7 @@ export function InviteLandlordPage() {
         </div>
 
         <Button
-          className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+          className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
           disabled={!selectedAssetId || generateInvite.isPending}
           onClick={handleGenerate}
         >

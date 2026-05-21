@@ -19,7 +19,7 @@ import { authApi } from "@/lib/api/auth.api";
 import { profileApi } from "@/lib/api/profile.api";
 import { bookingRequestsApi } from "@/lib/api/booking-requests.api";
 import { PasswordHints, passwordValid } from "@/components/shared/password-hints";
-import { PetsSelector, EMPTY_PETS, petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
+import { PetsSelector, EMPTY_PETS, petSummary as _petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
 import { cn } from "@/lib/utils/cn";
 import { VisaType } from "@/lib/types/enums";
 import type { DiscountTier, BookingRequestResult } from "@/lib/types/marketplace";
@@ -246,7 +246,6 @@ export function BookingRequestModal({
   const petsAnswered = petsExplicit !== null;
 
   const rate = effectiveRate(monthlyRate, durationMonths, discountTiers);
-  const total = rate * durationMonths;
   const moveOut = format(addMonths(parseISO(moveInDate), durationMonths), "MMMM d, yyyy");
   const moveInFormatted = format(parseISO(moveInDate), "MMMM d, yyyy");
 
@@ -482,7 +481,7 @@ export function BookingRequestModal({
               </div>
             </div>
             <div className="space-y-2">
-              <Button asChild className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+              <Button asChild className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
                 <Link to="/me/guest/applications" onClick={onClose}>
                   <ExternalLink size={14} className="mr-1.5" />View my applications
                 </Link>
@@ -645,7 +644,7 @@ export function BookingRequestModal({
             <div className="px-6 py-4 border-t border-border shrink-0">
               <Button
                 type="submit"
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
+                className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
                 disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || !petsAnswered || (hasPets && !petPhotosReady)}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
@@ -725,7 +724,7 @@ export function BookingRequestModal({
             <div className="px-6 py-4 border-t border-border shrink-0 space-y-2">
               <Button
                 type="submit"
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
+                className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
                 disabled={!pNationality || passportSaving || submit.isPending}
               >
                 {(passportSaving || submit.isPending) ? "Please wait…" : "Save & send request"}
@@ -812,7 +811,7 @@ export function BookingRequestModal({
             <div className="px-6 py-4 border-t border-border shrink-0 space-y-3">
               <Button
                 type="submit"
-                className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white h-12 text-base font-semibold rounded-xl"
+                className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
                 disabled={!password || authLoading || (authMode === "register" && !passwordValid(password))}
               >
                 {authLoading

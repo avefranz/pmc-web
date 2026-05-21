@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils/cn";
 function occupancyBadge(status: AssetOccupancyStatus) {
   const map: Record<AssetOccupancyStatus, { label: string; className: string }> = {
     [AssetOccupancyStatus.Vacant]: { label: "Vacant", className: "bg-success/10 text-success" },
-    [AssetOccupancyStatus.Occupied]: { label: "Occupied", className: "bg-[var(--color-info-bg)] text-[var(--color-info)]" },
+    [AssetOccupancyStatus.Occupied]: { label: "Occupied", className: "bg-[rgb(var(--color-info-bg))] text-[rgb(var(--color-info))]" },
     [AssetOccupancyStatus.ActionRequired]: { label: "Action needed", className: "bg-warning/10 text-warning" },
   };
   return map[status] ?? { label: status, className: "bg-bg-subtle text-fg-muted" };

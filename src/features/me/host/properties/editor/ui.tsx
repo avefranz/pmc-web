@@ -77,7 +77,7 @@ export function ChipGroup<T extends string | number>({
             className={cn(
               "px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150",
               active
-                ? "border-fg bg-fg text-white"
+                ? "border-fg bg-fg text-bg-card"
                 : "border-border text-fg hover:border-fg-subtle",
             )}
           >
@@ -155,7 +155,7 @@ export function PickerCard({
       className={cn(
         "text-left p-3 rounded-xl border-2 transition-all duration-150 flex items-center gap-3",
         active
-          ? "border-fg bg-fg text-white"
+          ? "border-fg bg-fg text-bg-card"
           : "border-border bg-bg hover:border-fg-subtle text-fg",
       )}
     >

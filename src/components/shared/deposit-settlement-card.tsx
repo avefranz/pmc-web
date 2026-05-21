@@ -598,7 +598,7 @@ function HostPendingRefundState({
           transfer or PromptPay, then confirm below.
         </p>
         <Button
-          className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10"
+          className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10"
           onClick={() => setOpen(true)}
         >
           I have transferred the refund

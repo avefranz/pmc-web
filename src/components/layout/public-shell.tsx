@@ -2,6 +2,9 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { Outlet, Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Search, Menu, Home, ChevronLeft, ChevronRight } from "lucide-react";
 import { SiamoLogo } from "./siamo-logo";
+import { TopbarShell } from "./topbar-shell";
+import { LanguageSwitcher } from "./language-switcher";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useMe } from "@/lib/hooks/use-auth";
 import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
@@ -107,7 +110,7 @@ function MiniCalendar({
                 isPast     && "text-fg-muted/40 cursor-not-allowed",
                 !isPast    && !isSelected && "hover:bg-bg-subtle text-fg",
                 isToday    && !isSelected && "font-bold text-brand",
-                isSelected && "bg-fg text-white",
+                isSelected && "bg-fg text-bg-card",
               )}
             >
               {day}
@@ -223,7 +226,7 @@ function SearchPill() {
 
       {/* ── Pill ── */}
       <div className={cn(
-        "flex items-stretch divide-x divide-border rounded-full border border-border bg-white shadow-md transition-all duration-200",
+        "flex items-stretch divide-x divide-border rounded-full border border-border bg-bg-card shadow-md transition-all duration-200",
         active && "shadow-lg ring-1 ring-border/80",
       )}>
         <button
@@ -267,7 +270,7 @@ function SearchPill() {
 
         <button
           onClick={handleSearch}
-          className="flex items-center gap-2 h-9 rounded-full bg-brand hover:bg-[var(--color-primary-hover)] transition-colors my-1.5 mr-1.5 px-3.5"
+          className="flex items-center gap-2 h-9 rounded-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] transition-colors my-1.5 mr-1.5 px-3.5"
         >
           <Search size={15} className="text-white" strokeWidth={2.5} />
           {hasFilter && <span className="text-white text-xs font-semibold hidden sm:block">Search</span>}
@@ -276,7 +279,7 @@ function SearchPill() {
 
       {/* ── Panels ── */}
       {active && (
-        <div className="absolute top-[calc(100%+10px)] left-1/2 -translate-x-1/2 z-50 bg-white rounded-3xl shadow-2xl border border-border/60 overflow-hidden w-[420px]">
+        <div className="absolute top-[calc(100%+10px)] left-1/2 -translate-x-1/2 z-50 bg-bg-card rounded-3xl shadow-2xl border border-border/60 overflow-hidden w-[420px]">
 
           {/* ── WHERE ── */}
           {active === "where" && (
@@ -290,7 +293,7 @@ function SearchPill() {
                 onClick={() => { setDraft((d) => ({ ...d, cityId: "" })); setActive("when"); }}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors mb-3",
-                  !draft.cityId ? "bg-fg text-white" : "hover:bg-bg-subtle",
+                  !draft.cityId ? "bg-fg text-bg-card" : "hover:bg-bg-subtle",
                 )}
               >
                 <div className={cn(
@@ -349,7 +352,7 @@ function SearchPill() {
               {/* Context: what was already chosen */}
               {doneCityLabel && (
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="text-xs font-semibold bg-fg text-white px-2.5 py-1 rounded-full">
+                  <span className="text-xs font-semibold bg-fg text-bg-card px-2.5 py-1 rounded-full">
                     {doneCityLabel}
                   </span>
                   <span className="text-xs text-fg-muted">→ pick a move-in date</span>
@@ -370,7 +373,7 @@ function SearchPill() {
                     className={cn(
                       "px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
                       draft.moveInFrom === qd.iso
-                        ? "bg-fg text-white border-fg"
+                        ? "bg-fg text-bg-card border-fg"
                         : "border-border hover:border-fg hover:bg-bg-subtle",
                     )}
                   >
@@ -405,12 +408,12 @@ function SearchPill() {
               {(doneCityLabel || doneWhenLabel) && (
                 <div className="flex items-center gap-1.5 mb-4 flex-wrap">
                   {doneCityLabel && (
-                    <span className="text-xs font-semibold bg-fg text-white px-2.5 py-1 rounded-full">
+                    <span className="text-xs font-semibold bg-fg text-bg-card px-2.5 py-1 rounded-full">
                       {doneCityLabel}
                     </span>
                   )}
                   {doneWhenLabel && (
-                    <span className="text-xs font-semibold bg-fg text-white px-2.5 py-1 rounded-full">
+                    <span className="text-xs font-semibold bg-fg text-bg-card px-2.5 py-1 rounded-full">
                       {doneWhenLabel}
                     </span>
                   )}
@@ -481,7 +484,7 @@ function SearchPill() {
               {/* Search CTA */}
               <button
                 onClick={handleSearch}
-                className="mt-4 w-full h-11 rounded-full bg-brand hover:bg-[var(--color-primary-hover)] text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                className="mt-4 w-full h-11 rounded-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
               >
                 <Search size={15} strokeWidth={2.5} />
                 Search
@@ -527,7 +530,7 @@ function MarketplaceUserMenu() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2.5 rounded-full border border-border px-3 py-2 hover:shadow-md transition-shadow bg-white"
+        className="flex items-center gap-2.5 rounded-full border border-border px-3 py-2 hover:shadow-md transition-shadow bg-bg-card"
       >
         <Menu size={16} className="text-fg" />
         {token ? (
@@ -544,7 +547,7 @@ function MarketplaceUserMenu() {
       </button>
 
       {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 bg-white rounded-2xl shadow-xl border border-border py-2 min-w-52">
+        <div className="absolute top-[calc(100%+8px)] right-0 z-50 bg-bg-card rounded-2xl shadow-xl border border-border py-2 min-w-52">
           {token ? (
             <>
               {name && <div className="px-4 py-2 text-sm font-semibold text-fg border-b border-border mb-1">{name}</div>}
@@ -613,23 +616,23 @@ export function PublicShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-bg">
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-border/60">
-        <div className="w-full px-4 md:px-8 lg:px-12 h-[72px] grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-          {/* Logo — left */}
-          <Link to="/listings" className="min-w-0">
+      <TopbarShell
+        variant="blur"
+        left={
+          <Link to="/" className="shrink-0">
             <SiamoLogo className="h-9" />
           </Link>
-
-          {/* Search pill — truly centered */}
-          <SearchPill />
-
-          {/* Right actions */}
-          <div className="flex items-center gap-2 justify-end">
+        }
+        center={<SearchPill />}
+        right={
+          <>
+            <ThemeToggle />
+            <LanguageSwitcher />
             <HostSwitchButton token={token} />
             <MarketplaceUserMenu />
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <main className="flex-1">
         <Outlet />

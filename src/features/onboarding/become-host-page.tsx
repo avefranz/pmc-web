@@ -33,7 +33,7 @@ export function BecomeHostPage() {
         <Button
           asChild
           size="lg"
-          className="bg-brand hover:bg-[var(--color-primary-hover)] text-white font-semibold px-8"
+          className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-semibold px-8"
         >
           <Link to="/me/host/properties/new">Add your first property</Link>
         </Button>

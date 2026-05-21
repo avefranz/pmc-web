@@ -1,77 +1,88 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Single palette. shadcn-style class names (border, card, muted-foreground …)
+ * are aliased onto our --color-* tokens — there is no second set of variables.
+ *
+ * Tokens are stored as "R G B" channels in src/styles/tokens.css, which lets
+ * Tailwind's opacity-modifier work everywhere: `bg-bg-card/95`, `text-fg/60`.
+ */
+const ds = (varName: string) => `rgb(var(${varName}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // shadcn tokens (kept for component compatibility)
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+        // ── shadcn aliases → our tokens ───────────────────────────────
+        background: ds("--color-bg"),
+        foreground: ds("--color-fg"),
+        border:     ds("--color-border"),
+        input:      ds("--color-border"),
+        ring:       ds("--color-primary"),
+        card: {
+          DEFAULT:    ds("--color-bg-card"),
+          foreground: ds("--color-fg"),
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT:    ds("--color-bg-card"),
+          foreground: ds("--color-fg"),
         },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+        primary: {
+          DEFAULT:    ds("--color-primary"),
+          foreground: ds("--color-primary-fg"),
         },
-        // design-system tokens
-        bg: "var(--color-bg)",
-        "bg-card": "var(--color-bg-card)",
-        "bg-subtle": "var(--color-bg-subtle)",
-        fg: "var(--color-fg)",
-        "fg-muted": "var(--color-fg-muted)",
-        "fg-subtle": "var(--color-fg-subtle)",
+        secondary: {
+          DEFAULT:    ds("--color-bg-subtle"),
+          foreground: ds("--color-fg"),
+        },
+        muted: {
+          DEFAULT:    ds("--color-bg-subtle"),
+          foreground: ds("--color-fg-muted"),
+        },
+        accent: {
+          DEFAULT:    ds("--color-primary"),
+          foreground: ds("--color-primary-fg"),
+        },
+        destructive: {
+          DEFAULT:    ds("--color-danger"),
+          foreground: ds("--color-primary-fg"),
+        },
+
+        // ── Design-system tokens ───────────────────────────────────────
+        bg:           ds("--color-bg"),
+        "bg-card":    ds("--color-bg-card"),
+        "bg-subtle":  ds("--color-bg-subtle"),
+        fg:           ds("--color-fg"),
+        "fg-muted":   ds("--color-fg-muted"),
+        "fg-subtle":  ds("--color-fg-subtle"),
+        "border-strong": ds("--color-border-strong"),
         brand: {
-          DEFAULT: "var(--color-primary)",
-          hover: "var(--color-primary-hover)",
-          fg: "var(--color-primary-fg)",
+          DEFAULT: ds("--color-primary"),
+          hover:   ds("--color-primary-hover"),
+          fg:      ds("--color-primary-fg"),
         },
-        success: "var(--color-success)",
-        warning: "var(--color-warning)",
-        danger: "var(--color-danger)",
+        success: ds("--color-success"),
+        warning: ds("--color-warning"),
+        danger:  ds("--color-danger"),
       },
       fontFamily: {
         sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
       },
       borderRadius: {
-        // shadcn (kept)
+        // shadcn (kept — Radix components reference --radius)
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
         // design-system
         pill: "var(--radius-pill)",
-        xl: "var(--radius-xl)",
+        xl:   "var(--radius-xl)",
       },
       boxShadow: {
-        card: "var(--shadow-card)",
+        card:  "var(--shadow-card)",
         hover: "var(--shadow-hover)",
-        pop: "var(--shadow-pop)",
+        pop:   "var(--shadow-pop)",
       },
     },
   },

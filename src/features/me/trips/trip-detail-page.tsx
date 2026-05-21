@@ -138,7 +138,7 @@ export function TripDetailPage() {
           <div className="flex flex-wrap gap-2">
             {presentAmenities.map((a) => (
               <span key={a.amenityId} className="inline-flex items-center gap-1 bg-bg-subtle rounded-full px-3 py-1 text-xs font-medium text-fg">
-                {a.icon && [...a.icon].length <= 2 && <span>{a.icon}</span>}
+                {(a as any).icon && [...(a as any).icon].length <= 2 && <span>{(a as any).icon}</span>}
                 {a.name}
               </span>
             ))}
@@ -158,7 +158,7 @@ export function TripDetailPage() {
                   <p className="text-xs text-fg-muted">{formatDate(inv.dueDate)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-fg">{formatThb(inv.amount)}</p>
+                  <p className="text-sm font-semibold text-fg">{formatThb(inv.amount ?? 0)}</p>
                   <span className={cn("text-xs font-medium", inv.status === InvoiceStatus.Paid ? "text-success" : "text-warning")}>
                     {inv.status}
                   </span>
@@ -172,7 +172,7 @@ export function TripDetailPage() {
       {/* Support CTA */}
       <Button
         asChild
-        className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+        className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
       >
         <Link to="/me/host/tickets">
           <Plus size={14} className="mr-1.5" />Contact support

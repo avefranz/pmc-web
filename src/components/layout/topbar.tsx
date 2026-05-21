@@ -2,6 +2,9 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { MapPin } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { SiamoLogo } from "./siamo-logo";
+import { TopbarShell } from "./topbar-shell";
+import { LanguageSwitcher } from "./language-switcher";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils/cn";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { useUnseenApplications } from "@/lib/hooks/use-unseen-applications";
@@ -114,7 +117,7 @@ function RoleCapsule({
       className={cn(
         "px-3 h-full flex items-center gap-1.5 text-sm font-semibold transition-colors",
         active
-          ? "bg-fg text-white"
+          ? "bg-fg text-bg-card"
           : "text-fg-muted hover:text-fg hover:bg-bg-subtle",
       )}
     >
@@ -124,13 +127,13 @@ function RoleCapsule({
         <span
           className={cn(
             "tabular-nums",
-            active ? "text-white/70" : "text-fg-subtle",
+            active ? "text-bg-card/70" : "text-fg-subtle",
           )}
         >
           · {meta}
         </span>
       )}
-      {emptyHint && <span className="text-white/80 font-medium">· {emptyHint}</span>}
+      {emptyHint && <span className="text-bg-card/80 font-medium">· {emptyHint}</span>}
     </button>
   );
 }
@@ -157,7 +160,7 @@ export function TopBar() {
   const hostHasContent = !caps || ownedAssets > 0 || caps.isManager;
   const nav = isHost ? (hostHasContent ? HOST_NAV : null) : isGuest ? GUEST_NAV : null;
 
-  function getBadge(item: typeof HOST_NAV[number]) {
+  function getBadge(item: typeof HOST_NAV[number] | typeof GUEST_NAV[number]) {
     if (!item.badgeKey) return undefined;
     if (item.badgeKey === "pendingApplicationsCount") return unseenApps || undefined;
     if (caps) return caps.stats[item.badgeKey as keyof typeof caps.stats] as number ?? 0;
@@ -167,41 +170,44 @@ export function TopBar() {
   const showToggle = !isToggleHidden(pathname);
 
   return (
-    <header className="sticky top-0 z-40 h-[var(--topbar-h)] bg-bg-card border-b border-border flex items-center">
-      <div className="w-full px-4 md:px-8 lg:px-12 flex items-center gap-4">
-        {/* Left: logo + role toggle */}
-        <div className="flex items-center gap-3 shrink-0">
+    <TopbarShell
+      left={
+        <>
           <Logo to={isHost ? "/me/host/properties" : isGuest ? "/me/guest/bookings" : "/me"} />
           {showToggle && (
             <div className="hidden md:block">
               <RoleToggle />
             </div>
           )}
-        </div>
-
-        {/* Center: nav */}
-        <nav className="hidden md:flex items-center gap-1 flex-1 justify-center min-w-0 overflow-x-auto">
-          {nav && nav.map((item) => (
-            <NavItem
-              key={item.to}
-              to={item.to}
-              label={item.label}
-              badge={getBadge(item)}
-            />
-          ))}
-        </nav>
-
-        {/* Right: Browse CTA + user menu */}
-        <div className="flex items-center gap-2 ml-auto shrink-0">
+        </>
+      }
+      center={
+        nav && (
+          <nav className="hidden md:flex items-center gap-1 overflow-x-auto">
+            {nav.map((item) => (
+              <NavItem
+                key={item.to}
+                to={item.to}
+                label={item.label}
+                badge={getBadge(item)}
+              />
+            ))}
+          </nav>
+        )
+      }
+      right={
+        <>
           <Link
             to="/listings"
             className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
           >
             <MapPin size={14} />Browse rentals
           </Link>
+          <ThemeToggle />
+          <LanguageSwitcher />
           <UserMenu />
-        </div>
-      </div>
-    </header>
+        </>
+      }
+    />
   );
 }

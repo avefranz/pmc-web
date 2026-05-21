@@ -84,7 +84,7 @@ export function GuestContractSignPage() {
             nationality: passportNationality.trim(),
             dateOfBirth: passportDob,
             passportExpiry: passportExpiry,
-            visaType: passportVisaType || undefined,
+            visaType: passportVisaType as VisaType || undefined,
             entryDate: passportEntryDate,
             entryPort: passportEntryPort.trim(),
           },
@@ -509,7 +509,7 @@ export function GuestContractSignPage() {
             <Button
               type="submit"
               disabled={!canSubmit}
-              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-11 text-sm font-semibold disabled:opacity-50"
+              className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-11 text-sm font-semibold disabled:opacity-50"
             >
               {isSubmitting ? "Saving…" : "Sign agreement"}
             </Button>

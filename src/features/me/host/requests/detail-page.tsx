@@ -5,7 +5,7 @@ import { format, parseISO } from "date-fns";
 import { totalPets } from "@/components/shared/pets-selector";
 import {
   ArrowLeft, Clock, CheckCircle, XCircle, CalendarDays, Timer,
-  Coins, Home, Mail, Phone, MessageSquare, AlertCircle, ChevronLeft, ChevronRight, X as XIcon,
+  Coins, Home, Mail, Phone, MessageSquare, ChevronLeft, ChevronRight, X as XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -243,7 +243,7 @@ export function HostRequestDetailPage() {
 
           {/* Status banner */}
           <div className={cn("rounded-2xl p-5 ring-1 flex items-start gap-4", STATUS_CFG.bg, STATUS_CFG.ring)}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white/60">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-bg-card/60">
               <StatusIcon size={20} className={STATUS_CFG.color} />
             </div>
             <div className="flex-1 min-w-0">
@@ -399,7 +399,7 @@ export function HostRequestDetailPage() {
                 <XCircle size={14} className="mr-1.5" />Reject
               </Button>
               <Button
-                className="flex-1 bg-brand hover:bg-[var(--color-primary-hover)] text-white h-10"
+                className="flex-1 bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-10"
                 disabled={busy}
                 onClick={handleApprove}
               >

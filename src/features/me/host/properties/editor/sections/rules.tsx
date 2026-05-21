@@ -48,7 +48,7 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
                 className={cn(
                   "px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150",
                   active
-                    ? "border-fg bg-fg text-white"
+                    ? "border-fg bg-fg text-bg-card"
                     : "border-border text-fg hover:border-fg-subtle",
                 )}
               >

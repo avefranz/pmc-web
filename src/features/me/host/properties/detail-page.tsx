@@ -202,7 +202,7 @@ function AmenitiesSection({ listingId, listingAmenities }: { listingId: string; 
 function OccupancyBadge({ status }: { status: AssetOccupancyStatus }) {
   const map: Record<AssetOccupancyStatus, { label: string; cls: string }> = {
     [AssetOccupancyStatus.Vacant]:         { label: "Vacant",          cls: "bg-success/10 text-success border-success/20" },
-    [AssetOccupancyStatus.Occupied]:       { label: "Occupied",        cls: "bg-[var(--color-info-bg)] text-[var(--color-info)] border-[var(--color-info)]/20" },
+    [AssetOccupancyStatus.Occupied]:       { label: "Occupied",        cls: "bg-[rgb(var(--color-info-bg))] text-[rgb(var(--color-info))] border-[rgb(var(--color-info))]/20" },
     [AssetOccupancyStatus.ActionRequired]: { label: "Action needed",   cls: "bg-warning/10 text-warning border-warning/20" },
   };
   const m = map[status] ?? { label: status, cls: "bg-bg-subtle text-fg-muted border-border" };
@@ -501,7 +501,7 @@ export function PropertyDetailPage() {
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all",
                 section === n.id
-                  ? "bg-fg text-white"
+                  ? "bg-fg text-bg-card"
                   : "bg-bg-subtle text-fg-muted hover:text-fg",
               )}
             >
@@ -800,7 +800,7 @@ export function PropertyDetailPage() {
                           { icon: FileText,   color: "text-indigo-500", bg: "bg-indigo-50", title: "Write a great description",  body: "Describe the neighbourhood, nearby transport, and what makes the place special." },
                           { icon: TrendingUp, color: "text-emerald-500",bg: "bg-emerald-50",title: "Price it right",             body: "Check nearby listings to set a competitive monthly rate for your area." },
                         ].map((tip) => (
-                          <div key={tip.title} className="rounded-xl border border-border p-4 bg-white hover:border-zinc-300 transition-colors">
+                          <div key={tip.title} className="rounded-xl border border-border p-4 bg-bg-card hover:border-zinc-300 transition-colors">
                             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-3", tip.bg)}>
                               <tip.icon size={15} className={tip.color} />
                             </div>
@@ -979,7 +979,7 @@ export function PropertyDetailPage() {
               {!listing ? (
                 <div className="text-center py-12">
                   <p className="text-fg-muted mb-4">No listing created yet.</p>
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" onClick={() => createNewVersion.mutate(id!)}>
+                  <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white" onClick={() => createNewVersion.mutate(id!)}>
                     Create listing
                   </Button>
                 </div>
@@ -1018,7 +1018,7 @@ export function PropertyDetailPage() {
                       {listing.status === ListingStatus.Draft && (
                         <Button
                           size="sm"
-                          className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                          className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
                           onClick={() => { setPublishStartDate(""); setPublishEndDate(""); setPublishDurationMonths(""); setPublishOpen(true); }}
                         >
                           Publish
@@ -1041,7 +1041,7 @@ export function PropertyDetailPage() {
                 title="Bookings"
                 subtitle="All bookings for this property."
                 action={
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
+                  <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
                     <Plus size={14} />New booking
                   </Button>
                 }
@@ -1051,7 +1051,7 @@ export function PropertyDetailPage() {
                   <CalendarDays size={36} className="text-fg-subtle mx-auto mb-3" />
                   <p className="text-sm font-semibold text-fg mb-1">No bookings yet</p>
                   <p className="text-sm text-fg-muted mb-4">Create a booking to get started.</p>
-                  <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
+                  <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white gap-1.5" onClick={() => setBookingOpen(true)}>
                     <Plus size={14} />New booking
                   </Button>
                 </div>
@@ -1258,7 +1258,7 @@ export function PropertyDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBookingOpen(false)}>Cancel</Button>
-            <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" disabled={!bookingCheckIn || !bookingCheckOut || createBooking.isPending} onClick={handleCreateBooking}>
+            <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white" disabled={!bookingCheckIn || !bookingCheckOut || createBooking.isPending} onClick={handleCreateBooking}>
               {createBooking.isPending ? "Creating…" : "Create"}
             </Button>
           </DialogFooter>
@@ -1294,7 +1294,7 @@ export function PropertyDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTicketOpen(false)}>Cancel</Button>
-            <Button className="bg-brand hover:bg-[var(--color-primary-hover)] text-white" disabled={!ticketTitle.trim() || createTicket.isPending} onClick={handleCreateTicket}>
+            <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white" disabled={!ticketTitle.trim() || createTicket.isPending} onClick={handleCreateTicket}>
               {createTicket.isPending ? "Creating…" : "Create ticket"}
             </Button>
           </DialogFooter>
@@ -1375,7 +1375,7 @@ export function PropertyDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button disabled={saving} onClick={handleSaveSettings} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button disabled={saving} onClick={handleSaveSettings} className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>
@@ -1428,7 +1428,7 @@ export function PropertyDetailPage() {
           </div>
 
           {/* ── Content ── */}
-          <div className="bg-white px-6 pt-5 pb-4 space-y-5">
+          <div className="bg-bg-card px-6 pt-5 pb-4 space-y-5">
 
             {/* No-photos blocker */}
             {!(listing?.media?.length) && (
@@ -1536,7 +1536,7 @@ export function PropertyDetailPage() {
           </div>
 
           {/* ── CTA ── */}
-          <div className="bg-white px-6 pb-6 flex items-center gap-3">
+          <div className="bg-bg-card px-6 pb-6 flex items-center gap-3">
             <button
               type="button"
               onClick={() => setPublishOpen(false)}
@@ -1578,7 +1578,7 @@ export function PropertyDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setHotfixOpen(false)}>Cancel</Button>
-            <Button disabled={!hotfixReason.trim() || hotfixListing.isPending} onClick={handleHotfix} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button disabled={!hotfixReason.trim() || hotfixListing.isPending} onClick={handleHotfix} className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               {hotfixListing.isPending ? "Applying…" : "Apply hotfix"}
             </Button>
           </DialogFooter>
@@ -1601,7 +1601,7 @@ export function PropertyDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddUtilityOpen(false)}>Cancel</Button>
-            <Button disabled={createUtility.isPending} onClick={handleAddUtility} className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button disabled={createUtility.isPending} onClick={handleAddUtility} className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               {createUtility.isPending ? "Adding…" : "Add utility"}
             </Button>
           </DialogFooter>

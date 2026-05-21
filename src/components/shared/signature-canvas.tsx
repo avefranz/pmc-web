@@ -87,7 +87,7 @@ export function SignatureCanvas({ onChange, className }: SignatureCanvasProps) {
     if (!ctx) return;
     isDrawingRef.current = true;
     const touch = e.touches[0];
-    const pos = getPos(canvas, touch);
+    const pos = getPos(canvas, touch as unknown as Touch);
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
   }, []);
@@ -100,7 +100,7 @@ export function SignatureCanvas({ onChange, className }: SignatureCanvasProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const touch = e.touches[0];
-    const pos = getPos(canvas, touch);
+    const pos = getPos(canvas, touch as unknown as Touch);
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
   }, []);

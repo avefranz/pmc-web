@@ -20,6 +20,7 @@ import { getPlaceholderImage } from "@/lib/utils/placeholder-images";
 import { cn } from "@/lib/utils/cn";
 import type { MarketplaceListingPreviewDto } from "@/lib/types/marketplace";
 import { SiamoLogo } from "@/components/layout/siamo-logo";
+import { TopbarShell } from "@/components/layout/topbar-shell";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { useMe } from "@/lib/hooks/use-auth";
@@ -159,59 +160,61 @@ function LandingNav() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
-      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-        <div className="flex items-center gap-10">
+    <TopbarShell
+      variant="blur"
+      left={
+        <>
           <Link to="/" className="shrink-0">
             <SiamoLogo className="h-9" />
           </Link>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
-            <a href="#browse"    className="hover:text-foreground transition-colors">{t("nav.browseRentals")}</a>
-            <a href="#services"  className="hover:text-foreground transition-colors">{t("nav.services")}</a>
-            <a href="#host"      className="hover:text-foreground transition-colors">{t("nav.hosting")}</a>
+          <div className="hidden md:flex items-center gap-6 ml-6 text-sm font-medium text-fg-muted">
+            <a href="#browse"   className="hover:text-fg transition-colors">{t("nav.browseRentals")}</a>
+            <a href="#services" className="hover:text-fg transition-colors">{t("nav.services")}</a>
+            <a href="#host"     className="hover:text-fg transition-colors">{t("nav.hosting")}</a>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
+        </>
+      }
+      right={
+        <>
           <ThemeToggle />
           <LanguageSwitcher />
           {token ? (
-            <div className="flex items-center gap-2">
+            <>
               <Link
                 to="/me"
-                className="hidden md:flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full border border-border hover:bg-secondary transition-colors"
+                className="hidden md:flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full border border-border hover:bg-bg-subtle transition-colors"
               >
-                <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center shrink-0">
-                  <span className="text-accent-foreground text-[10px] font-bold">{initials(name) || "?"}</span>
+                <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center shrink-0">
+                  <span className="text-white text-[10px] font-bold">{initials(name) || "?"}</span>
                 </div>
                 <span>{name || t("auth.myAccount")}</span>
               </Link>
               <button
                 onClick={handleSignOut}
-                className="text-sm font-medium px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                className="text-sm font-medium px-4 py-2 text-fg-muted hover:text-fg transition-colors"
               >
                 {t("auth.signOut")}
               </button>
-            </div>
+            </>
           ) : (
             <>
               <Link
                 to="/login"
-                className="text-sm font-medium px-4 py-2 hover:text-accent transition-colors"
+                className="text-sm font-medium px-4 py-2 text-fg hover:text-brand transition-colors"
               >
                 {t("auth.signIn")}
               </Link>
               <Link
                 to="/register"
-                className="bg-foreground text-background text-sm font-medium px-5 py-2.5 rounded-full hover:bg-foreground/90 transition-colors"
+                className="bg-fg text-bg-card text-sm font-medium px-5 py-2.5 rounded-full hover:bg-fg/90 transition-colors"
               >
                 {t("auth.signUp")}
               </Link>
             </>
           )}
-        </div>
-      </div>
-    </nav>
+        </>
+      }
+    />
   );
 }
 

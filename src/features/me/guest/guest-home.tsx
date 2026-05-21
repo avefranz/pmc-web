@@ -48,7 +48,7 @@ export function GuestHome() {
       <p className="text-fg-muted max-w-sm mb-8">
         Browse furnished mid-term rentals across Thailand. Apply directly and move in within days.
       </p>
-      <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white px-8">
+      <Button asChild className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white px-8">
         <Link to="/listings"><Search size={15} className="mr-2" />Browse ads</Link>
       </Button>
     </div>

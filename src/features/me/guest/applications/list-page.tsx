@@ -80,7 +80,7 @@ export function GuestApplicationsPage() {
           title="No applications yet"
           description="When you request to book an ad, your applications will appear here."
           action={
-            <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button asChild className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               <Link to="/listings"><Search size={14} className="mr-1.5" />Browse ads</Link>
             </Button>
           }

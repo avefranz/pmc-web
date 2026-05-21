@@ -10,7 +10,7 @@ import { formatDate } from "@/lib/utils/format";
 import { BookingStatus } from "@/lib/types/enums";
 import type { BookingDto } from "@/lib/types";
 
-const ACTIVE_STATUSES = [BookingStatus.Active, BookingStatus.Confirmed, BookingStatus.Pending];
+const ACTIVE_STATUSES = [BookingStatus.Active, BookingStatus.Confirmed, BookingStatus.PendingPayment];
 
 function TripCard({ booking }: { booking: BookingDto }) {
   return (
@@ -93,7 +93,7 @@ export function TripsPage() {
           title="No trips yet"
           description="Time to plan your next stay in Thailand!"
           action={
-            <Button asChild className="bg-brand hover:bg-[var(--color-primary-hover)] text-white">
+            <Button asChild className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
               <Link to="/listings">Browse ads</Link>
             </Button>
           }

@@ -281,7 +281,7 @@ export function TicketDetailPage() {
                 </Button>
                 <Button
                   size="sm"
-                  className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                  className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
                   onClick={handleSend}
                   disabled={(!msgBody.trim() && msgAttachments.length === 0) || sending}
                 >

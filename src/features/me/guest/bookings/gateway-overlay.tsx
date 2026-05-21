@@ -63,7 +63,7 @@ export function GatewayOverlay({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-sm overflow-hidden">
+      <div className="bg-bg-card dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-sm overflow-hidden">
 
         {/* Header */}
         <div className="bg-gradient-to-r from-[#1a1a2e] to-[#16213e] px-6 py-4 flex items-center justify-between">
@@ -85,8 +85,8 @@ export function GatewayOverlay({
               <Loader2 size={28} className="absolute inset-0 m-auto text-blue-600 animate-spin" />
             </div>
             <div>
-              <p className="text-base font-semibold text-gray-900 dark:text-white">Processing…</p>
-              <p className="text-sm text-gray-400 mt-1">Please don't close this window</p>
+              <p className="text-base font-semibold text-fg dark:text-white">Processing…</p>
+              <p className="text-sm text-fg-subtle mt-1">Please don't close this window</p>
             </div>
           </div>
         )}
@@ -98,8 +98,8 @@ export function GatewayOverlay({
               <Check size={30} className="text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <p className="text-base font-semibold text-gray-900 dark:text-white">Payment successful!</p>
-              <p className="text-sm text-gray-400 mt-1">Redirecting…</p>
+              <p className="text-base font-semibold text-fg dark:text-white">Payment successful!</p>
+              <p className="text-sm text-fg-subtle mt-1">Redirecting…</p>
             </div>
           </div>
         )}
@@ -108,22 +108,22 @@ export function GatewayOverlay({
         {step === "select" && (
           <>
             {/* Amount */}
-            <div className="px-6 pt-5 pb-4 border-b border-gray-100 dark:border-zinc-800 text-center">
-              <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Total due</p>
-              <p className="text-4xl font-bold text-gray-900 dark:text-white tabular-nums">{formatThb(amount)}</p>
+            <div className="px-6 pt-5 pb-4 border-b border-border dark:border-zinc-800 text-center">
+              <p className="text-xs text-fg-subtle uppercase tracking-widest mb-1">Total due</p>
+              <p className="text-4xl font-bold text-fg dark:text-white tabular-nums">{formatThb(amount)}</p>
             </div>
 
             {/* Method switcher */}
             {promptPayId && (
               <div className="px-6 pt-4">
-                <div className="flex rounded-xl bg-gray-100 dark:bg-zinc-800 p-1 gap-1">
+                <div className="flex rounded-xl bg-bg-subtle dark:bg-zinc-800 p-1 gap-1">
                   <button
                     onClick={() => setMethod("promptpay")}
                     className={cn(
                       "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all",
                       method === "promptpay"
-                        ? "bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "bg-bg-card dark:bg-zinc-700 text-fg dark:text-white shadow-sm"
+                        : "text-fg-muted hover:text-fg"
                     )}
                   >
                     <Smartphone size={14} /> PromptPay
@@ -133,8 +133,8 @@ export function GatewayOverlay({
                     className={cn(
                       "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all",
                       method === "card"
-                        ? "bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
+                        ? "bg-bg-card dark:bg-zinc-700 text-fg dark:text-white shadow-sm"
+                        : "text-fg-muted hover:text-fg"
                     )}
                   >
                     <CreditCard size={14} /> Card
@@ -146,14 +146,14 @@ export function GatewayOverlay({
             {/* PromptPay */}
             {method === "promptpay" && promptPayId && (
               <div className="px-6 py-4 flex flex-col items-center gap-3">
-                <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                <div className="p-3 bg-white rounded-2xl border border-border shadow-sm">
                   {qrPayload
                     ? <QRCode value={qrPayload} size={160} />
-                    : <div className="w-40 h-40 bg-gray-100 rounded-xl flex items-center justify-center"><Smartphone size={32} className="text-gray-300" /></div>
+                    : <div className="w-40 h-40 bg-bg-subtle rounded-xl flex items-center justify-center"><Smartphone size={32} className="text-fg-subtle" /></div>
                   }
                 </div>
-                <p className="text-xs text-gray-400 text-center max-w-[220px]">
-                  Scan with any Thai banking app, then tap <strong className="text-gray-600 dark:text-gray-300">Confirm</strong> below
+                <p className="text-xs text-fg-subtle text-center max-w-[220px]">
+                  Scan with any Thai banking app, then tap <strong className="text-fg-muted dark:text-gray-300">Confirm</strong> below
                 </p>
               </div>
             )}
@@ -162,39 +162,39 @@ export function GatewayOverlay({
             {method === "card" && (
               <div className="px-6 py-4 space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 block mb-1">Card number</label>
+                  <label className="text-xs font-medium text-fg-muted block mb-1">Card number</label>
                   <input
                     type="text" placeholder="4111 1111 1111 1111" value={cardNum} maxLength={19}
                     onChange={(e) => {
                       const v = e.target.value.replace(/\D/g, "").slice(0, 16);
                       setCardNum(v.replace(/(.{4})/g, "$1 ").trim());
                     }}
-                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 text-fg dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-gray-500 block mb-1">Expiry</label>
+                    <label className="text-xs font-medium text-fg-muted block mb-1">Expiry</label>
                     <input
                       type="text" placeholder="MM / YY" value={cardExp} maxLength={7}
                       onChange={(e) => {
                         const v = e.target.value.replace(/\D/g, "").slice(0, 4);
                         setCardExp(v.length > 2 ? `${v.slice(0, 2)} / ${v.slice(2)}` : v);
                       }}
-                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div className="w-24">
-                    <label className="text-xs font-medium text-gray-500 block mb-1">CVV</label>
+                    <label className="text-xs font-medium text-fg-muted block mb-1">CVV</label>
                     <input
                       type="text" placeholder="123" value={cardCvv} maxLength={4}
                       onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 text-center">
-                  Sandbox · test card: <span className="font-mono text-gray-500">4111 1111 1111 1111</span>
+                <p className="text-[11px] text-fg-subtle text-center">
+                  Sandbox · test card: <span className="font-mono text-fg-muted">4111 1111 1111 1111</span>
                 </p>
               </div>
             )}
@@ -214,12 +214,12 @@ export function GatewayOverlay({
                 <Lock size={13} />
                 Confirm payment · {formatThb(amount)}
               </button>
-              <button onClick={onClose} className="w-full text-sm text-gray-400 hover:text-gray-500 py-2 transition-colors">
+              <button onClick={onClose} className="w-full text-sm text-fg-subtle hover:text-fg-muted py-2 transition-colors">
                 Cancel
               </button>
             </div>
 
-            <div className="px-6 pb-4 flex items-center justify-center gap-1.5 text-[11px] text-gray-300 dark:text-zinc-600">
+            <div className="px-6 pb-4 flex items-center justify-center gap-1.5 text-[11px] text-fg-subtle dark:text-zinc-600">
               <ShieldCheck size={11} />
               <span>PCI DSS Level 1 · SSL encrypted</span>
             </div>

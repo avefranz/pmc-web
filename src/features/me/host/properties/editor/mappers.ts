@@ -1,4 +1,5 @@
-import type { AssetDto, ListingDto, UpdateAssetRequest, UpdateListingRequest, UpdateLocationRequest, CreateAssetRequest, CreateListingRequest, UserProfileDto, UpdateProfileRequest } from "@/lib/types";
+import type { AssetDto, ListingDto, UpdateAssetRequest, UpdateLocationRequest, CreateAssetRequest, CreateListingRequest, UserProfileDto, UpdateProfileRequest } from "@/lib/types";
+import type { UpdateListingRequest } from "@/lib/api/listings.api";
 import type { PropertyDraft } from "./types";
 import { EMPTY_DRAFT } from "./types";
 
@@ -71,7 +72,6 @@ export function toCreateAssetRequest(d: PropertyDraft): CreateAssetRequest {
     bathrooms: d.bathrooms,
     beds: d.beds || (d.bedrooms ?? 1),
     maxOccupancy: d.maxOccupancy || ((d.bedrooms ?? 1) * 2),
-    minLeaseMonths: 1,
   };
 }
 

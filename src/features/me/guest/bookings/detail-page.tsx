@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ArrowLeft, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen,
-  CalendarDays, Coins, Key, Lock, ConciergeBell, MapPin, Bus, Building2, FileText,
-  CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, XCircle,
+  CalendarDays, Key, Lock, ConciergeBell, MapPin, Bus, Building2, FileText,
+  CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone,
   Wrench, Home, ListChecks, AlertCircle, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -409,7 +409,6 @@ export function GuestBookingDetailPage() {
   const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
   void coResidents;
   const presentAmenities = listing?.amenities?.filter((a) => a.isPresent) ?? [];
-  const daysLeft = booking.daysRemaining;
 
   // Lease duration & monthly rate
   const checkIn = new Date(booking.checkInDate);
@@ -765,7 +764,7 @@ export function GuestBookingDetailPage() {
                 </div>
                 <Button
                   size="sm"
-                  className="rounded-xl bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                  className="rounded-xl bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
                   onClick={() => setTab("payments")}
                 >
                   Go to payment →
@@ -1132,7 +1131,7 @@ export function GuestBookingDetailPage() {
               ) : (
                 <>
                   <Button
-                    className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm font-semibold"
+                    className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm font-semibold"
                     onClick={() => openGateway(totalPending)}
                   >
                     <CreditCard size={14} className="mr-1.5" />Pay {formatThb(totalPending)} now
@@ -1186,7 +1185,7 @@ export function GuestBookingDetailPage() {
                   className={cn(
                     "w-full mt-4 rounded-xl h-10 text-sm font-semibold",
                     windowIsOpen
-                      ? "bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+                      ? "bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
                       : "bg-bg-subtle hover:bg-border text-fg border border-border",
                   )}
                   onClick={() => openGateway(nextRent.amount, nextRent.id)}
@@ -1291,7 +1290,7 @@ export function GuestBookingDetailPage() {
                     ) : isDueThisMonth || isNext ? (
                       <Button
                         size="sm"
-                        className="h-7 text-[11px] rounded-lg bg-brand hover:bg-[var(--color-primary-hover)] text-white px-2.5"
+                        className="h-7 text-[11px] rounded-lg bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white px-2.5"
                         onClick={() => openGateway(p.amount, p.id)}
                       >
                         Pay
@@ -1814,7 +1813,7 @@ export function GuestBookingDetailPage() {
               Your host will be notified instantly.
             </p>
             <Button
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-9"
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-9"
               disabled={
                 createTicket.isPending ||
                 issueTitle.trim().length < 3 ||
@@ -2104,7 +2103,7 @@ export function GuestBookingDetailPage() {
             <Button variant="outline" onClick={() => setAddGuestOpen(false)}>Cancel</Button>
             <Button
               disabled={!newResident.firstName?.trim() || addGuest.isPending || updatePassport.isPending}
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               onClick={async () => {
                 try {
                   await addGuest.mutateAsync(newResident);
@@ -2237,7 +2236,7 @@ export function GuestBookingDetailPage() {
               Cancel
             </Button>
             <Button
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               disabled={
                 createTicket.isPending ||
                 issueTitle.trim().length < 3 ||
@@ -2303,7 +2302,7 @@ export function GuestBookingDetailPage() {
               Cancel
             </Button>
             <Button
-              className="bg-brand hover:bg-[var(--color-primary-hover)] text-white"
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               disabled={renewBooking.isPending}
               onClick={async () => {
                 try {

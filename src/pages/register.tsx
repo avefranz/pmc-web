@@ -117,7 +117,7 @@ export default function RegisterPage() {
             {serverError && <p className="text-sm text-destructive">{serverError}</p>}
 
             <Button
-              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white font-medium"
+              className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-medium"
               type="submit"
               disabled={register.isPending}
             >

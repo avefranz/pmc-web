@@ -631,10 +631,10 @@ export function PropertyCreateWizard() {
                       key={i}
                       className="rounded-full transition-all duration-500"
                       style={i < step
-                        ? { width: 8, height: 8, background: "var(--color-primary)", opacity: .45 }
+                        ? { width: 8, height: 8, background: "rgb(var(--color-primary))", opacity: .45 }
                         : i === step
-                        ? { width: 22, height: 8, background: "var(--color-primary)" }
-                        : { width: 8, height: 8, background: "var(--color-border)" }}
+                        ? { width: 22, height: 8, background: "rgb(var(--color-primary))" }
+                        : { width: 8, height: 8, background: "rgb(var(--color-border))" }}
                     />
                   ))}
                 </div>

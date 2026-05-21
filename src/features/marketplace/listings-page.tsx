@@ -124,7 +124,7 @@ function ListingCard({
 
         {/* White pill badge — top left */}
         {badge && (
-          <div className="absolute top-3 left-3 bg-white text-fg text-[12px] font-semibold px-3 py-1.5 rounded-full shadow-sm leading-none">
+          <div className="absolute top-3 left-3 bg-bg-card text-fg text-[12px] font-semibold px-3 py-1.5 rounded-full shadow-sm leading-none">
             {badge}
           </div>
         )}
@@ -135,7 +135,7 @@ function ListingCard({
       {/* Info — exact Airbnb layout */}
       <div className="mt-2 px-0.5">
         {/* Line 1: regular weight, dark gray — NOT bold */}
-        <p className="text-[12px] font-semibold text-black leading-snug line-clamp-1">
+        <p className="text-[12px] font-semibold text-fg leading-snug line-clamp-1">
           {cardTitle}
         </p>
 
@@ -284,7 +284,7 @@ function FilterBar({
                   pillBase,
                   "px-3 py-1.5 rounded-full border flex items-center gap-1.5",
                   active
-                    ? "border-fg bg-fg text-white"
+                    ? "border-fg bg-fg text-bg-card"
                     : "border-transparent bg-bg-subtle text-fg-muted hover:text-fg hover:border-fg/20",
                 )}
               >
@@ -303,7 +303,7 @@ function FilterBar({
               pillBase,
               "px-3 py-1.5 rounded-full border flex items-center gap-1.5",
               panelOpen || extraActive > 0
-                ? "border-fg bg-fg text-white"
+                ? "border-fg bg-fg text-bg-card"
                 : "border-border bg-bg-card text-fg-muted hover:text-fg hover:border-fg/30",
             )}
           >
@@ -349,7 +349,7 @@ function FilterBar({
                       className={cn(
                         "px-4 py-1.5 rounded-full border text-[12px] font-medium transition-colors",
                         active
-                          ? "border-fg bg-fg text-white"
+                          ? "border-fg bg-fg text-bg-card"
                           : "border-border text-fg-muted hover:text-fg hover:border-fg/30",
                       )}
                     >
@@ -374,7 +374,7 @@ function FilterBar({
                       className={cn(
                         "px-3 py-1.5 rounded-full border text-[12px] font-medium flex items-center gap-1.5 transition-colors",
                         active
-                          ? "border-fg bg-fg text-white"
+                          ? "border-fg bg-fg text-bg-card"
                           : "border-border text-fg-muted hover:text-fg hover:border-fg/30",
                       )}
                     >
@@ -415,11 +415,11 @@ const SHIMMER_CSS = `
 .shimmer {
   background: linear-gradient(
     90deg,
-    var(--color-bg-subtle) 0%,
-    var(--color-bg-subtle) 35%,
-    color-mix(in srgb, var(--color-fg) 7%, var(--color-bg-subtle)) 50%,
-    var(--color-bg-subtle) 65%,
-    var(--color-bg-subtle) 100%
+    rgb(var(--color-bg-subtle)) 0%,
+    rgb(var(--color-bg-subtle)) 35%,
+    color-mix(in srgb, rgb(var(--color-fg)) 7%, rgb(var(--color-bg-subtle))) 50%,
+    rgb(var(--color-bg-subtle)) 65%,
+    rgb(var(--color-bg-subtle)) 100%
   );
   background-size: 600px 100%;
   animation: shimmer 1.6s ease-in-out infinite;
@@ -522,7 +522,6 @@ export function ListingsPage() {
   }, [data]);
 
   const hasMore = data ? page < data.totalPages : false;
-  const total   = data?.totalCount ?? 0;
 
   function set(key: string, val: string) {
     const next = new URLSearchParams(params);
@@ -572,19 +571,19 @@ export function ListingsPage() {
             </h2>
           )}
           {cityId && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-bg-card px-3 py-1.5 rounded-full">
               {cities?.find((c) => c.id === cityId)?.name.en ?? `City ${cityId}`}
               <button onClick={() => set("cityId", "")} className="hover:opacity-70 ml-0.5">×</button>
             </span>
           )}
           {durationMonths && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-bg-card px-3 py-1.5 rounded-full">
               {durationMonths} month{durationMonths !== 1 ? "s" : ""}
               <button onClick={() => set("durationMonths", "")} className="hover:opacity-70 ml-0.5">×</button>
             </span>
           )}
           {moveInFrom && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-white px-3 py-1.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-fg text-bg-card px-3 py-1.5 rounded-full">
               From {new Date(moveInFrom + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
               <button onClick={() => set("moveInFrom", "")} className="hover:opacity-70 ml-0.5">×</button>
             </span>

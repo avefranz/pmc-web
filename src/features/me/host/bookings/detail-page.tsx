@@ -1526,7 +1526,7 @@ export function BookingDetailPage() {
                 (landlordSigningCapacity === "Authorised Representative" && !landlordAgreedAuth) ||
                 landlordSignContract.isPending
               }
-              className="w-full bg-brand hover:bg-[var(--color-primary-hover)] text-white rounded-xl h-10 text-sm font-semibold disabled:opacity-50"
+              className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm font-semibold disabled:opacity-50"
             >
               {landlordSignContract.isPending ? "Signing…" : "Sign agreement"}
             </Button>

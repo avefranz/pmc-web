@@ -101,7 +101,7 @@ export function FinancePage() {
                   width={48}
                 />
                 <Tooltip
-                  formatter={(v: number) => [formatThb(v), "Revenue"]}
+                  formatter={(v) => [formatThb(v as number), "Revenue"]}
                   contentStyle={{ fontSize: 12, border: "1px solid #E5E5E5", background: "#fff", borderRadius: 8 }}
                 />
                 <Bar dataKey="value" fill="#E0945C" radius={[4, 4, 0, 0]} />
@@ -127,7 +127,7 @@ export function FinancePage() {
                     width={48}
                   />
                   <Tooltip
-                    formatter={(v: number) => [formatThb(v), "Expense"]}
+                    formatter={(v) => [formatThb(v as number), "Expense"]}
                     contentStyle={{ fontSize: 12, border: "1px solid #E5E5E5", background: "#fff", borderRadius: 8 }}
                   />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>

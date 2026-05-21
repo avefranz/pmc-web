@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
-import type { DraftPatch, EditorApi, SectionDef, SectionGroup } from "./types";
+import type { DraftPatch, SectionDef, SectionGroup } from "./types";
+import type { EditorApi } from "./use-editor";
 import { SECTION_GROUPS } from "./types";
 import { SECTIONS } from "./sections";
 import { celebrate, crossedMilestone, floatPlusOne } from "./celebrate";
@@ -108,7 +109,7 @@ export function SectionsList({ editor }: Props) {
           count: milestone ? 80 : 24,
           scale: milestone ? 1.2 : 0.8,
         });
-        floatPlusOne(dot, "+1", "var(--color-success, #16a34a)");
+        floatPlusOne(dot, "+1", "rgb(var(--color-success))");
         if (milestone === 100) {
           setTimeout(
             () =>

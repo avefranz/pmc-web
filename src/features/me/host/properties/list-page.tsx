@@ -3,7 +3,6 @@ import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { useMe } from "@/lib/hooks/use-auth";

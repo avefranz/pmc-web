@@ -201,7 +201,7 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
           </Button>
           <Button
             type="submit"
-            className="bg-brand hover:bg-[var(--color-primary-hover)] text-white font-medium px-5"
+            className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-medium px-5"
             disabled={updateProfile.isPending}
           >
             {updateProfile.isPending ? "Saving…" : "Save changes"}
