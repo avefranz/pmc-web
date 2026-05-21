@@ -30,8 +30,8 @@ export const useRegister = () => {
   const setToken = useAuthStore((s) => s.setToken);
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ email, password, firstName }: { email: string; password: string; firstName?: string }) =>
-      authApi.register(email, password, firstName),
+    mutationFn: ({ email, password, firstName, lastName }: { email: string; password: string; firstName?: string; lastName?: string }) =>
+      authApi.register(email, password, firstName, lastName),
     onSuccess: async (data) => {
       setToken(data.token);
       qc.invalidateQueries({ queryKey: ["me"] });

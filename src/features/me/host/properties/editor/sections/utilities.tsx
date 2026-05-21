@@ -38,7 +38,7 @@ export const utilitiesSection: SectionDef = {
   id: "utilities",
   label: "Utilities included",
   group: "included",
-  required: true,
+  required: false,
   estTime: "1 min",
   isComplete: () => true,
   summary: (d) => {

@@ -195,6 +195,12 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
             </div>
           )}
         </div>
+        {city && searchQuery.trim().length >= 3 && (draft.latitude === null || draft.longitude === null) && !searching && (
+          <p className="mt-2 text-xs text-warning flex items-start gap-1.5">
+            <MapPin size={12} className="shrink-0 mt-0.5" />
+            <span>Pick a suggestion above or tap the map below to confirm coordinates — we need a precise pin to publish.</span>
+          </p>
+        )}
       </Field>
 
       <Field label="Map" hint="Or tap on the map to drop a pin directly.">

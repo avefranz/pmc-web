@@ -360,9 +360,40 @@ export function BookingRequestModal({
     }
   }
 
+  // Passport validation — TM-30 immigration filing requires a valid passport.
+  // Expiry must be in the future (ideally 6+ months out — Thai immigration
+  // sometimes refuses entry on passports near expiry). Number must be a real
+  // alphanumeric of at least 6 chars (the international minimum).
+  function validatePassport(): string | null {
+    if (pNationality === "TH") return null;
+    if (!pPassportNumber.trim() && !pPassportExpiry) return null; // user chose to fill nothing → handled by separate Skip flow
+    const num = pPassportNumber.trim().toUpperCase();
+    if (num.length < 6 || !/^[A-Z0-9]+$/.test(num)) {
+      return "Passport number should be at least 6 letters/digits (e.g. AB123456).";
+    }
+    if (!pPassportExpiry) {
+      return "Passport expiry is required.";
+    }
+    const expiry = new Date(pPassportExpiry);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (expiry.getTime() < today.getTime()) {
+      return "Passport has expired — Thai immigration won't accept it for TM30.";
+    }
+    const sixMonthsFromNow = new Date(); sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
+    if (expiry.getTime() < sixMonthsFromNow.getTime()) {
+      return "Passport expires within 6 months — Thai immigration may refuse. Consider renewing first.";
+    }
+    return null;
+  }
+
   async function handlePassportSubmit(e: React.FormEvent) {
     e.preventDefault();
     const isThai = pNationality === "TH";
+    const validationError = validatePassport();
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
     setPassportSaving(true);
     try {
       await updateProfile.mutateAsync({
@@ -391,6 +422,14 @@ export function BookingRequestModal({
   }
 
   async function handlePassportSkip() {
+    // Foreign nationals: skipping passport blocks TM-30 filing for the host.
+    // Surface the consequence before letting the user move on.
+    if (pNationality && pNationality !== "TH") {
+      const confirmed = window.confirm(
+        "Without passport details, the host cannot file your TM-30 with Thai immigration — required by law for foreign tenants.\n\nYou can add this later in your profile. Continue without it?",
+      );
+      if (!confirmed) return;
+    }
     try {
       await doSubmitBooking();
     } catch (err: unknown) {

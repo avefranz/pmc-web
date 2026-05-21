@@ -437,7 +437,7 @@ export function SectionsList({ editor }: Props) {
 
 function GroupBlock({ group, children }: { group: SectionGroup; children: React.ReactNode }) {
   return (
-    <section>
+    <section data-group={group.id} style={{ scrollMarginTop: 96 }}>
       <h3 className="text-sm font-semibold text-fg mb-3 px-1">{group.label}</h3>
       <div className="space-y-2">{children}</div>
     </section>
@@ -478,7 +478,7 @@ function SectionShell({
   // (e.g. Photos) can't be completed in create mode — don't block them.
   const blockedByRequired = section.required && !isDone && !(section.editOnly && editor.mode === "create");
   const continueLabel = blockedByRequired
-    ? "Fill required fields"
+    ? "Fill required fields (marked *)"
     : upNextLabel == null
     ? isDone
       ? "Update & finish ✨"

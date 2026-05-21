@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { SlidersHorizontal, X } from "lucide-react";
+import { PhotoPlaceholder } from "@/components/shared/photo-placeholder";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useMarketplaceListings, useMarketplaceCities } from "@/lib/hooks/use-marketplace";
@@ -20,14 +21,6 @@ const CATEGORY_LABEL: Record<number, string> = {
   13: "Treehouse",14: "Boat",   15: "Yurt",
 };
 
-const FALLBACKS = [
-  "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=800&h=600&q=80",
-  "https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=800&h=600&q=80",
-  "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&h=600&q=80",
-  "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&h=600&q=80",
-  "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&h=600&q=80",
-  "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=800&h=600&q=80",
-];
 
 // ─── Wishlist heart ───────────────────────────────────────────────────────────
 
@@ -108,19 +101,25 @@ function ListingCard({
     ? `Save up to ${bestTier.discountPercent}%`
     : null;
 
-  const photo = listing.coverImageUrl ?? FALLBACKS[idx % FALLBACKS.length];
+  const photo = listing.coverImageUrl;
 
   return (
     <Link to={`/listings/${listing.id}`} className="group block" style={style}>
 
-      {/* Photo — no zoom, exact Airbnb style */}
+      {/* Photo — no zoom, exact Airbnb style. Real photo only — never show
+          a generic stock placeholder for a listing that has no photo: that
+          misleads tenants about what they're booking. */}
       <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle">
-        <img
-          src={photo}
-          alt={listing.title}
-          className="w-full h-full object-cover"
-          loading="lazy"
-        />
+        {photo ? (
+          <img
+            src={photo}
+            alt={listing.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <PhotoPlaceholder />
+        )}
 
         {/* White pill badge — top left */}
         {badge && (

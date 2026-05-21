@@ -30,7 +30,7 @@ import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
 import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind } from "@/lib/types/enums";
 import type { AmenityDto, ListingMediaDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
-import { getPlaceholderImage } from "@/lib/utils/placeholder-images";
+import { PhotoPlaceholder } from "@/components/shared/photo-placeholder";
 import { useQueryClient } from "@tanstack/react-query";
 
 type Section = "overview" | "photos" | "listing" | "bookings" | "tickets" | "utilities" | "amenities" | "finances";
@@ -527,13 +527,17 @@ export function PropertyDetailPage() {
         <aside className="hidden lg:flex w-[260px] shrink-0 flex-col gap-2">
           {/* Property card */}
           <div className="bg-bg-card rounded-2xl border border-border overflow-hidden shadow-card">
-            {/* Cover photo */}
+            {/* Cover photo — landlord's own view, real photo only */}
             <div className="aspect-[4/3] bg-bg-subtle overflow-hidden">
-              <img
-                src={coverPhoto ?? getPlaceholderImage(asset.id)}
-                alt={asset.internalName}
-                className="w-full h-full object-cover"
-              />
+              {coverPhoto ? (
+                <img
+                  src={coverPhoto}
+                  alt={asset.internalName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <PhotoPlaceholder label="Add photos to publish" iconSize={28} />
+              )}
             </div>
 
             <div className="p-4">

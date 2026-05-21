@@ -69,7 +69,7 @@ export const cancelSection: SectionDef = {
   id: "cancel",
   label: "Cancellation policy",
   group: "stay",
-  required: true,
+  required: false,
   estTime: "30 sec",
   isComplete: () => true,
   summary: (d) => POLICIES.find((p) => p.id === activePolicy(d))?.title ?? "Moderate",

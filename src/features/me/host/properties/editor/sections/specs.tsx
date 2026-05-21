@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Building, Building2, Home, Box } from "lucide-react";
+import { Building, Building2, Home, Box, DoorOpen, Users, BedDouble } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useReferences } from "@/lib/hooks/use-references";
@@ -7,16 +7,26 @@ import type { PropertyDraft, SectionDef, SectionDialogProps } from "../types";
 import { ChipGroup, Field, NumberStepper, PickerCard, Row } from "../ui";
 
 const ICONS: Record<string, JSX.Element> = {
+  // Building-type variants (older seed data)
   apartment: <Building2 size={20} />,
-  condo: <Building size={20} />,
-  house: <Home size={20} />,
-  other: <Box size={20} />,
+  condo:     <Building size={20} />,
+  house:     <Home size={20} />,
+  // Airbnb-style variants (current seed: Entire / Private / Shared / Hotel)
+  entire:    <Home size={20} />,
+  private:   <DoorOpen size={20} />,
+  shared:    <Users size={20} />,
+  hotel:     <BedDouble size={20} />,
+  other:     <Box size={20} />,
 };
 
 function pickIcon(code?: string, label?: string): JSX.Element {
   const key = (code ?? label ?? "").toLowerCase();
-  if (key.includes("apart")) return ICONS.apartment;
-  if (key.includes("condo")) return ICONS.condo;
+  if (key.includes("entire"))  return ICONS.entire;
+  if (key.includes("private")) return ICONS.private;
+  if (key.includes("shared"))  return ICONS.shared;
+  if (key.includes("hotel"))   return ICONS.hotel;
+  if (key.includes("apart"))   return ICONS.apartment;
+  if (key.includes("condo"))   return ICONS.condo;
   if (key.includes("house") || key.includes("villa")) return ICONS.house;
   return ICONS.other;
 }
@@ -54,7 +64,7 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
       </Field>
 
       <Row cols={3}>
-        <Field label="Bedrooms" required>
+        <Field label="Bedrooms" required hint={(draft.bedrooms ?? 0) === 0 ? "0 = studio" : undefined}>
           <NumberStepper value={draft.bedrooms ?? 0} onChange={(n) => patch({ bedrooms: n })} />
         </Field>
         <Field label="Bathrooms" required>
@@ -66,20 +76,45 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
       </Row>
 
       <Row cols={isHouse ? 1 : 3}>
-        <Field label="Area (m²)" required>
+        <Field
+          label="Area (m²)"
+          required
+          hint={draft.areaSqm !== null && draft.areaSqm < 10 ? "Most studios are 18-25 m²; double-check this value." : undefined}
+        >
           <Input
             type="number"
+            min={1}
+            max={5000}
             value={draft.areaSqm ?? ""}
-            onChange={(e) => patch({ areaSqm: e.target.value === "" ? null : Number(e.target.value) })}
+            onChange={(e) => {
+              const v = e.target.value === "" ? null : Number(e.target.value);
+              patch({ areaSqm: v });
+            }}
           />
         </Field>
         {!isHouse && (
           <>
-            <Field label="Unit floor" required>
-              <NumberStepper value={draft.floor ?? 0} onChange={(n) => patch({ floor: n })} />
+            <Field
+              label="Unit floor"
+              required
+              hint={
+                draft.floor !== null && draft.totalFloors !== null && draft.floor > draft.totalFloors
+                  ? `Can't be higher than the building (${draft.totalFloors} floors).`
+                  : undefined
+              }
+            >
+              <NumberStepper
+                value={draft.floor ?? 0}
+                onChange={(n) => patch({ floor: n })}
+                max={draft.totalFloors ?? 200}
+              />
             </Field>
             <Field label="Floors in building" required>
-              <NumberStepper value={draft.totalFloors ?? 1} onChange={(n) => patch({ totalFloors: n })} min={1} />
+              <NumberStepper
+                value={draft.totalFloors ?? 1}
+                onChange={(n) => patch({ totalFloors: n, floor: draft.floor !== null && draft.floor > n ? n : draft.floor })}
+                min={1}
+              />
             </Field>
           </>
         )}

@@ -91,6 +91,15 @@ function PropertyEditor({ id }: { id: string | undefined }) {
             mode={editor.mode}
             primaryImageUrl={asset?.primaryImageUrl}
             occupancyStatus={asset?.occupancyStatus}
+            onGroupClick={(groupId) => {
+              const el = document.querySelector<HTMLElement>(`[data-group="${groupId}"]`);
+              if (!el) return;
+              // body { overflow-x: hidden } breaks smooth scroll in some
+              // browsers — fall back to instant scroll for reliability.
+              const TOPBAR_OFFSET = 96;
+              const top = el.getBoundingClientRect().top + window.scrollY - TOPBAR_OFFSET;
+              window.scrollTo(0, top);
+            }}
             onDelete={editor.mode === "edit" ? () => setConfirmDelete(true) : undefined}
           />
           <SectionsList editor={editor} />

@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils/cn";
 import { AvailabilityTimeline } from "./components/availability-timeline";
 import { BookingWidget } from "./components/booking-widget";
 import { BookingRequestModal } from "./components/booking-request-modal";
+import { MarkdownContent } from "@/components/shared/markdown-content";
 import type { ListingAvailabilityDto } from "@/lib/types/marketplace";
 
 // ─── Gallery modal ────────────────────────────────────────────────────────────
@@ -532,7 +533,7 @@ export function ListingDetailPage() {
           {/* 3. Description */}
           {listing.description && (
             <Section title="About this place" sub="In the host's words">
-              <p className="text-[15px] text-fg-muted leading-relaxed whitespace-pre-line max-w-[60ch]">{listing.description}</p>
+              <MarkdownContent>{listing.description}</MarkdownContent>
             </Section>
           )}
 

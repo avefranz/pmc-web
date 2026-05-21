@@ -59,35 +59,83 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
     }
   }
 
+  // Build a structured, fact-based Airbnb-style description from the draft.
+  // Uses ONLY data the landlord entered — no AI features endpoint (avoids
+  // hallucinations like "mountain view" / "corner unit") and no exact street
+  // address (privacy: exact address is shared after booking confirmation).
   async function generateDescription() {
     if (!canGenerate || !propTypeName) return;
     setGenDesc(true);
     try {
-      // We don't have a separate description endpoint — reuse title gen with
-      // a richer signal as a stop-gap, then fall back to a template.
-      const featureResp = await aiApi
-        .suggestFeatures({
-          propertyType: propTypeName as AiPropertyType,
-          area: cityName,
-          bedrooms: draft.bedrooms!,
-        })
-        .catch(() => null);
+      const bedLabel  = draft.bedrooms === 0 ? "studio" : `${draft.bedrooms}-bedroom`;
+      const typeLower = propTypeName.toLowerCase();
 
-      const features = featureResp?.features?.slice(0, 4) ?? [];
-      const bedLabel = draft.bedrooms === 0 ? "studio" : `${draft.bedrooms}-bedroom`;
-      const blurb = [
-        `A welcoming ${bedLabel} ${propTypeName.toLowerCase()} in ${cityName}.`,
-        features.length > 0
-          ? `Highlights include ${features.join(", ").toLowerCase()}.`
-          : "",
-        draft.streetAddress
-          ? `Located on ${draft.streetAddress}, with easy access to nearby amenities.`
-          : `Tenants will enjoy quick access to local cafes, markets, and transit.`,
-        "Move-in ready and ideal for monthly stays.",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      patch({ description: blurb });
+      const furnishedLabel =
+        draft.furnished === "Fully"       ? "fully furnished" :
+        draft.furnished === "Semi"        ? "partially furnished" :
+        draft.furnished === "Unfurnished" ? "unfurnished" : null;
+
+      const petsLabel =
+        draft.petsExplicitlySet && draft.petsAllowed ? "pet-friendly" : null;
+
+      const aboutTags = [furnishedLabel, petsLabel].filter(Boolean).join(" and ");
+      const about = `A welcoming ${bedLabel} ${typeLower} in ${cityName}${aboutTags ? ", " + aboutTags : ""}. Ideal for monthly stays.`;
+
+      // ── The space — facts only
+      const space: string[] = [];
+      const bedNum  = draft.bedrooms ?? 0;
+      const bathNum = draft.bathrooms;
+      if (bedNum > 0 || bathNum > 0) {
+        const bedPart  = bedNum === 0 ? "Studio" : `${bedNum} ${bedNum === 1 ? "bedroom" : "bedrooms"}`;
+        const bathPart = `${bathNum} ${bathNum === 1 ? "bathroom" : "bathrooms"}`;
+        space.push(`${bedPart} · ${bathPart}`);
+      }
+      if (draft.maxOccupancy > 0) space.push(`Sleeps up to ${draft.maxOccupancy}`);
+      if (draft.areaSqm)          space.push(`${draft.areaSqm} m² of living space`);
+      if (draft.floor !== null && draft.totalFloors) {
+        space.push(`Floor ${draft.floor} of ${draft.totalFloors}`);
+      }
+      if (furnishedLabel) space.push(furnishedLabel.charAt(0).toUpperCase() + furnishedLabel.slice(1));
+      if (draft.parkingSpaces > 0) {
+        const incl = draft.parkingIncluded ? " (included in rent)" : "";
+        space.push(`Parking: ${draft.parkingSpaces} space${draft.parkingSpaces > 1 ? "s" : ""}${incl}`);
+      }
+
+      // ── Guest access — method only; never expose codes/passwords
+      const checkInLabel: Record<string, string> = {
+        KeyHandover: "Key handover at meeting",
+        Smartlock:   "Smart lock access",
+        Keybox:      "Lockbox pickup",
+        Reception:   "Doorman / building reception",
+        Other:       "Hosted access",
+      };
+      const guestAccess = draft.checkInMethod && checkInLabel[draft.checkInMethod]
+        ? `${checkInLabel[draft.checkInMethod]}. Full details shared once your booking is confirmed.`
+        : null;
+
+      // ── Other things to note — rules + pets
+      const notes: string[] = [];
+      const ruleLines = draft.houseRules.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+      notes.push(...ruleLines);
+      if (draft.petsExplicitlySet && !ruleLines.some((r) => /pet/i.test(r))) {
+        notes.push(draft.petsAllowed ? "Pets welcome" : "No pets allowed");
+      }
+
+      // Assemble markdown
+      const parts: string[] = [
+        "## About the place",
+        about,
+      ];
+      if (space.length) {
+        parts.push("", "## The space", ...space.map((s) => `- ${s}`));
+      }
+      if (guestAccess) {
+        parts.push("", "## Guest access", guestAccess);
+      }
+      if (notes.length) {
+        parts.push("", "## Other things to note", ...notes.map((n) => `- ${n}`));
+      }
+      patch({ description: parts.join("\n") });
     } finally {
       setGenDesc(false);
     }

@@ -1,4 +1,4 @@
-import { ArrowLeft, BedDouble, Bath, Eye, Home, Users } from "lucide-react";
+import { ArrowLeft, BedDouble, Bath, Eye, Home, Users, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
@@ -98,12 +98,15 @@ export function EditorSidebar({
         </div>
 
         {onDelete && (
-          <div className="border-t border-border p-3">
+          // Generous separator + dimmer styling so this destructive action
+          // isn't visually adjacent to the navigation items above it.
+          <div className="mt-3 border-t border-border bg-bg-subtle/30 p-3">
             <button
               type="button"
               onClick={onDelete}
-              className="w-full text-xs text-fg-muted hover:text-danger transition-colors"
+              className="w-full text-[11px] text-fg-subtle hover:text-danger transition-colors flex items-center justify-center gap-1.5"
             >
+              <Trash2 size={11} />
               Delete property
             </button>
           </div>
@@ -154,14 +157,10 @@ function PreviewCard({
           {primaryImageUrl ? (
             <img src={primaryImageUrl} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div
-              className="w-full h-full flex items-center justify-center"
-              style={{
-                background:
-                  "linear-gradient(135deg, #e7e0d4 0%, #d6cebd 50%, #c2b8a3 100%)",
-              }}
-            >
-              <Home size={36} strokeWidth={1.25} className="text-white/70" />
+            // Theme-aware placeholder: stays neutral against bg-bg-card so it
+            // doesn't clash with dark navy when there's no photo yet.
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-bg-subtle to-bg-subtle/60">
+              <Home size={36} strokeWidth={1.25} className="text-fg-muted/40" />
             </div>
           )}
           {/* Badges — top-left */}

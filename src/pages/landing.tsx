@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useMarketplaceCities, useMarketplaceListings } from "@/lib/hooks/use-marketplace";
 import { formatThb } from "@/lib/utils/format";
-import { getPlaceholderImage } from "@/lib/utils/placeholder-images";
+import { PhotoPlaceholder } from "@/components/shared/photo-placeholder";
 import { cn } from "@/lib/utils/cn";
 import type { MarketplaceListingPreviewDto } from "@/lib/types/marketplace";
 import { SiamoLogo } from "@/components/layout/siamo-logo";
@@ -223,7 +223,9 @@ function LandingNav() {
 function ListingCard({ listing, index }: { listing: MarketplaceListingPreviewDto; index: number }) {
   const { t } = useTranslation();
   const rate  = listing.monthlyRate || listing.baseMonthlyRate || listing.basePrice || 0;
-  const photo = listing.coverImageUrl ?? getPlaceholderImage(listing.id);
+  // Real photo only — never a generic stock fallback that misrepresents
+  // what's actually being rented.
+  const photo = listing.coverImageUrl;
 
   return (
     <Link
@@ -232,12 +234,16 @@ function ListingCard({ listing, index }: { listing: MarketplaceListingPreviewDto
       style={{ animationDelay: `${(index + 1) * 100}ms` }}
     >
       <div className="relative aspect-[4/5] rounded-2xl overflow-hidden mb-3 bg-secondary">
-        <img
-          src={photo}
-          alt={listing.title}
-          loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-        />
+        {photo ? (
+          <img
+            src={photo}
+            alt={listing.title}
+            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+          />
+        ) : (
+          <PhotoPlaceholder />
+        )}
         <button
           aria-label="Save to favorites"
           onClick={(e) => e.preventDefault()}

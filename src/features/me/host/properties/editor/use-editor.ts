@@ -202,9 +202,20 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         await profileApi.update(toPaymentProfileUpdate(draft));
       }
 
-      // Phase 1: asset
+      // Phase 1: asset (basic shape — backend CreateAssetRequest only takes
+      // a handful of fields).
       const created = await assetsApi.create(toCreateAssetRequest(draft));
       const newAssetId = created.id;
+
+      // Phase 1.5: write the remaining asset specs (area, floor, totalFloors,
+      // furnished, parking, etc.) via PATCH. Without this, those fields were
+      // silently dropped on first save and the host saw empty values after
+      // reload — even though they were marked required in the editor.
+      try {
+        await assetsApi.update(newAssetId, toUpdateAssetRequest(draft));
+      } catch {
+        /* non-fatal — host can re-enter on edit page */
+      }
 
       // Phase 2: location (best-effort — don't roll back asset on failure)
       const locReq = toUpdateLocationRequest(draft, newAssetId);
@@ -245,13 +256,17 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         spread: Math.PI * 1.4,
       });
       toast.success("Property saved! Add photos and publish when you're ready 🚀");
+      // Reset before navigating — once the route changes, mode flips to
+      // "edit" and the bottom-right capsule swaps to the Publish bar. If we
+      // leave isSaving=true here, the brief moment between mode-flip and
+      // listing-load shows a stale "Saving…" label on the create-mode pill.
+      setIsSaving(false);
       navigate(`/me/host/properties/${newAssetId}`, { replace: true });
       return newAssetId;
     } catch {
       toast.error("Couldn't save. Try again.");
-      return null;
-    } finally {
       setIsSaving(false);
+      return null;
     }
   }, [mode, draft, missingForSave.length, needsContactSection, needsPaymentSection, qc, refs, navigate]);
 
