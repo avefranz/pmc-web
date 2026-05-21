@@ -132,9 +132,9 @@
 |---|----------|-----|----------|--------|
 | B-59 | Broken image fallback | Если cover image 404/невалидно — раньше отображался broken-icon; теперь автоматический `<PhotoPlaceholder>` через onError | minor | **fixed** (новый `<ListingImage>`) |
 | B-60 | Photo guidelines | В Photos editor добавлен hint про cover photo (avoid pets, signage, appliances, QR codes — реальные кейсы из seed-данных) | polish | **fixed** (inline hint) |
-| B-61 | Booking submit generic error | После Continue в booking modal: если visa/entry port/last entry date пустые → backend 4xx, фронт показывает «Failed to send request. Please try again.» без указания что заполнить. Нужны inline field errors. | major | open |
-| B-62 | Booking modal — Continue disabled silently | После заполнения message Continue остаётся disabled пока не выбрана pets опция. Disabled-state не указывает что надо выбрать. | minor | open |
-| B-63 | Booking modal step 2 «Save & send request» enabled без visa/entry data | Для не-TH нужны visa+entry — но кнопка не disabled пока эти поля пустые. Сабмит → backend 4xx (B-61). | major | open |
+| B-61 | Booking submit generic error | Backend 4xx → generic тост. Нужно парсить structured errors. | major | open (frontend + see BE-8) |
+| B-62 | Booking modal step 1 — Continue disabled silently | После заполнения message Continue disabled пока не выбрана pets опция, без указания. | minor | open |
+| B-63 | Booking modal step 2 — submit без visa/entry data | Для не-TH visa+entry обязательны на backend, но кнопка не была disabled — сабмит → 4xx. | major | **fixed** (passportStepReady() + dynamic button label «Fill all fields (or Skip)») |
 | B-64 | Public-shell anonymous avatar | Был `bg-[#717171]` хардкод — заменил на `bg-fg-muted + fill-bg-card`, theme-aware | polish | **fixed** |
 
 ### Hardcoded colors audit (для бэклога)

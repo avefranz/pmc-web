@@ -386,6 +386,22 @@ export function BookingRequestModal({
     return null;
   }
 
+  // Full passport step validation — for non-TH all immigration fields are
+  // required (visa type, last entry, entry port) — otherwise backend rejects
+  // with a generic 4xx that the user can't act on. Validate up-front and
+  // disable Save & send until everything's in order.
+  function passportStepReady(): boolean {
+    if (!pNationality) return false;
+    if (pNationality === "TH") return true;
+    if (validatePassport()) return false;
+    if (!pPassportNumber.trim()) return false;
+    if (!pPassportExpiry) return false;
+    if (!pVisaType) return false;
+    if (!pLastEntryDate) return false;
+    if (!pLastEntryPort.trim()) return false;
+    return true;
+  }
+
   async function handlePassportSubmit(e: React.FormEvent) {
     e.preventDefault();
     const isThai = pNationality === "TH";
@@ -764,9 +780,15 @@ export function BookingRequestModal({
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={!pNationality || passportSaving || submit.isPending}
+                disabled={!passportStepReady() || passportSaving || submit.isPending}
               >
-                {(passportSaving || submit.isPending) ? "Please wait…" : "Save & send request"}
+                {(passportSaving || submit.isPending)
+                  ? "Please wait…"
+                  : passportStepReady()
+                    ? "Save & send request"
+                    : pNationality && pNationality !== "TH"
+                      ? "Fill all fields (or Skip)"
+                      : "Pick nationality"}
               </Button>
               <Button
                 type="button"
