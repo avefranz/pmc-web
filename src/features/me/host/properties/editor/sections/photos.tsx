@@ -172,8 +172,11 @@ function PhotosDialog({ listingId }: SectionDialogProps) {
           </button>
         )}
       </div>
-      <div className="text-xs text-fg-muted text-center">
+      <div className="text-xs text-fg-muted text-center mb-2">
         {media.length} of {MAX_PHOTOS} photos · Aim for 5+ for more inquiries
+      </div>
+      <div className="text-[11px] text-fg-subtle bg-bg-subtle rounded-lg px-3 py-2">
+        <span className="font-semibold text-fg-muted">Tips for the cover photo:</span> use the main living area in landscape, well-lit and uncluttered. Avoid close-ups of pets, signage, appliances, QR codes — tenants scrolling the marketplace need to recognise the room instantly.
       </div>
     </div>
   );

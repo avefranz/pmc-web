@@ -196,3 +196,27 @@ AI остаётся для use case'ов где креативность реа�
 **Гипотеза:**
 
 **Решение:**
+
+---
+
+## BE-8. POST /api/bookings (tenant submit) → 4xx без structured field errors
+
+**Severity:** major (UX)
+
+**Воспроизведение:**
+1. Tenant (non-TH) → Listing → Request to Book → message + No pets → Continue
+2. Step 2 passport: nationality + passport number + expiry, **skip** visa/last-entry/port
+3. Save & send request
+
+**Факт:** generic тост «Failed to send request. Please try again.» Network: запрос с пустыми полями → 4xx, фронт не парсит structured errors.
+
+**Решение backend:** убедиться что error response в формате `{ errors: { fieldName: [...] } }` — фронт уже умеет парсить (handlePassportSubmit).
+
+**Решение frontend:** добавить inline валидацию visa+entry на step 2 ДО submit.
+
+---
+
+## BE-9. AI suggestListingTitle (`POST /api/ai/suggest-title`) — проверить на hallucinations
+
+**Контекст:** мы выключили suggestFeatures (BE-7). Title-generation остался — может тоже галлюцинировать. Проверить prompt и поведение.
+

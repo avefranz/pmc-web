@@ -19,6 +19,7 @@ import { AvailabilityTimeline } from "./components/availability-timeline";
 import { BookingWidget } from "./components/booking-widget";
 import { BookingRequestModal } from "./components/booking-request-modal";
 import { MarkdownContent } from "@/components/shared/markdown-content";
+import { ListingImage } from "@/components/shared/photo-placeholder";
 import type { ListingAvailabilityDto } from "@/lib/types/marketplace";
 
 // ─── Gallery modal ────────────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ function GalleryModal({ media, startAt, onClose }: {
             <button key={m.id} onClick={() => setIdx(i)}
               className={cn("shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all",
                 i === idx ? "border-white opacity-100" : "border-transparent opacity-40 hover:opacity-70")}>
-              <img src={m.url} alt="" className="w-full h-full object-cover" />
+              <ListingImage src={m.url} alt="" className="w-full h-full object-cover" placeholderIconSize={16} />
             </button>
           ))}
         </div>
@@ -88,14 +89,14 @@ function PhotoGrid({ media }: { media: MediaItem[] }) {
       <div className="hidden md:block relative">
         <div className="grid grid-cols-[2fr_1fr_1fr] grid-rows-2 gap-2 rounded-2xl overflow-hidden h-[420px]">
           <button className="row-span-2 overflow-hidden group" onClick={() => open(0)}>
-            <img src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
+            <ListingImage src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
           </button>
           {[0, 1, 2, 3].map((i) => {
             const item = rest[i];
             return (
               <button key={i} className="overflow-hidden group relative" onClick={() => item && open(i + 1)} disabled={!item}>
                 {item ? (
-                  <img src={item.url} alt={item.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
+                  <ListingImage src={item.url} alt={item.caption ?? ""} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
                 ) : (
                   <div className="w-full h-full bg-bg-subtle" />
                 )}
@@ -118,7 +119,7 @@ function PhotoGrid({ media }: { media: MediaItem[] }) {
       </div>
 
       <div className="md:hidden relative aspect-[4/3] rounded-2xl overflow-hidden bg-bg-subtle">
-        <img src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover" onClick={() => open(0)} />
+        <ListingImage src={main.url} alt={main.caption ?? ""} className="w-full h-full object-cover" onClick={() => open(0)} />
         {media.length > 1 && (
           <button onClick={() => open(0)} className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-bg-card/90 backdrop-blur-sm border border-border rounded-full px-3 py-1.5 text-xs font-semibold text-fg shadow-sm">
             <LayoutGrid size={12} />{media.length} photos

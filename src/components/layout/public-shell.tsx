@@ -538,8 +538,8 @@ function MarketplaceUserMenu() {
             <span className="text-white text-xs font-semibold leading-none">{initials(name) || "?"}</span>
           </div>
         ) : (
-          <div className="w-7 h-7 rounded-full bg-[#717171] flex items-center justify-center">
-            <svg viewBox="0 0 32 32" className="w-4 h-4 fill-white">
+          <div className="w-7 h-7 rounded-full bg-fg-muted flex items-center justify-center">
+            <svg viewBox="0 0 32 32" className="w-4 h-4 fill-bg-card">
               <path d="M16 .7a15.3 15.3 0 100 30.6A15.3 15.3 0 0016 .7zm0 7a5.1 5.1 0 110 10.2A5.1 5.1 0 0116 7.7zm0 21.5a11.7 11.7 0 01-8.9-4.1c.1-2.9 5.9-4.6 8.9-4.6s8.8 1.7 8.9 4.6a11.7 11.7 0 01-8.9 4.1z" />
             </svg>
           </div>

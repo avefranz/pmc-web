@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { SlidersHorizontal, X } from "lucide-react";
-import { PhotoPlaceholder } from "@/components/shared/photo-placeholder";
+import { ListingImage } from "@/components/shared/photo-placeholder";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useMarketplaceListings, useMarketplaceCities } from "@/lib/hooks/use-marketplace";
@@ -110,16 +110,12 @@ function ListingCard({
           a generic stock placeholder for a listing that has no photo: that
           misleads tenants about what they're booking. */}
       <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle">
-        {photo ? (
-          <img
-            src={photo}
-            alt={listing.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <PhotoPlaceholder />
-        )}
+        <ListingImage
+          src={photo}
+          alt={listing.title}
+          loading="lazy"
+          className="w-full h-full object-cover"
+        />
 
         {/* White pill badge — top left */}
         {badge && (

@@ -1,3 +1,4 @@
+import { useState, type ImgHTMLAttributes } from "react";
 import { Home } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -27,5 +28,36 @@ export function PhotoPlaceholder({
         <span className="text-[10px] uppercase tracking-wider">{label}</span>
       )}
     </div>
+  );
+}
+
+/**
+ * Drop-in replacement for <img> that swaps to PhotoPlaceholder if the
+ * source 404s or fails to load (CDN miss, dead URL, etc.) — avoids
+ * the browser's broken-image icon which looks like a bug to tenants.
+ */
+export function ListingImage({
+  src,
+  alt,
+  className,
+  placeholderLabel,
+  placeholderIconSize,
+  ...imgProps
+}: ImgHTMLAttributes<HTMLImageElement> & {
+  placeholderLabel?: string;
+  placeholderIconSize?: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  if (!src || errored) {
+    return <PhotoPlaceholder label={placeholderLabel} iconSize={placeholderIconSize} className={className} />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setErrored(true)}
+      className={className}
+      {...imgProps}
+    />
   );
 }

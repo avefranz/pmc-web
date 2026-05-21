@@ -126,6 +126,29 @@
 | B-57 | Bank account name | Никак не связан с registered firstName+lastName юзера. | minor | **fixed** (сравнивает с `me.firstName+lastName`, warning при несовпадении) |
 | B-58 | Bank account number | Нет валидации формата (9-15 digits depending on bank). | minor | **fixed** (digits-only, 9–15 range) |
 
+### Phase 3 (autonomous session) — найдено + чинено
+
+| # | Где | Что | Severity | Status |
+|---|----------|-----|----------|--------|
+| B-59 | Broken image fallback | Если cover image 404/невалидно — раньше отображался broken-icon; теперь автоматический `<PhotoPlaceholder>` через onError | minor | **fixed** (новый `<ListingImage>`) |
+| B-60 | Photo guidelines | В Photos editor добавлен hint про cover photo (avoid pets, signage, appliances, QR codes — реальные кейсы из seed-данных) | polish | **fixed** (inline hint) |
+| B-61 | Booking submit generic error | После Continue в booking modal: если visa/entry port/last entry date пустые → backend 4xx, фронт показывает «Failed to send request. Please try again.» без указания что заполнить. Нужны inline field errors. | major | open |
+| B-62 | Booking modal — Continue disabled silently | После заполнения message Continue остаётся disabled пока не выбрана pets опция. Disabled-state не указывает что надо выбрать. | minor | open |
+| B-63 | Booking modal step 2 «Save & send request» enabled без visa/entry data | Для не-TH нужны visa+entry — но кнопка не disabled пока эти поля пустые. Сабмит → backend 4xx (B-61). | major | open |
+| B-64 | Public-shell anonymous avatar | Был `bg-[#717171]` хардкод — заменил на `bg-fg-muted + fill-bg-card`, theme-aware | polish | **fixed** |
+
+### Hardcoded colors audit (для бэклога)
+
+Sub-agent проаудитил `src/` (без `components/ui/` и `pages/landing.tsx`). Топ нарушителей:
+
+- **create-wizard.tsx** — 8+ хардкод hex-gradients (worst offender)
+- **detail-page.tsx (host properties)** — 5+ gradients + inline `#ececf0/#fafafa/#a1a1aa`
+- **ticket-status.ts** — 7 status color pairs (blue-100/700, amber, indigo, red, orange) без переменных
+- **booking-request-modal.tsx / listing-detail-page.tsx** — `bg-black/60`, `bg-black/95` для overlays
+- **gateway-overlay.tsx / payment-page.tsx** — `bg-yellow-400 text-black` SANDBOX badge
+
+Полный список — см. audit-вывод sub-agent. Не критично для core flow, но для тёмной темы создаёт визуальные glitch'и. **35+ хардкодов + 50+ статус-цветов без переменных**.
+
 ### Дополнительно проверено и работает корректно
 
 - Cancellation policy: 4 чёткие политики (Flexible/Moderate/Strict/Non-refundable), default = Moderate
