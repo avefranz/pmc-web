@@ -640,19 +640,21 @@ export function ListingDetailPage() {
             </Section>
           )}
 
-          {/* 8. Cancellation policy */}
+          {/* 8. Cancellation policy — uses our success/warning tokens so it
+              stays readable in both themes (the previous bg-emerald-50/50
+              washed out on dark navy and the body text turned to mush). */}
           {noticeDays > 0 && (
             <Section title="Cancellation policy" sub="Two windows. No surprises.">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
+                <div className="rounded-2xl border border-success/30 bg-success/10 p-5">
                   <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2">Grace period</p>
-                  <p className="text-[22px] font-bold text-emerald-700 tracking-tight leading-none mb-2">{graceLabel}</p>
+                  <p className="text-[22px] font-bold text-success tracking-tight leading-none mb-2">{graceLabel}</p>
                   <p className="text-sm font-semibold text-fg mb-2 leading-snug">Leave any time — full deposit returned</p>
                   <p className="text-[13px] text-fg-muted leading-relaxed">Give notice within {noticeDays} days of moving in. Siamo refunds your deposit in full, minus only the nights you stayed.</p>
                 </div>
-                <div className="rounded-2xl border border-amber-100 bg-amber-50/40 p-5">
+                <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5">
                   <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.08em] mb-2">After day {noticeDays}</p>
-                  <p className="text-[22px] font-bold text-amber-700 tracking-tight leading-none mb-2">Deposit held</p>
+                  <p className="text-[22px] font-bold text-warning tracking-tight leading-none mb-2">Deposit held</p>
                   <p className="text-sm font-semibold text-fg mb-2 leading-snug">Standard contract terms apply</p>
                   <p className="text-[13px] text-fg-muted leading-relaxed">The landlord keeps your deposit if you end the contract early. Notice period follows the signed rental agreement.</p>
                 </div>
@@ -678,17 +680,20 @@ export function ListingDetailPage() {
             )}
           </Section>
 
-          {/* 10. What Siamo provides */}
+          {/* 10. What Siamo provides — single brand colour for every icon so
+              the four guarantees read as one cohesive set, not a rainbow.
+              Was: brand / emerald / amber / violet — looked random and the
+              50-tint backgrounds had no contrast in dark mode. */}
           <Section title="What Siamo provides" sub="On every booking, end-to-end">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {([
-                { icon: <FileText size={18} strokeWidth={1.5} />, iconClass: "bg-brand/10 text-brand", title: "Rental contract", sub: "Bilingual EN & TH, drafted by Siamo legal" },
-                { icon: <Lock size={18} strokeWidth={1.5} />, iconClass: "bg-emerald-50 text-emerald-600", title: "Deposit protection", sub: "Held in escrow by Siamo, not the landlord" },
-                { icon: <ClipboardList size={18} strokeWidth={1.5} />, iconClass: "bg-amber-50 text-amber-600", title: "TM30 filing", sub: "Immigration notice filed within 24 h" },
-                { icon: <ShieldCheck size={18} strokeWidth={1.5} />, iconClass: "bg-violet-50 text-violet-600", title: "Dedicated support", sub: "Real human, Bangkok hours, EN/TH/RU" },
-              ] as const).map(({ icon, iconClass, title, sub }) => (
+                { icon: <FileText size={18} strokeWidth={1.5} />, title: "Rental contract", sub: "Bilingual EN & TH, drafted by Siamo legal" },
+                { icon: <Lock size={18} strokeWidth={1.5} />, title: "Deposit protection", sub: "Held in escrow by Siamo, not the landlord" },
+                { icon: <ClipboardList size={18} strokeWidth={1.5} />, title: "TM30 filing", sub: "Immigration notice filed within 24 h" },
+                { icon: <ShieldCheck size={18} strokeWidth={1.5} />, title: "Dedicated support", sub: "Real human, Bangkok hours, EN/TH/RU" },
+              ] as const).map(({ icon, title, sub }) => (
                 <div key={title} className="flex flex-col gap-2.5 p-4 rounded-2xl border border-border bg-bg-card hover:shadow-sm transition-shadow">
-                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0", iconClass)}>{icon}</div>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-brand/10 text-brand">{icon}</div>
                   <div>
                     <p className="text-[15px] font-semibold text-fg leading-snug">{title}</p>
                     <p className="text-[13px] text-fg-muted mt-1 leading-snug">{sub}</p>
