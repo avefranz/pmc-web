@@ -5,25 +5,29 @@
 
 Контекст: фронт `pmc-web` тестируется как реальные пользователи. Все находки относятся к API на `http://localhost:5149`.
 
-## Статус (2026-05-21)
+## Статус (2026-05-22)
 
-| #     | Severity     | Что             | Статус |
-|-------|--------------|-----------------|--------|
-| BE-1  | blocker      | login → 500     | ✅ fixed (толерантный jsonb-конвертер + миграция) |
-| BE-2  | blocker      | cities=1        | ✅ fixed (новый `/api/references/cities`) |
-| BE-3  | minor        | /asset/ → 400   | ✅ fixed (route constraint `:guid`) |
-| BE-4  | minor        | capabilities x5 | ✅ fixed (`Cache-Control: private, max-age=60`) |
-| BE-5  | **major**    | data loss POST  | ✅ fixed (DTO расширен 8 полями + валидация) |
-| BE-6  | оказался major | lastName лост | ✅ fixed (DTO + AuthService) |
-| BE-7  | major        | AI hallucinate  | ✅ fixed (AI выключен для этого use case'а) |
+| #     | Severity     | Что                              | Статус |
+|-------|--------------|----------------------------------|--------|
+| BE-1  | blocker      | login → 500                      | ✅ fixed (толерантный jsonb-конвертер + миграция) |
+| BE-2  | blocker      | cities=1                         | ✅ fixed (новый `/api/references/cities`) |
+| BE-3  | minor        | /asset/ → 400                    | ✅ fixed (route constraint `:guid`) |
+| BE-4  | minor        | capabilities x5                  | ✅ fixed (`Cache-Control: private, max-age=60`) |
+| BE-5  | **major**    | data loss POST                   | ✅ fixed (DTO расширен 8 полями + валидация) |
+| BE-6  | оказался major | lastName лост                  | ✅ fixed (DTO + AuthService) |
+| BE-7  | major        | AI suggestFeatures hallucinate   | ✅ fixed (AI выключен для этого use case'а) |
+| BE-8  | major (UX)   | booking 4xx без field errors     | ✅ fixed (camelCase keys в ProblemDetails) |
+| BE-9  | major        | AI suggestTitle hallucinate      | ✅ fixed (ужесточённый system prompt) |
 
-Все 7 — задеплоены, отсмочены вживую. Дёргать сервер заново после `git pull`.
+Все 9 — задеплоены, отсмочены вживую. Дёргать сервер заново после `git pull`.
 
 **Action для фронта** (минимум):
 - BE-2: заменить `/api/marketplace/cities` → `/api/references/cities` на странице create-property
 - BE-5: можно убрать workaround-PATCH после POST /api/assets
 - BE-6: убедиться что фронт шлёт `firstName/lastName` в register (теперь они правда сохраняются)
 - BE-7: можно вернуть вызов `aiApi.suggestFeatures(...)`, но **не показывать** «AI-curated» лейбл — это template
+- BE-8: ничего — фронт уже умеет парсить `{ errors: { field: [...] } }`; теперь ключи приходят в camelCase и парсер их видит
+- BE-9: можно показывать suggestTitle без опаски «придумает Pool View»; если есть `feature` в input — модель его честно использует
 
 ---
 
@@ -199,7 +203,7 @@ AI остаётся для use case'ов где креативность реа�
 
 ---
 
-## BE-8. POST /api/bookings (tenant submit) → 4xx без structured field errors
+## BE-8. POST /api/bookings (tenant submit) → 4xx без structured field errors  ✅ FIXED
 
 **Severity:** major (UX)
 
@@ -208,15 +212,75 @@ AI остаётся для use case'ов где креативность реа�
 2. Step 2 passport: nationality + passport number + expiry, **skip** visa/last-entry/port
 3. Save & send request
 
-**Факт:** generic тост «Failed to send request. Please try again.» Network: запрос с пустыми полями → 4xx, фронт не парсит structured errors.
+**Факт (был):** generic тост «Failed to send request. Please try again.» Network: 400, фронт не находил field-level errors.
 
-**Решение backend:** убедиться что error response в формате `{ errors: { fieldName: [...] } }` — фронт уже умеет парсить (handlePassportSubmit).
+**Root cause:** `GlobalExceptionHandler` мапил `FluentValidation.ValidationException` в `problemDetails.Extensions["errors"]` с **PascalCase** ключами (`"EntryDate"`, `"EntryPort"` — берётся напрямую из `x.PropertyName` через reflection). Остальное API сериализуется через `JsonSerializerDefaults.Web` (camelCase), фронтовый парсер ключей искал `entryDate` / `entryPort` и не находил → выпадал на generic тост.
 
-**Решение frontend:** добавить inline валидацию visa+entry на step 2 ДО submit.
+**Фикс на бэке:** [GlobalExceptionHandler.cs](../PMC.BFF/PMC.BFF.Infrastructure/Middleware/GlobalExceptionHandler.cs) — добавлен `ToCamelCasePropertyPath()`: lowercase первого символа каждого dot-разделённого сегмента. Сохраняет array-индексы (`Highlights[2].Name` → `highlights[2].name`) и не ломает legacy ключи с custom path'ом.
+
+**Проверено:** `POST /api/ai/listings/suggest-title` с `area:"A"` → `errors: { "area": ["'Area' must be between 2 and 60 characters."] }` ✓ (раньше было `"Area"`).
+
+**Frontend (опционально):** добавить inline валидацию visa+entry на step 2 ДО submit, чтобы пользователь увидел ошибку без roundtrip.
 
 ---
 
-## BE-9. AI suggestListingTitle (`POST /api/ai/suggest-title`) — проверить на hallucinations
+## BE-9. AI suggestListingTitle (`POST /api/ai/listings/suggest-title`) — проверить на hallucinations  ✅ FIXED
 
-**Контекст:** мы выключили suggestFeatures (BE-7). Title-generation остался — может тоже галлюцинировать. Проверить prompt и поведение.
+**Severity:** major (false advertising в title)
+
+**Подтверждено эмпирически:** Llama-3.1-8b на старом промпте действительно подбрасывала «Pool View», «Sea View», «Modern», «Fully Furnished» в заголовки даже когда юзер не указывал `feature`. Title попадает прямо в листинг как первое что видит tenant — врать в нём нельзя.
+
+**Фикс на бэке:** [SuggestListingTitlePrompt.cs](../PMC.BFF/PMC.BFF.Domain/Services/Ai/UseCases/SuggestListingTitle/SuggestListingTitlePrompt.cs) — переписан system prompt:
+- Жёсткое правило «STRICT TRUTHFULNESS: Use ONLY the property type, area, bedroom count, and the single feature shown in the user message. Never invent or imply additional amenities, finishes, or services. If no feature is provided, do NOT add one».
+- Из примеров убраны features (раньше пример `"Modern 2BR | Sukhumvit 11 | Pool View"` провоцировал модель копировать паттерн).
+- User-prompt теперь явно говорит «no feature provided — do not invent one» когда `feature` пустой.
+
+**Проверено** (4 кейса с cache-bust через `variation`):
+
+| Input                              | Title              | Hallucinations? |
+|------------------------------------|--------------------|-----------------|
+| Condo Sukhumvit 2BR (no feature)   | `Condo Sukhumvit 2-bed` | нет ✓ |
+| Villa Phuket 3BR (no feature)      | `3-bed Villa in Phuket` | нет ✓ |
+| Studio Phuket 0BR + "Sea View"     | `Studio Sea View Phuket` | feature использован честно ✓ |
+| House Chiang Mai 4BR (no feature)  | `4-bed House Chiang Mai` | нет ✓ |
+
+**Action для фронта:** suggestTitle можно показывать без warnings — модель больше не выдумывает features. Если `feature` передан — он попадёт в title. Если не передан — будет голый «type + size + area», и юзер допишет руками то что хочет.
+
+
+---
+
+## BE-10. `GET /api/me/profile` не возвращает payment-поля (хотя PATCH их принимает)
+
+**Severity:** **major (data invisibility = duplicate input UX)**
+
+**Воспроизведение:**
+```bash
+# 1. Залогиниться → получить токен
+TOKEN=...
+
+# 2. Сохранить payment
+curl -X PATCH http://localhost:5149/api/me/profile \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"promptPayId":"0899999999"}'
+# → 200 OK
+
+# 3. Прочитать профиль
+curl -H "Authorization: Bearer $TOKEN" http://localhost:5149/api/me/profile
+# → 200 OK, body содержит email/firstName/phone/contactChannels/...,
+#   но **БЕЗ** promptPayId, bankName, bankAccountNumber, bankAccountName.
+```
+
+**Симптом на фронте (то что заметил пользователь):** «платежные реквизиты вводишь несколько раз, они не сохраняются».
+
+Реальная причина: frontend `isPaymentComplete(profile)` смотрит на `profile.promptPayId`, его всегда `undefined` → editor секция Payment **никогда не скрывается** → каждый new property требует повторного ввода. Settings-страница (`/me/host/settings/payment`) показывает поля пустыми по той же причине.
+
+**Гипотеза:** в `UserProfileDto` mapper / serializer на бэке отсутствуют эти 4 поля. PATCH принимает и пишет в БД, GET читает но не сериализует.
+
+**Решение на backend:** добавить в response DTO + serialization:
+- `promptPayId: string | null`
+- `bankName: string | null`
+- `bankAccountNumber: string | null`
+- `bankAccountName: string | null`
+
+**Workaround на фронте (применён):** после `profileApi.update(...)` обновляем React Query cache локально с отправленными значениями (вместо чистого invalidate). Это маскирует проблему в пределах одной session — юзер не увидит дубля в том же sign-in. Но после reload данных нет, settings/editor снова пустые.
 

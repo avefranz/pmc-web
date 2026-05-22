@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useAsset } from "@/lib/hooks/use-assets";
 import { useListingsByAsset } from "@/lib/hooks/use-listings";
 import { useReferences } from "@/lib/hooks/use-references";
-import { useMyProfile } from "@/lib/hooks/use-profile";
+import { useMyProfile, stashProfileUpdate } from "@/lib/hooks/use-profile";
 import { assetsApi } from "@/lib/api/assets.api";
 import { listingsApi } from "@/lib/api/listings.api";
 import { profileApi } from "@/lib/api/profile.api";
@@ -218,11 +218,28 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
       // Phase 0: profile (contact + payment, only if not yet set globally).
       // Run BEFORE the asset so a profile-write failure surfaces an error
       // without leaving an orphan asset behind.
+      // Optimistically merge into ["profile"] cache so the next render sees
+      // the new contact/payment values even if backend's GET /me/profile
+      // doesn't include them yet (BE-10).
+      const mergeProfileCache = (patch: Record<string, unknown>) => {
+        qc.setQueryData(["profile"], (cur: unknown) => {
+          if (!cur || typeof cur !== "object") return cur;
+          const merged = { ...(cur as Record<string, unknown>) };
+          for (const [k, v] of Object.entries(patch)) if (v !== undefined) merged[k] = v;
+          return merged;
+        });
+      };
       if (needsContactSection) {
-        await profileApi.update(toContactProfileUpdate(draft));
+        const patch = toContactProfileUpdate(draft);
+        await profileApi.update(patch);
+        mergeProfileCache(patch as unknown as Record<string, unknown>);
+        stashProfileUpdate(patch as unknown as Record<string, unknown>);
       }
       if (needsPaymentSection) {
-        await profileApi.update(toPaymentProfileUpdate(draft));
+        const patch = toPaymentProfileUpdate(draft);
+        await profileApi.update(patch);
+        mergeProfileCache(patch as unknown as Record<string, unknown>);
+        stashProfileUpdate(patch as unknown as Record<string, unknown>);
       }
 
       // Phase 1: asset (basic shape — backend CreateAssetRequest only takes

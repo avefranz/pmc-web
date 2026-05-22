@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMyProfile, useUpdateProfile } from "@/lib/hooks/use-profile";
+import { useMyProfile, useUpdateProfile, stashProfileUpdate } from "@/lib/hooks/use-profile";
 
 export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { data: profile, isLoading } = useMyProfile();
@@ -28,13 +28,18 @@ export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    const payload = {
+      promptPayId: promptPayId || undefined,
+      bankName: bankName || undefined,
+      bankAccountNumber: bankAccountNumber || undefined,
+      bankAccountName: bankAccountName || undefined,
+    };
     try {
-      await updateProfile.mutateAsync({
-        promptPayId: promptPayId || undefined,
-        bankName: bankName || undefined,
-        bankAccountNumber: bankAccountNumber || undefined,
-        bankAccountName: bankAccountName || undefined,
-      });
+      await updateProfile.mutateAsync(payload);
+      // Belt-and-braces: also stash directly (the mutation's onSuccess already
+      // does this, but stashing here too means it works even if HMR / hook
+      // state gets stale during dev).
+      stashProfileUpdate(payload as unknown as Record<string, unknown>);
       toast.success("Payment details saved");
     } catch {
       toast.error("Failed to save");
