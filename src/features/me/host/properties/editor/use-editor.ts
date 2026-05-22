@@ -59,6 +59,11 @@ export interface EditorApi {
   reset: () => void;
   // Publish the current listing (edit mode only).
   publishListing: (startDate?: string, endDate?: string) => Promise<void>;
+  // Photos buffered during create — uploaded after the listing is created
+  // so the host can complete everything in one pass without "save first".
+  pendingPhotos: File[];
+  addPendingPhotos: (files: File[]) => void;
+  removePendingPhotoAt: (index: number) => void;
 }
 
 export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
@@ -79,6 +84,9 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
   const [hydrated, setHydrated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  // Files queued for upload during create — host can attach photos before
+  // the first save instead of having to come back after "Save property".
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
 
   // Sync API → local editable draft. In edit mode we hydrate from asset +
   // listing + profile; in create mode only from profile (so the contact /
@@ -98,6 +106,21 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
 
   const patch = useCallback((p: DraftPatch) => {
     setDraft((cur) => ({ ...cur, ...p }));
+  }, []);
+
+  // Sync draft.photoCount with the local buffer so the Photos section's
+  // isComplete() and the progress counter both reflect pending uploads.
+  useEffect(() => {
+    if (mode !== "create") return;
+    setDraft((cur) => cur.photoCount === pendingPhotos.length ? cur : { ...cur, photoCount: pendingPhotos.length });
+  }, [pendingPhotos.length, mode]);
+
+  const addPendingPhotos = useCallback((files: File[]) => {
+    setPendingPhotos((cur) => [...cur, ...files]);
+  }, []);
+
+  const removePendingPhotoAt = useCallback((index: number) => {
+    setPendingPhotos((cur) => cur.filter((_, i) => i !== index));
   }, []);
 
   const reset = useCallback(() => {
@@ -244,6 +267,23 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         }
       }
 
+      // Phase 5: photos buffered during create — upload in order so the first
+      // becomes the cover. Each upload is independent so a single failure
+      // doesn't lose the rest. We don't block the redirect on partial photo
+      // failures — the host can retry from the edit screen.
+      const photoFailures: string[] = [];
+      for (const file of pendingPhotos) {
+        try {
+          await listingsApi.uploadMedia(newListingId, file);
+        } catch {
+          photoFailures.push(file.name || "photo");
+        }
+      }
+      if (photoFailures.length > 0) {
+        toast.warning(`Some photos didn't upload: ${photoFailures.join(", ")}. You can retry from the edit screen.`);
+      }
+      setPendingPhotos([]);
+
       await qc.invalidateQueries({ queryKey: ["assets"] });
       await qc.invalidateQueries({ queryKey: ["listings"] });
       await qc.invalidateQueries({ queryKey: ["profile"] });
@@ -255,7 +295,8 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         scale: 1.4,
         spread: Math.PI * 1.4,
       });
-      toast.success("Property saved! Add photos and publish when you're ready 🚀");
+      const photoMsg = pendingPhotos.length > 0 ? ` · ${pendingPhotos.length - photoFailures.length} photo${pendingPhotos.length - photoFailures.length === 1 ? "" : "s"} uploaded` : "";
+      toast.success(`Property created${photoMsg}! Ready to publish 🚀`);
       // Reset before navigating — once the route changes, mode flips to
       // "edit" and the bottom-right capsule swaps to the Publish bar. If we
       // leave isSaving=true here, the brief moment between mode-flip and
@@ -268,7 +309,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
       setIsSaving(false);
       return null;
     }
-  }, [mode, draft, missingForSave.length, needsContactSection, needsPaymentSection, qc, refs, navigate]);
+  }, [mode, draft, pendingPhotos, missingForSave.length, needsContactSection, needsPaymentSection, qc, refs, navigate]);
 
   const publishListing = useCallback(async (startDate?: string, endDate?: string) => {
     if (!listingId) return;
@@ -304,5 +345,8 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
     lastSavedAt,
     reset,
     publishListing,
+    pendingPhotos,
+    addPendingPhotos,
+    removePendingPhotoAt,
   };
 }

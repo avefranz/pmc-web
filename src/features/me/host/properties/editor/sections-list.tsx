@@ -561,6 +561,9 @@ function SectionShell({
               mode={editor.mode}
               assetId={editor.assetId}
               listingId={editor.listingId}
+              pendingPhotos={editor.pendingPhotos}
+              addPendingPhotos={editor.addPendingPhotos}
+              removePendingPhotoAt={editor.removePendingPhotoAt}
             />
           </div>
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border">

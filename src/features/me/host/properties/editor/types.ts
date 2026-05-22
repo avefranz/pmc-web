@@ -156,6 +156,12 @@ export interface SectionFormProps {
   // should declare editOnly: true.
   assetId?: string;
   listingId?: string;
+  // Photos section uses these in create mode — files are buffered locally
+  // and uploaded after the asset/listing is created (so the host fills
+  // everything in one pass without a "save then come back for photos" trip).
+  pendingPhotos?: File[];
+  addPendingPhotos?: (files: File[]) => void;
+  removePendingPhotoAt?: (index: number) => void;
 }
 
 /** @deprecated kept as alias for older section files — use SectionFormProps */
