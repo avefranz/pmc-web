@@ -82,17 +82,17 @@ function ListingCard({
     ? [...listing.discountTiers].sort((a, b) => b.discountPercent - a.discountPercent)[0]
     : null;
 
-  // Title: "[type] in [city]" — Airbnb style
+  // Use the listing's own title when available; fall back to Airbnb-style
+  // "[type] in [city]" only for listings that genuinely have no title.
   const city = listing.cityName || "Thailand";
   const typeLabel = listing.bedrooms === 0
     ? "Studio"
     : CATEGORY_LABEL[listing.propertyCategoryId] ?? "Home";
-  const cardTitle = `${typeLabel} in ${city}`;
+  const cardTitle = listing.title?.trim() || `${typeLabel} in ${city}`;
 
-  // Price line: "฿12,300 for month · ★ New"  or  "฿10,000 for month  (was ฿12,300)"
   const priceLabel = hasDiscount
-    ? `${formatThb(effectiveRate)} for month`
-    : `${formatThb(effectiveRate)} for month`;
+    ? `${formatThb(effectiveRate)} / month`
+    : `${formatThb(effectiveRate)} / month`;
 
   // Badge — white pill, like Airbnb's "Guest favorite"
   const badge = hasDiscount
@@ -113,7 +113,6 @@ function ListingCard({
         <ListingImage
           src={photo}
           alt={listing.title}
-          loading="lazy"
           className="w-full h-full object-cover"
         />
 
@@ -130,7 +129,8 @@ function ListingCard({
       {/* Info — exact Airbnb layout */}
       <div className="mt-2 px-0.5">
         {/* Line 1: regular weight, dark gray — NOT bold */}
-        <p className="text-[12px] font-semibold text-fg leading-snug line-clamp-1">
+        {/* UX-52: title attribute shows full text on hover when truncated */}
+        <p className="text-[12px] font-semibold text-fg leading-snug line-clamp-1" title={cardTitle}>
           {cardTitle}
         </p>
 
@@ -139,7 +139,7 @@ function ListingCard({
           {hasDiscount ? (
             <>
               <span className="line-through">{formatThb(baseRate)}</span>
-              {" "}{formatThb(effectiveRate)}{" for month"}
+              {" "}{formatThb(effectiveRate)}{" / month"}
             </>
           ) : (
             <>{priceLabel}</>
@@ -193,12 +193,14 @@ const AMENITY_PRIORITY: number[] = [
   22, // First aid kit
 ];
 
+// Backend uses ≥N semantics (bedrooms=1 → 1+ bedrooms), so labels must
+// reflect "minimum N" not "exactly N". Studio (0) is excluded — bedrooms=0
+// returns all listings on the backend, making it equivalent to "Any".
 const BEDROOM_OPTIONS = [
-  { label: "Any",    value: undefined as number | undefined },
-  { label: "Studio", value: 0 },
-  { label: "1",      value: 1 },
-  { label: "2",      value: 2 },
-  { label: "3+",     value: 3 },
+  { label: "Any",   value: undefined as number | undefined },
+  { label: "1+ BR", value: 1 },
+  { label: "2+ BR", value: 2 },
+  { label: "3+ BR", value: 3 },
 ];
 
 function FilterBar({
@@ -271,6 +273,7 @@ function FilterBar({
           {pinned.map((amenity) => {
             const Icon = amenityIcon(amenity.name);
             const active = activeAmenityIds.includes(amenity.id as number);
+            // UX-50: inactive = outline only (border-border), active = filled dark
             return (
               <button
                 key={amenity.id as number}
@@ -280,11 +283,12 @@ function FilterBar({
                   "px-3 py-1.5 rounded-full border flex items-center gap-1.5",
                   active
                     ? "border-fg bg-fg text-bg-card"
-                    : "border-transparent bg-bg-subtle text-fg-muted hover:text-fg hover:border-fg/20",
+                    : "border-border bg-bg-card text-fg-muted hover:text-fg hover:border-fg/30",
                 )}
               >
                 {Icon && <Icon size={11} className="shrink-0" strokeWidth={2} />}
                 {amenity.name}
+                {active && <span className="text-[10px] font-bold ml-0.5">✓</span>}
               </button>
             );
           })}
@@ -348,7 +352,7 @@ function FilterBar({
                           : "border-border text-fg-muted hover:text-fg hover:border-fg/30",
                       )}
                     >
-                      {label === "Any" ? "Any" : label === "Studio" ? "Studio" : `${label} BR`}
+                      {label}
                     </button>
                   );
                 })}

@@ -54,6 +54,10 @@ export function draftFromAsset(asset: AssetDto | undefined, listing: ListingDto 
     utilityInternet: listing?.utilityInternet ?? false,
     utilityAircon: listing?.utilityAircon ?? false,
     utilityGarbage: listing?.utilityGarbage ?? false,
+    // UX-84/75/76: if asset/listing exists the host already set these fields
+    specsTouched: asset !== undefined,
+    utilitiesTouched: listing !== undefined,
+    cancellationTouched: listing !== undefined,
 
     amenityIds: (listing?.amenities ?? [])
       .filter((a) => a.isPresent)

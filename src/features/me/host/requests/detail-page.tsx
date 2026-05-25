@@ -1,4 +1,12 @@
 import { useState } from "react";
+
+/** Show first 4 chars + bullets + last 2 chars, e.g. "+668 •••••• 78" */
+function maskPhone(raw: string): string {
+  if (!raw) return "";
+  const clean = raw.trim();
+  if (clean.length <= 6) return "•".repeat(clean.length);
+  return clean.slice(0, 4) + " " + "•".repeat(Math.max(3, clean.length - 6)) + " " + clean.slice(-2);
+}
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -287,7 +295,7 @@ export function HostRequestDetailPage() {
               {req.guestPhone && (
                 <div className="flex items-center gap-3 px-5 py-3">
                   <Phone size={14} className="text-fg-muted shrink-0" />
-                  <a href={`tel:${req.guestPhone}`} className="text-sm text-brand hover:underline">{req.guestPhone}</a>
+                  <span className="text-sm text-fg font-mono tracking-wide">{maskPhone(req.guestPhone)}</span>
                 </div>
               )}
               {req.message && (
@@ -382,7 +390,7 @@ export function HostRequestDetailPage() {
                   <span className="text-fg-muted">Refundable deposit</span>
                   <div className="text-[11px] text-fg-muted">held securely by Siamo</div>
                 </div>
-                <span className="font-medium text-fg">{formatThb(req.monthlyRate)}</span>
+                <span className="font-medium text-fg">{formatThb(req.depositAmount ?? req.monthlyRate)}</span>
               </div>
             </div>
           </div>

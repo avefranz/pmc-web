@@ -17,6 +17,12 @@ i18n
     interpolation: {
       escapeValue: false,
     },
+    react: {
+      // Disable Suspense for language switches — all translations are
+      // pre-bundled so there's nothing async to wait for, and Suspense
+      // can silently swallow the re-render that updates the language.
+      useSuspense: false,
+    },
   });
 
 export default i18n;

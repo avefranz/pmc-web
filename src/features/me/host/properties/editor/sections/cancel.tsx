@@ -37,7 +37,7 @@ function CancelDialog({ draft, patch }: SectionDialogProps) {
                 key={p.id}
                 type="button"
                 onClick={() =>
-                  patch({ cancellationNoticeDays: p.noticeDays, cancellationPenaltyMonths: p.penaltyMonths })
+                  patch({ cancellationNoticeDays: p.noticeDays, cancellationPenaltyMonths: p.penaltyMonths, cancellationTouched: true })
                 }
                 className={cn(
                   "text-left p-3 rounded-xl border-2 flex items-center gap-3 transition-all",
@@ -71,7 +71,8 @@ export const cancelSection: SectionDef = {
   group: "stay",
   required: false,
   estTime: "30 sec",
-  isComplete: () => true,
+  // UX-76: only complete once host has explicitly chosen a policy
+  isComplete: (d) => d.cancellationTouched,
   summary: (d) => POLICIES.find((p) => p.id === activePolicy(d))?.title ?? "Moderate",
   Form: CancelDialog,
 };

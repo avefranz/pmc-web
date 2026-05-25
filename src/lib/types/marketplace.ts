@@ -71,6 +71,8 @@ export interface MarketplaceListingAmenityDto {
 
 export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
   assetId?: string;
+  /** ID of the user who owns this listing. Used for self-booking guard (BUG-37). */
+  ownerId?: string | null;
   description: string | null;
   houseRules: string | null;
   publishedAt: string;
@@ -94,6 +96,8 @@ export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
   utilityAircon?: boolean;
   utilityGarbage?: boolean;
   petsAllowed?: boolean;
+  /** Host-configured security deposit (BUG-40/BE-16). */
+  depositAmount?: number | null;
   petDeposit?: number;
   cancellationNoticeDays?: number;
   cancellationPenaltyMonths?: number;
@@ -104,6 +108,7 @@ export interface MarketplaceListingDto extends MarketplaceListingPreviewDto {
   hasSecurityCamera?: boolean;
   transportInfo?: string | null;
   nearbyPlaces?: string | null;
+  nearbyEnrichedAt?: string | null;
   wifiName?: string | null;
   googleMapsUrl?: string | null;
 }

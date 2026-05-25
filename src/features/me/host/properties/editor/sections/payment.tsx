@@ -20,17 +20,6 @@ const THAI_BANKS = [
   { id: "Kiatnakin", name: "Kiatnakin Phatra Bank" },
 ];
 
-// PromptPay accepts a 10-digit mobile (0XXXXXXXXX) or a 13-digit Thai
-// national ID. Anything else and tenants won't be able to send funds.
-function validatePromptPay(raw: string): string | null {
-  const v = raw.replace(/[\s-]/g, "");
-  if (!v) return null;
-  if (!/^\d+$/.test(v)) return "Use digits only — no letters or symbols.";
-  if (v.length === 10 && !v.startsWith("0")) return "Mobile numbers start with 0 (e.g. 0812345678).";
-  if (v.length !== 10 && v.length !== 13) return "Should be 10 digits (mobile) or 13 digits (national ID).";
-  return null;
-}
-
 function validateBankAccountNumber(raw: string): string | null {
   const v = raw.replace(/[\s-]/g, "");
   if (!v) return null;
@@ -43,12 +32,6 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
   const { data: me } = useMe();
   const fullName = [me?.firstName, me?.lastName].filter(Boolean).join(" ").trim();
 
-  const hasBank =
-    draft.paymentBankName.trim().length > 0 &&
-    draft.paymentBankAccountNumber.trim().length > 0 &&
-    draft.paymentBankAccountName.trim().length > 0;
-
-  const promptPayError    = validatePromptPay(draft.paymentPromptPayId);
   const accountNumError   = validateBankAccountNumber(draft.paymentBankAccountNumber);
   const accountNameWarning =
     draft.paymentBankAccountName.trim().length > 0 &&
@@ -57,33 +40,14 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
       ? `Doesn't match your account name "${fullName}" — banks reject transfers when the name on the receiving account differs.`
       : null;
 
+  const hasBank =
+    draft.paymentBankName.trim().length > 0 &&
+    draft.paymentBankAccountNumber.trim().length > 0 &&
+    draft.paymentBankAccountName.trim().length > 0;
+
   return (
     <div>
-      <Field
-        label="PromptPay ID"
-        hint={
-          promptPayError ? (
-            <span className="text-danger">{promptPayError}</span>
-          ) : (
-            "Mobile number or national ID linked to PromptPay. Fastest way for tenants to pay rent in Thailand."
-          )
-        }
-      >
-        <Input
-          value={draft.paymentPromptPayId}
-          onChange={(e) => patch({ paymentPromptPayId: e.target.value })}
-          placeholder="0812345678"
-          className={promptPayError ? "border-destructive" : ""}
-        />
-      </Field>
-
-      <div className="my-4 flex items-center gap-3 text-xs uppercase tracking-wider text-fg-muted">
-        <div className="flex-1 h-px bg-border" />
-        Or bank transfer
-        <div className="flex-1 h-px bg-border" />
-      </div>
-
-      <Field label="Bank">
+      <Field label="Bank" required>
         <Select
           value={draft.paymentBankName || ""}
           onValueChange={(v) => patch({ paymentBankName: v })}
@@ -104,6 +68,7 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
       <Row cols={2}>
         <Field
           label="Account number"
+          required
           hint={accountNumError ? <span className="text-danger">{accountNumError}</span> : undefined}
         >
           <Input
@@ -115,6 +80,7 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
         </Field>
         <Field
           label="Account name"
+          required
           hint={
             accountNameWarning
               ? <span className="text-warning">{accountNameWarning}</span>
@@ -132,9 +98,9 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
         </Field>
       </Row>
 
-      {!hasBank && !draft.paymentPromptPayId.trim() && (
+      {!hasBank && (
         <p className="text-xs text-warning mt-2">
-          Add at least PromptPay or a full bank entry — without this, bookings stall at the payment step.
+          Fill in your bank details — without this, bookings stall at the payment step.
         </p>
       )}
     </div>
@@ -147,17 +113,12 @@ export const paymentSection: SectionDef = {
   group: "host",
   required: true,
   estTime: "2 min",
-  isComplete: (d) => {
-    const promptOk = d.paymentPromptPayId.trim().length > 0 && validatePromptPay(d.paymentPromptPayId) === null;
-    const bankOk =
-      d.paymentBankName.trim().length > 0 &&
-      d.paymentBankAccountNumber.trim().length > 0 &&
-      d.paymentBankAccountName.trim().length > 0 &&
-      validateBankAccountNumber(d.paymentBankAccountNumber) === null;
-    return promptOk || bankOk;
-  },
+  isComplete: (d) =>
+    d.paymentBankName.trim().length > 0 &&
+    d.paymentBankAccountNumber.trim().length > 0 &&
+    d.paymentBankAccountName.trim().length > 0 &&
+    validateBankAccountNumber(d.paymentBankAccountNumber) === null,
   summary: (d) => {
-    if (d.paymentPromptPayId.trim()) return `PromptPay · ${d.paymentPromptPayId}`;
     if (d.paymentBankName.trim()) return `${d.paymentBankName} · ${d.paymentBankAccountNumber}`;
     return "—";
   },

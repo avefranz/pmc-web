@@ -3,9 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ImagePlus, Loader2, X, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useListing } from "@/lib/hooks/use-listings";
+import { useReferences } from "@/lib/hooks/use-references";
 import { listingsApi } from "@/lib/api/listings.api";
 import { cn } from "@/lib/utils/cn";
 import type { SectionDef, SectionFormProps } from "../types";
+import { toCreateListingRequest } from "../mappers";
 
 const MAX_PHOTOS = 10;
 const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
@@ -42,13 +44,17 @@ function validateFiles(files: File[], remainingSlots: number, totalRequested: nu
 }
 
 function PhotosDialog({
+  draft,
   listingId,
+  assetId,
   mode,
   pendingPhotos = [],
   addPendingPhotos,
   removePendingPhotoAt,
+  movePendingPhotoToCover,
 }: SectionFormProps) {
   const { data: listing } = useListing(listingId);
+  const { data: refs } = useReferences();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -84,23 +90,31 @@ function PhotosDialog({
   }
 
   function moveLocalToCover(index: number) {
-    if (!addPendingPhotos || !removePendingPhotoAt || index === 0) return;
-    const target = pendingPhotos[index];
-    if (!target) return;
-    // Reorder by removing then re-inserting at front. State updates batch.
-    removePendingPhotoAt(index);
-    // After remove, pending shrinks by 1; prepend the target.
-    addPendingPhotos([target]);
-    // Above appends — for a real prepend we need a 2-step swap. To keep
-    // it simple we re-add at the end; the cover concept in create mode is
-    // "first file you added". A future improvement: expose a dedicated
-    // reorder helper. For now toast the user.
-    toast.message("Cover will be the first photo at save. To reorder, remove and re-add in the desired sequence.");
+    if (index === 0 || !movePendingPhotoToCover) return;
+    movePendingPhotoToCover(index);
   }
 
   // ── EDIT-MODE handlers ────────────────────────────────────────────────────
   async function handleEditModeUpload(files: FileList | null) {
-    if (!files || !listingId) return;
+    if (!files) return;
+
+    // BUG-115: listing may not exist yet (Phase 3 failed during initial save).
+    // Auto-create it before uploading so photos don't silently no-op.
+    let effectiveLid = listingId;
+    if (!effectiveLid && assetId && draft) {
+      try {
+        const propertyCategoryId = refs?.propertyCategories?.[0]?.id ?? 1;
+        const created = await listingsApi.create(
+          toCreateListingRequest(draft, assetId, propertyCategoryId),
+        );
+        effectiveLid = created.id;
+        await qc.invalidateQueries({ queryKey: ["listings"] });
+      } catch {
+        toast.error("Couldn't prepare listing for upload — try saving another section first.");
+        return;
+      }
+    }
+    if (!effectiveLid) return;
     const slots = MAX_PHOTOS - media.length;
     const { accepted, rejected, slotWarning } = validateFiles(Array.from(files).slice(0, slots), slots, files.length);
     if (slotWarning) toast.warning(slotWarning);
@@ -110,15 +124,13 @@ function PhotosDialog({
     if (accepted.length === 0) return;
 
     setUploading(true);
-    const failures: string[] = [];
-    for (const file of accepted) {
-      try {
-        await listingsApi.uploadMedia(listingId, file);
-      } catch {
-        failures.push(file.name || "photo");
-      }
-    }
-    await qc.invalidateQueries({ queryKey: ["listings", listingId] });
+    const results = await Promise.allSettled(
+      accepted.map((file) => listingsApi.uploadMedia(effectiveLid, file)),
+    );
+    await qc.invalidateQueries({ queryKey: ["listings", effectiveLid] });
+    const failures = accepted
+      .filter((_, i) => results[i].status === "rejected")
+      .map((f) => f.name || "photo");
     const succeeded = accepted.length - failures.length;
     if (succeeded > 0 && failures.length === 0) toast.success(`${succeeded} photo${succeeded === 1 ? "" : "s"} uploaded`);
     else if (succeeded > 0) toast.warning(`${succeeded} uploaded · ${failures.length} failed: ${failures.join(", ")}`);
@@ -244,7 +256,7 @@ function PhotosDialog({
       </div>
 
       <div className="text-xs text-fg-muted text-center mb-2">
-        {totalCount} of {MAX_PHOTOS} photos
+        {totalCount} of {MAX_PHOTOS} · min 1 to publish
         {isCreate && totalCount > 0 && " · upload happens when you save"}
         {!isCreate && " · Aim for 5+ for more inquiries"}
       </div>

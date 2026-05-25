@@ -350,6 +350,7 @@ export interface ListingDto {
   // Location context
   transportInfo?: string | null;
   nearbyPlaces?: string | null;
+  nearbyEnrichedAt?: string | null;
 }
 
 export interface CalendarDayDto {
@@ -388,6 +389,12 @@ export interface BookingDto {
   noShowAt?: string | null;
   /** ID of the booking this was renewed from (present on renewal bookings). */
   renewedFromBookingId?: string | null;
+  /** Full name of the landlord who owns this listing (BE-15, available after backend fix). */
+  landlordName?: string | null;
+  /** Cancellation policy from the listing — days of notice required before move-in. */
+  cancellationNoticeDays?: number;
+  /** Number of months rent charged as early-exit penalty (UX-114). */
+  cancellationPenaltyMonths?: number;
 }
 
 export interface Tm30FilingDto {

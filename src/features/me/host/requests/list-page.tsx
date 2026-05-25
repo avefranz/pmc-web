@@ -8,6 +8,7 @@ import { CountdownPill } from "@/components/shared/countdown-pill";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
 import { useHostRequests } from "@/lib/hooks/use-booking-requests";
+import { useMe } from "@/lib/hooks/use-auth";
 import { bookingRequestDeadline } from "@/lib/api/booking-requests.api";
 import type { HostBookingRequestDto } from "@/lib/api/booking-requests.api";
 
@@ -135,6 +136,7 @@ function SectionHeader({ label, count, accent }: { label: string; count: number;
 
 export function HostRequestsPage() {
   const { data: requests, isLoading } = useHostRequests();
+  const { data: me } = useMe();
 
   if (isLoading) {
     return (
@@ -160,8 +162,16 @@ export function HostRequestsPage() {
     );
   }
 
+  // BUG-159: a host who also has a tenant account could have applied to their
+  // own listing. Exclude those requests from the host inbox — they are already
+  // visible in the guest's "My applications" view. Match by email (best we can
+  // do without a guestId field in the DTO).
+  const filtered = me?.email
+    ? requests.filter((r) => r.guestEmail !== me.email)
+    : requests;
+
   // Sort newest first within each group
-  const sorted = [...requests].sort(
+  const sorted = [...filtered].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 

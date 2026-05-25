@@ -65,13 +65,27 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
 
       <Row cols={3}>
         <Field label="Bedrooms" required hint={(draft.bedrooms ?? 0) === 0 ? "0 = studio" : undefined}>
-          <NumberStepper value={draft.bedrooms ?? 0} onChange={(n) => patch({ bedrooms: n })} />
+          <NumberStepper
+            value={draft.bedrooms ?? 0}
+            onChange={(n) => patch({ bedrooms: n, specsTouched: true })}
+            dimValue={!draft.specsTouched}
+          />
         </Field>
         <Field label="Bathrooms" required>
-          <NumberStepper value={draft.bathrooms} onChange={(n) => patch({ bathrooms: n })} min={1} />
+          <NumberStepper
+            value={draft.bathrooms}
+            onChange={(n) => patch({ bathrooms: n, specsTouched: true })}
+            min={1}
+            dimValue={!draft.specsTouched}
+          />
         </Field>
         <Field label="Max guests" required>
-          <NumberStepper value={draft.maxOccupancy} onChange={(n) => patch({ maxOccupancy: n })} min={1} />
+          <NumberStepper
+            value={draft.maxOccupancy}
+            onChange={(n) => patch({ maxOccupancy: n, specsTouched: true })}
+            min={1}
+            dimValue={!draft.specsTouched}
+          />
         </Field>
       </Row>
 
@@ -88,7 +102,7 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
             value={draft.areaSqm ?? ""}
             onChange={(e) => {
               const v = e.target.value === "" ? null : Number(e.target.value);
-              patch({ areaSqm: v });
+              patch({ areaSqm: v, specsTouched: true });
             }}
           />
         </Field>
@@ -105,15 +119,17 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
             >
               <NumberStepper
                 value={draft.floor ?? 0}
-                onChange={(n) => patch({ floor: n })}
+                onChange={(n) => patch({ floor: n, specsTouched: true })}
                 max={draft.totalFloors ?? 200}
+                dimValue={!draft.specsTouched}
               />
             </Field>
             <Field label="Floors in building" required>
               <NumberStepper
                 value={draft.totalFloors ?? 1}
-                onChange={(n) => patch({ totalFloors: n, floor: draft.floor !== null && draft.floor > n ? n : draft.floor })}
+                onChange={(n) => patch({ totalFloors: n, floor: draft.floor !== null && draft.floor > n ? n : draft.floor, specsTouched: true })}
                 min={1}
+                dimValue={!draft.specsTouched}
               />
             </Field>
           </>
@@ -134,14 +150,16 @@ function SpecsDialog({ draft, patch }: SectionDialogProps) {
 
       <Field label="Parking">
         <div className="flex items-center gap-3">
-          <NumberStepper value={draft.parkingSpaces} onChange={(n) => patch({ parkingSpaces: n })} />
-          <label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer">
-            <Checkbox
-              checked={draft.parkingIncluded}
-              onCheckedChange={(c) => patch({ parkingIncluded: !!c })}
-            />
-            Included in rent
-          </label>
+          <NumberStepper value={draft.parkingSpaces} onChange={(n) => patch({ parkingSpaces: n, parkingIncluded: n === 0 ? false : draft.parkingIncluded })} />
+          {draft.parkingSpaces > 0 && (
+            <label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer">
+              <Checkbox
+                checked={draft.parkingIncluded}
+                onCheckedChange={(c) => patch({ parkingIncluded: !!c })}
+              />
+              Included in rent
+            </label>
+          )}
         </div>
       </Field>
     </div>

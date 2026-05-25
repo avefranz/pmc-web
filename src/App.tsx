@@ -30,8 +30,7 @@ import { GuestContractSignPage } from "@/features/me/guest/bookings/contract-sig
 
 import { GuestApplicationsPage } from "@/features/me/guest/applications/list-page";
 import { GuestApplicationDetailPage } from "@/features/me/guest/applications/detail-page";
-import { GuestTicketsListPage } from "@/features/me/guest/tickets/list-page";
-import { GuestTicketDetailPage } from "@/features/me/guest/tickets/detail-page";
+// Ticket pages removed — ticket system not in scope for this release
 
 // Host managed
 import { ManagedListPage } from "@/features/me/host/managed/list-page";
@@ -51,9 +50,7 @@ import { HostBookingsPage } from "@/features/me/host/bookings/list-page";
 import { BookingDetailPage } from "@/features/me/host/bookings/detail-page";
 import { CreateBookingPage } from "@/features/me/host/bookings/create-page";
 
-// Host tickets & finance
-import { TicketsListPage } from "@/features/me/host/tickets/list-page";
-import { TicketDetailPage } from "@/features/me/host/tickets/detail-page";
+// Host finance
 import { FinancePage } from "@/features/me/host/finance/page";
 
 // Guest TM30 & onboarding
@@ -120,8 +117,6 @@ export default function App() {
         <Route path="/me/guest/bookings/:id/contract" element={<GuestContractSignPage />} />
         <Route path="/me/guest/applications" element={<GuestApplicationsPage />} />
         <Route path="/me/guest/applications/:id" element={<GuestApplicationDetailPage />} />
-        <Route path="/me/guest/tickets" element={<GuestTicketsListPage />} />
-        <Route path="/me/guest/tickets/:id" element={<GuestTicketDetailPage />} />
         <Route path="/me/guest/tm30" element={<GuestTm30Page />} />
 
         {/* Onboarding */}
@@ -142,8 +137,6 @@ export default function App() {
         <Route path="/me/host/bookings" element={<HostBookingsPage />} />
         <Route path="/me/host/bookings/new" element={<CreateBookingPage />} />
         <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
-        <Route path="/me/host/tickets" element={<TicketsListPage />} />
-        <Route path="/me/host/tickets/:id" element={<TicketDetailPage />} />
         <Route path="/me/host/finance" element={<FinancePage />} />
         <Route path="/me/host/settings/payment" element={<PaymentSettingsPage />} />
         <Route path="/me/host/settings/contact" element={<ContactSettingsPage />} />

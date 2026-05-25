@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils/cn";
 
@@ -17,6 +18,9 @@ interface LanguageSwitcherProps {
 
 export function LanguageSwitcher({ className }: LanguageSwitcherProps) {
   const { i18n } = useTranslation();
+  // Local tick forces a re-render after changeLanguage in case the
+  // useSyncExternalStore subscription doesn't fire (e.g. suspense edge cases).
+  const [, tick] = useState(0);
   const current = (LANGUAGES.includes(i18n.language as Lang) ? i18n.language : "en") as Lang;
 
   function cycle() {
@@ -24,6 +28,7 @@ export function LanguageSwitcher({ className }: LanguageSwitcherProps) {
     const next = LANGUAGES[(idx + 1) % LANGUAGES.length];
     i18n.changeLanguage(next);
     localStorage.setItem("pmc_lang", next);
+    tick((n) => n + 1);
   }
 
   return (

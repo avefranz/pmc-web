@@ -68,7 +68,9 @@ const config: Config = {
         danger:  ds("--color-danger"),
       },
       fontFamily: {
-        sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
+        sans:    ["Plus Jakarta Sans", "Noto Sans Thai", "system-ui", "sans-serif"],
+        display: ["var(--font-display)"],
+        mono:    ["var(--font-mono)"],
       },
       borderRadius: {
         // shadcn (kept — Radix components reference --radius)

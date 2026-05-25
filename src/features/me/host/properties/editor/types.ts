@@ -57,6 +57,14 @@ export interface PropertyDraft {
   utilityInternet: boolean;
   utilityAircon: boolean;
   utilityGarbage: boolean;
+  /** UX-84: true once host has changed any spinner in the specs section. */
+  specsTouched: boolean;
+  /** UX-75: true once host has opened and interacted with the utilities section. */
+  utilitiesTouched: boolean;
+
+  // ── Cancellation policy touched flag (UX-76)
+  /** UX-76: true once host has explicitly chosen a cancellation policy. */
+  cancellationTouched: boolean;
 
   // ── Amenities (only commits in edit mode)
   amenityIds: number[];
@@ -128,6 +136,9 @@ export const EMPTY_DRAFT: PropertyDraft = {
   utilityInternet: false,
   utilityAircon: false,
   utilityGarbage: false,
+  specsTouched: false,
+  utilitiesTouched: false,
+  cancellationTouched: false,
 
   amenityIds: [],
   photoCount: 0,
@@ -162,6 +173,7 @@ export interface SectionFormProps {
   pendingPhotos?: File[];
   addPendingPhotos?: (files: File[]) => void;
   removePendingPhotoAt?: (index: number) => void;
+  movePendingPhotoToCover?: (index: number) => void;
 }
 
 /** @deprecated kept as alias for older section files — use SectionFormProps */

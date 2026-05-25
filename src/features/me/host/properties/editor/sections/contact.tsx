@@ -58,7 +58,7 @@ function ContactDialog({ draft, patch }: SectionDialogProps) {
       </Field>
 
       {draft.contactChannels.includes("Line") && (
-        <Field label="LINE ID" hint="Your public LINE username (without @).">
+        <Field label="LINE ID" required hint="Your public LINE username (without @).">
           <Input
             value={draft.contactLineHandle}
             onChange={(e) => patch({ contactLineHandle: e.target.value })}
@@ -76,7 +76,11 @@ export const contactSection: SectionDef = {
   group: "host",
   required: true,
   estTime: "1 min",
-  isComplete: (d) => d.contactPhone.trim().length > 0 && d.contactChannels.length > 0,
+  isComplete: (d) => {
+    if (!d.contactPhone.trim() || d.contactChannels.length === 0) return false;
+    if (d.contactChannels.includes("Line") && !d.contactLineHandle.trim()) return false;
+    return true;
+  },
   summary: (d) => {
     if (!d.contactPhone) return "—";
     const channels = d.contactChannels.length > 0 ? d.contactChannels.join(", ") : "no channels";

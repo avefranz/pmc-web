@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { formatThb } from "@/lib/utils/format";
+import { useBookingsByAsset } from "@/lib/hooks/use-bookings";
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field } from "../ui";
 
@@ -12,9 +13,15 @@ function formatWithCommas(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-function PricingDialog({ draft, patch }: SectionDialogProps) {
+function PricingDialog({ draft, patch, mode, assetId }: SectionDialogProps) {
   const rent = draft.baseMonthlyRate;
   const deposit = draft.depositAmount;
+
+  // UX-113: warn if there's an active reservation — changing price won't affect signed contracts
+  const { data: bookings } = useBookingsByAsset(assetId ?? "");
+  const activeStatuses = ["Confirmed", "Active", "AwaitingPayment"];
+  const hasActiveBooking = mode === "edit" && assetId &&
+    (bookings ?? []).some((b) => activeStatuses.includes(b.status));
 
   const rentError =
     rent > 0 && rent < MIN_RENT  ? `Minimum ${formatThb(MIN_RENT)}/month — under this is usually a typo.` :
@@ -57,7 +64,7 @@ function PricingDialog({ draft, patch }: SectionDialogProps) {
         hint={
           depositWarning
             ? <span className="text-warning">{depositWarning}</span>
-            : "Typically 1–2 months of rent. Enter 0 if no deposit required."
+            : "Typically 1–2 months of rent. Leave blank for no deposit."
         }
       >
         <div className="relative">
@@ -77,6 +84,13 @@ function PricingDialog({ draft, patch }: SectionDialogProps) {
           />
         </div>
       </Field>
+
+      {/* UX-113: warn host that changing price won't affect already-signed contracts */}
+      {hasActiveBooking && (
+        <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-xs text-warning-foreground mb-3">
+          <span className="font-semibold">Active reservation:</span> price changes take effect on future bookings only. Existing contracts remain at their signed rate.
+        </div>
+      )}
 
       {draft.baseMonthlyRate > 0 && (
         <div className="rounded-lg bg-bg-subtle p-3 text-xs text-fg-muted">

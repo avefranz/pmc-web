@@ -163,7 +163,8 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
                 <SelectTrigger>
                   <SelectValue placeholder="Select visa type" />
                 </SelectTrigger>
-                <SelectContent>
+                {/* @ts-ignore — onOpenAutoFocus is a valid Radix prop at runtime (UX-93) */}
+                <SelectContent onOpenAutoFocus={(e: Event) => e.preventDefault()}>
                   {Object.entries(VISA_LABELS).map(([val, label]) => (
                     <SelectItem key={val} value={val}>{label}</SelectItem>
                   ))}
@@ -183,7 +184,7 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
               <Input
                 value={lastEntryPort}
                 onChange={(e) => setLastEntryPort(e.target.value)}
-                placeholder="Suvarnabhumi"
+                placeholder="e.g. Chiang Mai"
               />
             </div>
           </div>

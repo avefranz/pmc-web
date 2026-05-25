@@ -64,6 +64,7 @@ export interface EditorApi {
   pendingPhotos: File[];
   addPendingPhotos: (files: File[]) => void;
   removePendingPhotoAt: (index: number) => void;
+  movePendingPhotoToCover: (index: number) => void;
 }
 
 export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
@@ -123,6 +124,14 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
     setPendingPhotos((cur) => cur.filter((_, i) => i !== index));
   }, []);
 
+  const movePendingPhotoToCover = useCallback((index: number) => {
+    setPendingPhotos((cur) => {
+      if (index <= 0 || index >= cur.length) return cur;
+      const target = cur[index];
+      return [target, ...cur.slice(0, index), ...cur.slice(index + 1)];
+    });
+  }, []);
+
   const reset = useCallback(() => {
     if (mode === "edit" && asset) setDraft(applyProfileToDraft(draftFromAsset(asset, listing), profile));
     else setDraft(applyProfileToDraft(EMPTY_DRAFT, profile));
@@ -176,6 +185,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
           case "location": {
             const req = toUpdateLocationRequest(next, assetId);
             if (req) await assetsApi.updateLocation(req);
+            await qc.invalidateQueries({ queryKey: ["listings", "asset", assetId] });
             break;
           }
           case "title":
@@ -184,17 +194,38 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
           case "rules":
           case "pets":
           case "cancel":
-          case "utilities":
-            if (listingId) await listingsApi.update(listingId, toUpdateListingRequest(next));
-            break;
-          case "amenities":
-            if (listingId) {
-              await listingsApi.updateAmenities(
-                listingId,
-                next.amenityIds.map((id) => ({ amenityId: id, isPresent: true })),
+          case "utilities": {
+            // BUG-115: if the listing was never created (e.g. Phase 3 failed
+            // during initial save), auto-create it now so subsequent edits
+            // and photo uploads don't silently no-op.
+            let effectiveLid = listingId;
+            if (!effectiveLid) {
+              const propertyCategoryId = refs?.propertyCategories?.[0]?.id ?? 1;
+              const created = await listingsApi.create(
+                toCreateListingRequest(next, assetId, propertyCategoryId),
               );
+              effectiveLid = created.id;
+              await qc.invalidateQueries({ queryKey: ["listings"] });
             }
+            await listingsApi.update(effectiveLid, toUpdateListingRequest(next));
             break;
+          }
+          case "amenities": {
+            let effectiveLid = listingId;
+            if (!effectiveLid) {
+              const propertyCategoryId = refs?.propertyCategories?.[0]?.id ?? 1;
+              const created = await listingsApi.create(
+                toCreateListingRequest(next, assetId, propertyCategoryId),
+              );
+              effectiveLid = created.id;
+              await qc.invalidateQueries({ queryKey: ["listings"] });
+            }
+            await listingsApi.updateAmenities(
+              effectiveLid,
+              next.amenityIds.map((id) => ({ amenityId: id, isPresent: true })),
+            );
+            break;
+          }
         }
         await Promise.all([
           qc.invalidateQueries({ queryKey: ["assets", assetId] }),
@@ -207,7 +238,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         inflight.current.delete(sectionId);
       }
     },
-    [mode, assetId, listingId, qc],
+    [mode, assetId, listingId, refs, qc],
   );
 
   const commitFirstSave = useCallback(async (): Promise<string | null> => {
@@ -272,6 +303,8 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
       const createdListing = await listingsApi.create(toCreateListingRequest(draft, newAssetId, propertyCategoryId));
       const newListingId = createdListing.id;
 
+      // BE-11 fixed: CreateListingRequest now includes all 11 fields — no PATCH needed.
+
       // Phase 4: amenities (best-effort — selected in draft before first save)
       if (draft.amenityIds.length > 0) {
         try {
@@ -312,14 +345,18 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         scale: 1.4,
         spread: Math.PI * 1.4,
       });
-      const photoMsg = pendingPhotos.length > 0 ? ` · ${pendingPhotos.length - photoFailures.length} photo${pendingPhotos.length - photoFailures.length === 1 ? "" : "s"} uploaded` : "";
+      const successCount = pendingPhotos.length - photoFailures.length;
+      const photoMsg = successCount > 0 ? ` · ${successCount} photo${successCount === 1 ? "" : "s"} uploaded` : "";
       toast.success(`Property created${photoMsg}! Ready to publish 🚀`);
       // Reset before navigating — once the route changes, mode flips to
       // "edit" and the bottom-right capsule swaps to the Publish bar. If we
       // leave isSaving=true here, the brief moment between mode-flip and
       // listing-load shows a stale "Saving…" label on the create-mode pill.
       setIsSaving(false);
-      navigate(`/me/host/properties/${newAssetId}`, { replace: true });
+      // ?publish=1 tells the edit page to auto-open the Publish dialog once
+      // the asset+listing hydrate. Keeps the create flow a single iteration:
+      // fill → Save → confirm dates → live.
+      navigate(`/me/host/properties/${newAssetId}?publish=1`, { replace: true });
       return newAssetId;
     } catch {
       toast.error("Couldn't save. Try again.");
@@ -365,5 +402,8 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
     pendingPhotos,
     addPendingPhotos,
     removePendingPhotoAt,
+    movePendingPhotoToCover,
+    /** BE-14 fixed: derived from API listing.status — replaces justPublished session flag */
+    isPublished: listing?.status === "Active",
   };
 }

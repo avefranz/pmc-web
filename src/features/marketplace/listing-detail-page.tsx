@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useMyProfile } from "@/lib/hooks/use-profile";
 import {
   BedDouble, Bath, Users, LayoutGrid, X,
   ChevronLeft, ChevronRight, Home, Check, Lock,
@@ -13,6 +14,8 @@ import { amenityIcon } from "@/lib/utils/amenity-icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useMarketplaceListing, useListingAvailability } from "@/lib/hooks/use-marketplace";
+import { useMyBookings } from "@/lib/hooks/use-bookings";
+import { useAuthStore } from "@/lib/stores/auth.store";
 import { formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { AvailabilityTimeline } from "./components/availability-timeline";
@@ -24,7 +27,7 @@ import type { ListingAvailabilityDto } from "@/lib/types/marketplace";
 
 // ─── Gallery modal ────────────────────────────────────────────────────────────
 
-type MediaItem = { id: string; url: string; caption: string | null };
+type MediaItem = { id: string; url: string; caption: string | null; sortOrder?: number };
 
 function GalleryModal({ media, startAt, onClose }: {
   media: MediaItem[];
@@ -69,7 +72,10 @@ function GalleryModal({ media, startAt, onClose }: {
 
 // ─── Photo grid ───────────────────────────────────────────────────────────────
 
-function PhotoGrid({ media }: { media: MediaItem[] }) {
+function PhotoGrid({ media: rawMedia }: { media: MediaItem[] }) {
+  // BUG-38: sort by sortOrder so the cover (sortOrder=0) is always first in the left slot
+  const media = rawMedia.slice().sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryStart, setGalleryStart] = useState(0);
   function open(i: number) { setGalleryStart(i); setGalleryOpen(true); }
@@ -267,9 +273,16 @@ export function ListingDetailPage() {
   const { data: availability } = useListingAvailability(id!, !!id);
   const [bookingModal, setBookingModal] = useState<{ moveIn: string; months: number } | null>(null);
   const [rulesExpanded, setRulesExpanded] = useState(false);
+  const { data: myProfile } = useMyProfile();
+  const { token } = useAuthStore();
+  const { data: myBookings } = useMyBookings();
 
   const monthlyRate = listing?.monthlyRate || listing?.baseMonthlyRate || 0;
   const discountTiers = listing?.discountTiers ?? [];
+
+  // BUG-37: Prevent hosts from booking their own listing.
+  // ownerId is returned by the backend; guard activates once it's present.
+  const isOwnListing = !!(listing?.ownerId && myProfile?.id && listing.ownerId === myProfile.id);
 
   if (isLoading) {
     return (
@@ -311,8 +324,28 @@ export function ListingDetailPage() {
 
   function handleRequestBook(moveIn: string, months: number) { setBookingModal({ moveIn, months }); }
 
-  const bookingPanel = availability ? (
-    <BookingWidget listing={{ id: listing.id, monthlyRate, discountTiers }} availability={availability} onRequestBook={handleRequestBook} />
+  // UX-141: detect if the current user has an active/confirmed booking for this listing
+  const ACTIVE_STATUSES = ["Confirmed", "Active", "PendingPayment", "PendingContract"] as const;
+  const myActiveBooking = token
+    ? (myBookings ?? []).find(
+        (b) => b.listingId === listing?.id &&
+          ACTIVE_STATUSES.includes(b.status as typeof ACTIVE_STATUSES[number]),
+      )
+    : null;
+
+  // BUG-37: Self-booking guard — show owner badge instead of booking widget
+  const ownListingPanel = (
+    <div className="bg-bg-card rounded-2xl border border-border shadow-pop p-6 text-center space-y-2">
+      <p className="text-sm font-semibold text-fg">This is your listing</p>
+      <p className="text-xs text-fg-muted">You can't book your own property.</p>
+      <Link to="/me/host/properties" className="inline-block mt-1 text-xs text-brand underline underline-offset-2">
+        Manage listing →
+      </Link>
+    </div>
+  );
+
+  const bookingPanel = isOwnListing ? ownListingPanel : availability ? (
+    <BookingWidget listing={{ id: listing.id, monthlyRate, discountTiers, depositAmount: listing.depositAmount }} availability={availability} onRequestBook={handleRequestBook} />
   ) : (
     <BookingPanelFallback listing={listing} onRequestBook={handleRequestBook} />
   );
@@ -359,22 +392,44 @@ export function ListingDetailPage() {
   return (
     <div className="max-w-[1200px] mx-auto px-4 md:px-10 py-8">
 
+      {/* UX-141: "You're renting here" banner for active tenants */}
+      {myActiveBooking && (
+        <div className="mb-5 bg-success/8 border border-success/25 rounded-2xl px-5 py-3.5 flex items-center gap-3">
+          <span className="text-xl shrink-0">🏠</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-success leading-snug">You're renting this place</p>
+            {myActiveBooking.checkOutDate && (
+              <p className="text-xs text-fg-muted mt-0.5">
+                Your stay ends{" "}
+                <span className="font-medium text-fg">
+                  {new Date(myActiveBooking.checkOutDate).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </p>
+            )}
+          </div>
+          <Link
+            to={`/me/guest/bookings/${myActiveBooking.id}`}
+            className="shrink-0 text-xs font-semibold text-brand hover:underline whitespace-nowrap"
+          >
+            Open my booking →
+          </Link>
+        </div>
+      )}
+
       {/* ── Title ── */}
       <div className="mb-6">
         <h1 className="text-2xl md:text-[28px] font-bold text-fg leading-snug mb-2">
           {listing.title}
+          {/* UX-53: always-visible "Verified by Siamo" pill — was hover-only (invisible on mobile) */}
           <span className={cn(
-            "group/badge inline-flex align-middle items-center justify-center ml-3",
-            "rounded-full cursor-default select-none overflow-hidden bg-brand",
-            "shadow-[0_2px_8px_-1px_rgba(0,0,0,0.20)] hover:shadow-[0_3px_14px_-2px_rgba(0,0,0,0.28)]",
-            "h-[22px] w-[22px] hover:w-[138px] hover:justify-start hover:pl-[7px] hover:pr-[11px]",
-            "transition-[width,padding,box-shadow] duration-300 ease-out",
+            "inline-flex align-middle items-center gap-[5px] ml-3",
+            "rounded-full cursor-default select-none bg-brand",
+            "shadow-[0_2px_8px_-1px_rgba(0,0,0,0.20)]",
+            "h-[22px] pl-[6px] pr-[9px]",
           )}>
             <Check size={11} strokeWidth={2.8} className="shrink-0 text-white" />
-            <span className="ml-[7px] flex items-center gap-1 opacity-0 group-hover/badge:opacity-100 transition-opacity duration-200 delay-100">
-              <span className="whitespace-nowrap text-[10px] font-medium text-white/75 leading-none">Verified by</span>
-              <span className="whitespace-nowrap text-[11px] font-black text-white leading-none tracking-[0.04em]">Siamo</span>
-            </span>
+            <span className="whitespace-nowrap text-[10px] font-medium text-white/75 leading-none">Verified by</span>
+            <span className="whitespace-nowrap text-[11px] font-black text-white leading-none tracking-[0.04em]">Siamo</span>
           </span>
         </h1>
         {listing.cityName && (
@@ -394,11 +449,11 @@ export function ListingDetailPage() {
         {/* LEFT */}
         <div className="space-y-8">
 
-          {/* 1. Property type & specs */}
+          {/* 1. Property type & specs — UX-39: was a bold h2 duplicating the title, now a muted sub-label */}
           <div className="pb-8 border-b border-border">
-            <h2 className="text-xl font-semibold text-fg tracking-tight mb-2">
-              {buildingLabel}{listing.cityName ? ` in ${listing.cityName}, Thailand` : " in Thailand"}
-            </h2>
+            <p className="text-sm text-fg-muted mb-3">
+              {buildingLabel}{listing.cityName ? ` · ${listing.cityName}, Thailand` : " · Thailand"}
+            </p>
             <div className="flex items-center flex-wrap gap-x-5 gap-y-1 text-[14.5px] text-fg">
               {!!listing.maxOccupancy && (
                 <span className="flex items-center gap-2">
@@ -676,7 +731,7 @@ export function ListingDetailPage() {
                 {listing.endDate && <> until <strong className="text-fg">{formatDate(listing.endDate)}</strong></>}
               </p>
             ) : (
-              <p className="text-sm text-fg-muted">Contact the manager for availability details.</p>
+              <p className="text-sm text-fg-muted">Contact the host for availability details.</p>
             )}
           </Section>
 
@@ -767,8 +822,8 @@ export function ListingDetailPage() {
             },
             {
               step: "02",
-              title: "Manager confirms",
-              body: "The property manager reviews your request and confirms availability. You'll hear back within 24 hours.",
+              title: "Host confirms",
+              body: "The host reviews your request and confirms availability. You'll hear back within 24 hours.",
             },
             {
               step: "03",
@@ -800,6 +855,7 @@ export function ListingDetailPage() {
           moveInDate={bookingModal.moveIn}
           durationMonths={bookingModal.months}
           monthlyRate={monthlyRate}
+          depositAmount={listing.depositAmount}
           discountTiers={discountTiers}
           petsAllowed={listing.petsAllowed}
           petDeposit={listing.petDeposit}

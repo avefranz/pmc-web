@@ -94,7 +94,7 @@ export function TripsPage() {
           description="Time to plan your next stay in Thailand!"
           action={
             <Button asChild className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
-              <Link to="/listings">Browse ads</Link>
+              <Link to="/listings">Browse rentals</Link>
             </Button>
           }
         />

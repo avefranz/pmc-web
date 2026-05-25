@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
@@ -22,6 +23,34 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
+
+  // Local state for the custom-rules textarea so spaces/mid-word edits
+  // are not swallowed by the controlled-value round-trip through draft.
+  const customInitial = activeLines.filter((l) => !RULE_PRESETS.includes(l)).join("\n");
+  const [customText, setCustomText] = useState(customInitial);
+
+  // Keep local state in sync if a preset toggle changes the custom part
+  // (rare, but handles programmatic patches from outside).
+  useEffect(() => {
+    const fromDraft = draft.houseRules
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !RULE_PRESETS.includes(l))
+      .join("\n");
+    setCustomText((prev) => {
+      // Only sync if the trimmed versions differ — don't strip trailing spaces
+      // the user is currently typing.
+      if (prev.trim() !== fromDraft) return fromDraft;
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.houseRules]);
+
+  function commitCustom(raw: string) {
+    const presets = activeLines.filter((l) => RULE_PRESETS.includes(l));
+    const custom = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+    patch({ houseRules: [...presets, ...custom].join("\n") });
+  }
 
   function isActive(rule: string) {
     return activeLines.includes(rule);
@@ -61,33 +90,29 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
 
       <Field label="Additional rules" optional hint="Any custom rules not covered above.">
         <Textarea
-          value={activeLines.filter((l) => !RULE_PRESETS.includes(l)).join("\n")}
-          onChange={(e) => {
-            const presets = activeLines.filter((l) => RULE_PRESETS.includes(l));
-            const custom = e.target.value
-              .split("\n")
-              .map((l) => l.trim())
-              .filter(Boolean);
-            patch({ houseRules: [...presets, ...custom].join("\n") });
-          }}
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          onBlur={(e) => commitCustom(e.target.value)}
           rows={3}
           placeholder="e.g. Please sort recyclables separately"
         />
       </Field>
 
       <Row cols={2}>
-        <Field label="WiFi network name" required>
+        <Field label="WiFi network name" optional>
           <Input
             value={draft.wifiName}
             onChange={(e) => patch({ wifiName: e.target.value })}
             placeholder="MyWiFi"
           />
         </Field>
-        <Field label="WiFi password" required>
+        <Field label="WiFi password" optional>
           <Input
+            type="password"
             value={draft.wifiPassword}
             onChange={(e) => patch({ wifiPassword: e.target.value })}
-            placeholder="••••••••"
+            placeholder="Enter password"
+            autoComplete="new-password"
           />
         </Field>
       </Row>
@@ -101,8 +126,7 @@ export const rulesSection: SectionDef = {
   group: "stay",
   required: true,
   estTime: "1 min",
-  isComplete: (d) =>
-    d.houseRules.trim().length > 0 && d.wifiName.trim().length > 0 && d.wifiPassword.trim().length > 0,
+  isComplete: (d) => d.houseRules.trim().length > 0,
   summary: (d) => {
     const lines = d.houseRules.trim().split("\n").filter(Boolean);
     if (lines.length === 0) return "—";

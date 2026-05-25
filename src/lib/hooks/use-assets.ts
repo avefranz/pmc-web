@@ -78,6 +78,23 @@ export const useNearbyPois = (assetId: string | undefined, radius = 500, enabled
     retry: 0,
   });
 
+export const useEnrichNearby = (assetId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => assetsApi.enrichNearby(assetId),
+    // Invalidate both ["listings", assetId] and ["listings", "asset", assetId] so that
+    // NearbyStatus (useListing by id) and the editor (useListingsByAsset) both refresh.
+    // We also wait a short delay before invalidating since enrichment is async on the backend.
+    onSuccess: () =>
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          qc.invalidateQueries({ queryKey: ["listings"] });
+          resolve();
+        }, 4000),
+      ),
+  });
+};
+
 export const useDeleteAsset = () => {
   const qc = useQueryClient();
   return useMutation({

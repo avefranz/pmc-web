@@ -94,42 +94,58 @@ export function NumberStepper({
   onChange,
   min = 0,
   max = 999,
+  dimValue = false,
 }: {
   value: number;
   onChange: (n: number) => void;
   min?: number;
   max?: number;
+  /** UX-84: true when value is a smart default the host hasn't explicitly set yet */
+  dimValue?: boolean;
 }) {
   return (
-    <div className="inline-flex items-center border border-border rounded-lg h-10 bg-bg">
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(min, value - 1))}
-        className="w-10 h-full flex items-center justify-center text-fg hover:bg-bg-subtle rounded-l-lg"
-        aria-label="Decrease"
-      >
-        <Minus size={14} />
-      </button>
-      <input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        value={value}
-        onChange={(e) => {
-          const raw = e.target.value.replace(/[^\d]/g, "");
-          const n = raw === "" ? 0 : Number(raw);
-          if (!Number.isNaN(n)) onChange(Math.max(min, Math.min(max, n)));
-        }}
-        className="w-14 h-full text-center bg-transparent text-fg text-sm tabular-nums focus:outline-none"
-      />
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(max, value + 1))}
-        className="w-10 h-full flex items-center justify-center text-fg hover:bg-bg-subtle rounded-r-lg"
-        aria-label="Increase"
-      >
-        <Plus size={14} />
-      </button>
+    <div className="flex items-center gap-2">
+      <div className={cn(
+        "inline-flex items-center rounded-lg h-10 bg-bg transition-all",
+        dimValue
+          ? "border border-dashed border-border/70 opacity-60"
+          : "border border-border",
+      )}>
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(min, value - 1))}
+          disabled={value <= min}
+          className="w-10 h-full flex items-center justify-center text-fg hover:bg-bg-subtle rounded-l-lg disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Decrease"
+        >
+          <Minus size={14} />
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={value}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, "");
+            const n = raw === "" ? 0 : Number(raw);
+            if (!Number.isNaN(n)) onChange(Math.max(min, Math.min(max, n)));
+          }}
+          className="w-14 h-full text-center bg-transparent text-sm tabular-nums focus:outline-none text-fg"
+        />
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(max, value + 1))}
+          className="w-10 h-full flex items-center justify-center text-fg hover:bg-bg-subtle rounded-r-lg"
+          aria-label="Increase"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+      {dimValue && (
+        <span className="text-[10px] text-fg-subtle border border-border/60 rounded-full px-1.5 py-0.5 leading-none">
+          suggested
+        </span>
+      )}
     </div>
   );
 }

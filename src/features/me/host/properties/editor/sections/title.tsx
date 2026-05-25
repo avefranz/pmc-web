@@ -3,11 +3,16 @@ import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useReferences } from "@/lib/hooks/use-references";
-import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
+import { useReferenceCities } from "@/lib/hooks/use-references";
 import { aiApi, type AiPropertyType } from "@/lib/api/ai.api";
 import { cn } from "@/lib/utils/cn";
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field } from "../ui";
+
+// Tracks whether the user has manually edited the title field in this render.
+// Checked before any async AI response is applied so the AI never overwrites
+// something the user typed (BUG-02).
+let _titleFocused = false;
 
 const TITLE_MAX = 60;
 
@@ -25,11 +30,12 @@ const AI_SHIMMER_STYLE = `
 
 function TitleDialog({ draft, patch }: SectionDialogProps) {
   const { data: refs } = useReferences();
-  const { data: cities } = useMarketplaceCities();
+  const { data: cities } = useReferenceCities();
   const [variation, setVariation] = useState(0);
   const [genTitle, setGenTitle] = useState(false);
   const [genDesc, setGenDesc] = useState(false);
   const suggestSeq = useRef(0);
+  const userEditedTitle = useRef(false);
 
   const propTypeName =
     refs?.unitTypes?.find((t) => t.id === draft.assetTypeId)?.name &&
@@ -53,6 +59,8 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
         variation,
       });
       if (seq !== suggestSeq.current) return;
+      // Never overwrite a title the user is actively editing or has typed.
+      if (userEditedTitle.current || _titleFocused) return;
       patch({ title: resp.title.slice(0, TITLE_MAX) });
     } finally {
       if (seq === suggestSeq.current) setGenTitle(false);
@@ -192,7 +200,12 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
           <Input
             value={draft.title}
             maxLength={TITLE_MAX}
-            onChange={(e) => patch({ title: e.target.value })}
+            onChange={(e) => {
+              userEditedTitle.current = true;
+              patch({ title: e.target.value });
+            }}
+            onFocus={() => { _titleFocused = true; }}
+            onBlur={() => { _titleFocused = false; }}
             placeholder="3BR Chiang Mai Condo · Fully Furnished"
             className="pr-14"
           />

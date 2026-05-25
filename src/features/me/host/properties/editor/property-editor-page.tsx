@@ -39,6 +39,7 @@ function PropertyEditor({ id }: { id: string | undefined }) {
   const { data: asset } = useAsset(id ?? "");
   const deleteAsset = useDeleteAsset();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Warn before navigating away with unsaved changes (create mode only —
   // edit mode auto-saves per section).
@@ -71,12 +72,16 @@ function PropertyEditor({ id }: { id: string | undefined }) {
 
   async function handleDelete() {
     if (!id) return;
+    setDeleteError(null);
     try {
       await deleteAsset.mutateAsync(id);
       toast.success("Property deleted");
       navigate("/me/host/properties", { replace: true });
-    } catch {
-      toast.error("Couldn't delete");
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setDeleteError(detail ?? "Couldn't delete property. Please try again.");
     }
   }
 
@@ -102,21 +107,31 @@ function PropertyEditor({ id }: { id: string | undefined }) {
             }}
             onDelete={editor.mode === "edit" ? () => setConfirmDelete(true) : undefined}
           />
-          <SectionsList editor={editor} />
+          <SectionsList
+            editor={editor}
+            occupancyStatus={asset?.occupancyStatus}
+            currentTenantName={asset?.currentTenantName}
+          />
         </div>
       </div>
 
       {confirmDelete && (
-        <Dialog open onOpenChange={(o) => !o && setConfirmDelete(false)}>
+        <Dialog open onOpenChange={(o) => { if (!o) { setConfirmDelete(false); setDeleteError(null); } }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Delete this property?</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-fg-muted">
               This is permanent. The listing, photos, and history will be removed.
+              Properties with active bookings cannot be deleted.
             </p>
+            {deleteError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                {deleteError}
+              </p>
+            )}
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              <Button variant="ghost" onClick={() => { setConfirmDelete(false); setDeleteError(null); }}>
                 Cancel
               </Button>
               <Button

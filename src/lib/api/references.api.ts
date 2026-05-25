@@ -107,6 +107,12 @@ export const referencesApi = {
     }));
   },
 
+  /** All cities available for property creation — not filtered by active listings (BUG-04). */
+  getCities: async (): Promise<{ id: number; code: string; name: { en: string; ru?: string; th?: string } }[]> => {
+    const raw = await apiClient.get<unknown>("/api/references/cities").then((r) => r.data);
+    return asArray<{ id: number; code: string; name: { en: string; ru?: string; th?: string } }>(unwrap<unknown>(raw));
+  },
+
   getAmenities: async (): Promise<AmenityDefinition[]> => {
     const raw = await apiClient.get<unknown>("/api/references/amenities").then((r) => r.data);
     const items = asArray<Record<string, unknown>>(unwrap<unknown>(raw));

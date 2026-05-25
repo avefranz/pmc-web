@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useMe } from "@/lib/hooks/use-auth";
 import { useMyProfile, useMyTm30 } from "@/lib/hooks/use-profile";
+import { useMyBookings } from "@/lib/hooks/use-bookings";
 import { useQueryClient } from "@tanstack/react-query";
 import { initials } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -82,14 +83,16 @@ function SidebarNav({
   active,
   onSelect,
   pips,
+  items = NAV,
 }: {
   active: SectionId;
   onSelect: (id: SectionId) => void;
   pips: Partial<Record<SectionId, boolean>>;
+  items?: typeof NAV;
 }) {
   return (
     <div className="bg-bg-card rounded-2xl border border-border p-1.5 flex flex-col">
-      {NAV.map((n) => {
+      {items.map((n) => {
         const Icon = n.icon;
         const isActive = active === n.id;
         return (
@@ -196,11 +199,13 @@ function SectionOverview({ onJump }: { onJump: (id: SectionId) => void }) {
   const { data: profile } = useMyProfile();
   const { data: me } = useMe();
   const { data: tm30 } = useMyTm30();
+  const { data: bookings } = useMyBookings();
 
   const passportOk = !!profile?.passportNumber;
   const paymentOk = !!profile?.promptPayId || !!profile?.bankAccountNumber;
   const phoneOk = !!profile?.phone;
-  const docCount = tm30?.length ?? 0;
+  const contractCount = (bookings ?? []).filter((b) => b.hasContract && b.contractUrl).length;
+  const docCount = (tm30?.length ?? 0) + contractCount;
   const isHost = me?.roles?.some((r) => r === "Landlord" || r === "Admin");
 
   return (
@@ -255,19 +260,53 @@ function SectionOverview({ onJump }: { onJump: (id: SectionId) => void }) {
 }
 
 function SectionDocuments() {
-  const { data: tm30, isLoading } = useMyTm30();
+  const { data: tm30, isLoading: tm30Loading } = useMyTm30();
+  // BUG-166: also show signed contracts from bookings — they're legal documents too
+  const { data: bookings, isLoading: bookingsLoading } = useMyBookings();
+
+  const isLoading = tm30Loading || bookingsLoading;
+
+  const signedContracts = (bookings ?? []).filter(
+    (b) => b.hasContract && b.contractUrl,
+  );
+
+  const totalCount = (tm30?.length ?? 0) + signedContracts.length;
+
   return (
     <SectionShell
       title="Documents"
-      subtitle="A vault for everything legal: TM-30 receipts, signed contracts, passport scans."
+      subtitle="A vault for everything legal: TM-30 receipts and signed rental contracts."
     >
       {isLoading ? (
         <div className="text-sm text-fg-muted">Loading…</div>
-      ) : !tm30 || tm30.length === 0 ? (
+      ) : totalCount === 0 ? (
         <div className="text-sm text-fg-muted py-8 text-center">No documents yet.</div>
       ) : (
         <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
-          {tm30.map((t) => (
+          {signedContracts.map((b) => (
+            <div key={`contract-${b.id}`} className="flex items-center gap-3 px-4 py-3">
+              <div className="w-9 h-9 rounded-lg bg-brand/10 flex items-center justify-center shrink-0">
+                <FileText size={14} className="text-brand" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-fg truncate">
+                  Contract · {b.listingTitle ?? b.assetName ?? "Rental"}
+                </div>
+                <div className="text-xs text-fg-muted truncate">
+                  Signed · {new Date(b.checkInDate).toLocaleDateString()} – {new Date(b.checkOutDate).toLocaleDateString()}
+                </div>
+              </div>
+              <a
+                href={b.contractUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-fg-muted hover:text-fg"
+              >
+                View
+              </a>
+            </div>
+          ))}
+          {(tm30 ?? []).map((t) => (
             <div key={t.bookingId} className="flex items-center gap-3 px-4 py-3">
               <div className="w-9 h-9 rounded-lg bg-bg-subtle flex items-center justify-center shrink-0">
                 <FileText size={14} className="text-fg-muted" />
@@ -356,19 +395,31 @@ export default function ProfilePage() {
   const [sp, setSp] = useSearchParams();
   const active = (sp.get("s") as SectionId) || "overview";
   const { data: profile } = useMyProfile();
+  const { data: me } = useMe();
+
+  // BUG-152 / BUG-153: payment and contact sections are host-only (they contain
+  // payout details and host-to-tenant messaging setup). Tenants never need them.
+  const isHost = me?.roles?.some((r) => r === "Landlord" || r === "Admin");
+  const HOST_ONLY: SectionId[] = ["payment", "contact"];
+  const navItems = isHost ? NAV : NAV.filter((n) => !HOST_ONLY.includes(n.id));
+
+  // Guard: if a non-host navigated here via URL param, fall through to overview.
+  const effectiveSection: SectionId =
+    !isHost && HOST_ONLY.includes(active) ? "overview" : active;
 
   const passportMissing = !profile?.passportNumber;
   const pips: Partial<Record<SectionId, boolean>> = { personal: passportMissing };
 
   const setActive = (id: SectionId) => {
+    const guarded = !isHost && HOST_ONLY.includes(id) ? "overview" : id;
     const next = new URLSearchParams(sp);
-    if (id === "overview") next.delete("s");
-    else next.set("s", id);
+    if (guarded === "overview") next.delete("s");
+    else next.set("s", guarded);
     setSp(next, { replace: true });
   };
 
   const content = useMemo(() => {
-    switch (active) {
+    switch (effectiveSection) {
       case "personal":      return <PassportOnboardingStep embedded />;
       case "payment":       return <PaymentSettingsPage embedded />;
       case "contact":       return <ContactSettingsPage embedded />;
@@ -378,7 +429,7 @@ export default function ProfilePage() {
       default:              return <SectionOverview onJump={setActive} />;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [effectiveSection]);
 
   return (
     <div className="max-w-6xl">
@@ -386,7 +437,7 @@ export default function ProfilePage() {
       <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-5">
         <aside className="flex flex-col gap-3">
           <UserCard />
-          <SidebarNav active={active} onSelect={setActive} pips={pips} />
+          <SidebarNav active={effectiveSection} onSelect={setActive} pips={pips} items={navItems} />
         </aside>
         <main className="min-w-0">{content}</main>
       </div>

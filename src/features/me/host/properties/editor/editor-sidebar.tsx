@@ -2,7 +2,7 @@ import { ArrowLeft, BedDouble, Bath, Eye, Home, Users, Trash2 } from "lucide-rea
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
-import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
+import { useReferenceCities } from "@/lib/hooks/use-references";
 import type { PropertyDraft, SectionGroup } from "./types";
 
 interface Props {
@@ -130,7 +130,7 @@ function PreviewCard({
   primaryImageUrl?: string;
   status?: string;
 }) {
-  const { data: cities } = useMarketplaceCities();
+  const { data: cities } = useReferenceCities();
   const cityName = cities?.find((c) => c.id === draft.cityId)?.name?.en;
 
   const hasTitle = draft.title.trim().length > 0;
@@ -191,7 +191,7 @@ function PreviewCard({
             {hasPrice ? (
               <span className="text-fg-muted">
                 <span className="text-fg font-semibold tabular-nums">{formatThb(draft.baseMonthlyRate)}</span>{" "}
-                / month · ★ New
+                / month
               </span>
             ) : (
               <span className="text-fg-subtle">Set monthly rent to see the price tag</span>

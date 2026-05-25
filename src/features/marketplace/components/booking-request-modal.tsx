@@ -167,6 +167,8 @@ interface Props {
   moveInDate: string;
   durationMonths: number;
   monthlyRate: number;
+  /** Actual security deposit (BE-16 fix: was wrongly displayed as monthlyRate). */
+  depositAmount?: number;
   discountTiers: DiscountTier[];
   petsAllowed?: boolean;
   petDeposit?: number;
@@ -182,6 +184,7 @@ export function BookingRequestModal({
   moveInDate,
   durationMonths,
   monthlyRate,
+  depositAmount,
   discountTiers,
   petsAllowed,
   petDeposit,
@@ -239,8 +242,12 @@ export function BookingRequestModal({
     }
   }, [step, profile]);
 
-  const hasPets = petsExplicit === true && totalPets(pets) > 0;
-  const petPhotosReady = !hasPets || (["cats", "dogs", "other"] as PetKey[]).every(
+  // hasPets = user explicitly said "yes" (regardless of counts — counts may still be 0)
+  const hasPets = petsExplicit === true;
+  // At least one pet must be added when user selects "I have pets"
+  const petCountFilled = !hasPets || totalPets(pets) > 0;
+  // Every pet type that has a count must have at least 1 photo
+  const petPhotosReady = !hasPets || totalPets(pets) === 0 || (["cats", "dogs", "other"] as PetKey[]).every(
     (key) => pets[key] === 0 || petPhotos[key].length > 0,
   );
   const petsAnswered = petsExplicit !== null;
@@ -503,12 +510,12 @@ export function BookingRequestModal({
               <CheckCircle2 size={48} className="text-success mx-auto mb-4" />
             )}
             <h3 className="text-lg font-semibold text-fg mb-1">
-              {bookingResult?.isInstantBook ? "Booking confirmed!" : "Request received!"}
+              {bookingResult?.isInstantBook ? "Booking confirmed!" : "Request sent!"}
             </h3>
             <p className="text-sm text-fg-muted mb-6">
               {bookingResult?.isInstantBook
                 ? "Your booking is confirmed. Check your booking details below."
-                : <>We've sent your request to the property manager. Expect a response within <strong>24 hours</strong>.</>}
+                : <>We've sent your request to the host. Expect a response within <strong>24 hours</strong>.</>}
             </p>
             <div className="bg-bg-subtle rounded-xl px-4 py-3 text-sm text-left space-y-1 mb-6">
               <div className="flex justify-between">
@@ -532,7 +539,7 @@ export function BookingRequestModal({
                   <span className="text-fg-muted">Refundable deposit</span>
                   <div className="text-[11px] text-fg-muted">held securely by Siamo</div>
                 </div>
-                <span className="font-semibold text-fg">{formatThb(rate)}</span>
+                <span className="font-semibold text-fg">{formatThb(depositAmount ?? rate)}</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -653,20 +660,26 @@ export function BookingRequestModal({
                     <button
                       type="button"
                       onClick={() => setPetsExplicit(true)}
-                      disabled={petsAllowed === false}
                       className={cn(
                         "flex-1 py-2.5 text-sm font-medium transition-colors",
                         petsExplicit === true
-                          ? "bg-brand text-white"
-                          : petsAllowed === false
-                            ? "text-fg-muted opacity-40 cursor-not-allowed"
-                            : "text-fg-muted hover:bg-bg-subtle"
+                          ? petsAllowed === false ? "bg-danger text-white" : "bg-brand text-white"
+                          : "text-fg-muted hover:bg-bg-subtle"
                       )}
                     >
                       I have pets
                     </button>
                   </div>
 
+                  {/* UX-109: clear blocking message when tenant selects pets on a no-pets listing */}
+                  {petsExplicit === true && petsAllowed === false && (
+                    <div className="px-4 py-2.5 bg-danger/8 border-t border-danger/20 flex items-start gap-2">
+                      <span className="text-danger text-sm mt-0.5">✕</span>
+                      <p className="text-xs text-danger font-medium">
+                        This listing does not accept pets. Please select "No pets" to continue, or search for a pet-friendly property.
+                      </p>
+                    </div>
+                  )}
                   {triedSubmit && !petsAnswered && (
                     <div className="px-4 py-2 bg-danger/5 border-t border-danger/20">
                       <p className="text-xs text-danger">Please indicate whether you're travelling with pets.</p>
@@ -679,11 +692,13 @@ export function BookingRequestModal({
                   <>
                     <PetsSelector
                       value={pets}
-                      onChange={(v) => {
-                        setPets(v);
-                        if (totalPets(v) === 0) setTriedSubmit(false);
-                      }}
+                      onChange={(v) => setPets(v)}
                     />
+                    {triedSubmit && !petCountFilled && (
+                      <p className="text-xs text-danger -mt-2">
+                        Please add the number of pets using the + buttons above.
+                      </p>
+                    )}
                     <PetPhotoUpload
                       pets={pets}
                       photos={petPhotos}
@@ -700,12 +715,12 @@ export function BookingRequestModal({
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || !petsAnswered || (hasPets && !petPhotosReady)}
+                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || !petsAnswered || !petCountFilled || (hasPets && !petPhotosReady) || (petsExplicit === true && petsAllowed === false)}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>
               <p className="text-xs text-center text-fg-muted mt-3">
-                You won't be charged now. The manager will review and respond.
+                You won't be charged now. The host will review and respond.
               </p>
             </div>
           </form>
@@ -749,7 +764,9 @@ export function BookingRequestModal({
                         <SelectTrigger>
                           <SelectValue placeholder="Select visa type" />
                         </SelectTrigger>
-                        <SelectContent>
+                        {/* z-[9999] ensures dropdown appears above the Dialog overlay (BUG-57) */}
+                        {/* @ts-ignore — onOpenAutoFocus is a valid Radix prop at runtime (UX-93) */}
+                        <SelectContent className="z-[9999]" onOpenAutoFocus={(e: Event) => e.preventDefault()}>
                           {Object.entries(VISA_LABELS).map(([val, label]) => (
                             <SelectItem key={val} value={val}>{label}</SelectItem>
                           ))}
@@ -767,7 +784,7 @@ export function BookingRequestModal({
                         <Input
                           value={pLastEntryPort}
                           onChange={(e) => setPLastEntryPort(e.target.value)}
-                          placeholder="Suvarnabhumi"
+                          placeholder="e.g. Chiang Mai"
                         />
                       </div>
                     </div>

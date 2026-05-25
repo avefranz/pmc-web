@@ -50,8 +50,10 @@ export default function RegisterPage() {
     try {
       await register.mutateAsync({ email: email.trim(), password, firstName: firstName.trim(), lastName: lastName.trim() });
       navigate("/me/onboarding/intent", { replace: true });
-    } catch {
-      setServerError("Registration failed. This email may already be in use.");
+    } catch (err: unknown) {
+      // BUG-110: show specific BE error (400 "Email already exists", validation errors, etc.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setServerError(detail ?? "Registration failed. This email may already be in use.");
     }
   }
 
@@ -171,7 +173,7 @@ export default function RegisterPage() {
             <Button
               className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-medium"
               type="submit"
-              disabled={register.isPending}
+              disabled={register.isPending || !acceptedTerms}
             >
               {register.isPending ? "Creating account…" : "Create account"}
             </Button>

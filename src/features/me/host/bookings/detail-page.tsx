@@ -5,7 +5,7 @@ import {
   ArrowLeft, Trash2, FileText, Upload,
   Eye,
   PenLine, CheckCircle2, Clock, AlertCircle, Download, ExternalLink, Globe, FileCheck, XCircle, Loader2,
-  Settings, Home, Zap, Users, ListChecks, Wrench,
+  Settings, Home, Zap, Users, ListChecks,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import {
   useBooking,
   useBookingGuests,
   useBookingInvoices,
-  useBookingTickets,
   useBookingTm30,
   useBookingContract,
   useLandlordSignContract,
@@ -42,8 +41,7 @@ import { useAsset } from "@/lib/hooks/use-assets";
 import { useMyProfile } from "@/lib/hooks/use-profile";
 import { PeaBillCard } from "@/components/shared/pea-bill-card";
 import { bookingsApi } from "@/lib/api/bookings.api";
-import { formatDate, formatThb } from "@/lib/utils/format";
-import { ticketKindIcon } from "@/lib/utils/ticket-status";
+import { formatDate, formatThb, formatVisaType } from "@/lib/utils/format";
 import { InvoiceStatus, BookingStatus, Tm30Status } from "@/lib/types/enums";
 import type { BookingGuestDto } from "@/lib/types";
 import { toast } from "sonner";
@@ -92,7 +90,8 @@ function GuestCard({
         {hasPassport && (
           <div className="mt-1 space-y-0.5 text-xs text-fg-muted font-mono">
             {guest.passportNumber && <p>Passport: {guest.passportNumber}{guest.passportExpiry ? ` · exp ${formatDate(guest.passportExpiry)}` : ""}</p>}
-            {(guest.nationality || guest.visaType || guest.gender) && <p>{[guest.nationality, guest.gender === "M" ? "Male" : guest.gender === "F" ? "Female" : undefined, guest.visaType].filter(Boolean).join(" · ")}</p>}
+            {/* UX-74: format raw enum values; BUG-73: skip gender — it's auto-assigned by backend, not explicitly set by tenant */}
+            {(guest.nationality || guest.visaType) && <p>{[guest.nationality, guest.visaType ? formatVisaType(guest.visaType) : undefined].filter(Boolean).join(" · ")}</p>}
             {guest.dateOfBirth && <p>DOB: {formatDate(guest.dateOfBirth)}</p>}
             {guest.entryDate && <p>Entry: {formatDate(guest.entryDate)}{guest.entryPort ? ` via ${guest.entryPort}` : ""}</p>}
           </div>
@@ -116,9 +115,15 @@ function GuestCard({
             </a>
           )}
         </div>
-        <label className={cn("flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors cursor-pointer", uploadTm30.isPending && "opacity-50 pointer-events-none")}>
+        <label className={cn(
+          "flex items-center gap-1.5 cursor-pointer transition-colors",
+          tm30Filed
+            ? "text-xs text-fg-muted hover:text-fg"
+            : "text-xs font-semibold text-white bg-warning hover:bg-warning/90 rounded-lg px-2.5 py-1.5",
+          uploadTm30.isPending && "opacity-50 pointer-events-none",
+        )}>
           <Upload size={13} />
-          {uploadTm30.isPending ? "Uploading…" : tm30Filed ? "Replace" : "Upload PDF"}
+          {uploadTm30.isPending ? "Uploading…" : tm30Filed ? "Replace" : "📤 Upload TM-30 receipt"}
           <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
@@ -145,26 +150,9 @@ const INVOICE_TYPE_LABELS: Record<string, string> = {
   Other: "Other",
 };
 
-// ─── Ticket status badge ──────────────────────────────────────────────────────
-
-function ticketStatusClass(status: string): string {
-  if (["Verified", "Completed"].includes(status)) return "bg-success/10 text-success";
-  if (["Blocked", "Rejected"].includes(status)) return "bg-danger/10 text-danger";
-  if (["PendingApproval", "Pending", "Triaging", "Quoted"].includes(status)) return "bg-warning/10 text-warning";
-  return "bg-bg-subtle text-fg-muted";
-}
-
-const TICKET_STATUS_LABELS: Record<string, string> = {
-  Triaging: "Under review",
-  PendingApproval: "Pending approval",
-  InProgress: "In progress",
-  Verified: "Work done",
-  Reopened: "Re-opened",
-};
-
 // ─── Tabs nav ─────────────────────────────────────────────────────────────────
 
-type TabId = "overview" | "payments" | "guests" | "tickets" | "utilities";
+type TabId = "overview" | "payments" | "guests" | "utilities";
 
 function TabsNav({
   active,
@@ -173,13 +161,12 @@ function TabsNav({
 }: {
   active: TabId;
   onChange: (t: TabId) => void;
-  counts: { payments?: string; guests?: string | number; tickets?: number };
+  counts: { payments?: string; guests?: string | number };
 }) {
   const tabs: { id: TabId; label: string; icon: React.ReactNode; count?: string | number }[] = [
     { id: "overview",  label: "Overview",  icon: <Home size={13} /> },
     { id: "payments",  label: "Payments",  icon: <ListChecks size={13} />, count: counts.payments },
     { id: "guests",    label: "Guests",    icon: <Users size={13} />,      count: counts.guests },
-    { id: "tickets",   label: "Tickets",   icon: <Wrench size={13} />,     count: counts.tickets },
     { id: "utilities", label: "Utilities", icon: <Zap size={13} /> },
   ];
   return (
@@ -239,7 +226,6 @@ export function BookingDetailPage() {
   const { data: booking, isLoading } = useBooking(id!);
   const { data: guests } = useBookingGuests(id!);
   const { data: invoices } = useBookingInvoices(id!);
-  const { data: tickets } = useBookingTickets(id!);
   const { data: contractData } = useBookingContract(id!);
   const { data: paymentData } = useBookingPayment(id!);
   const { data: asset } = useAsset(booking?.assetId ?? "");
@@ -408,9 +394,6 @@ export function BookingDetailPage() {
   // "All paid" is only trustworthy once the booking is over — while active, the backend may
   // mark the full-rent invoice as Paid after just the first gateway payment.
   const bookingIsOver = booking.status === BookingStatus.Completed;
-  const openTickets = (tickets ?? []).filter(
-    (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
-  );
 
   const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
   // Wait for every foreign guest's TM-30 query to resolve before classifying
@@ -458,7 +441,6 @@ export function BookingDetailPage() {
   const counts = {
     payments: rentPayments.length > 0 ? `${paidRentCount}/${rentPayments.length}` : undefined,
     guests: guestCountLabel,
-    tickets: openTickets.length,
   };
 
   // ── Single most-urgent alert (banner) ─────────────────────────────────────
@@ -1566,39 +1548,6 @@ export function BookingDetailPage() {
   );
 
 
-  const ticketsPane = (
-    <div>
-      {!tickets?.length ? (
-        <div className="bg-bg-card rounded-xl shadow-card px-5 py-10 text-center">
-          <Wrench size={28} className="text-fg-subtle mx-auto mb-2" />
-          <p className="text-sm font-semibold text-fg">No tickets for this booking</p>
-          <p className="text-xs text-fg-muted mt-1">When your tenant submits a maintenance request or question, it'll appear here.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {tickets.map((t) => (
-            <Link
-              key={t.id}
-              to={`/me/host/tickets/${t.id}`}
-              className="bg-bg-card rounded-xl shadow-card p-3 flex items-center gap-3 hover:brightness-95 transition"
-            >
-              <span className="text-base shrink-0">{ticketKindIcon(t.kind)}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-fg truncate">{t.title}</p>
-                <p className="text-xs text-fg-muted">{t.displayId}</p>
-              </div>
-              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusClass(t.status))}>
-                {TICKET_STATUS_LABELS[t.status] ?? t.status}
-              </span>
-            </Link>
-          ))}
-          {openTickets.length > 0 && (
-            <p className="text-xs text-fg-muted px-1">{openTickets.length} open ticket{openTickets.length > 1 ? "s" : ""}</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
 
   const utilitiesPane = (
     <div className="space-y-3">
@@ -1657,7 +1606,6 @@ export function BookingDetailPage() {
         {tab === "overview" && overviewPane}
         {tab === "payments" && paymentsPane}
         {tab === "guests" && guestsPane}
-        {tab === "tickets" && ticketsPane}
         {tab === "utilities" && utilitiesPane}
       </div>
 

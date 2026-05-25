@@ -1,8 +1,9 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { useFinanceSummary, useFinanceOverview } from "@/lib/hooks/use-finance";
+import { useCapabilities } from "@/lib/hooks/use-capabilities";
 import { formatThb } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
@@ -36,18 +37,53 @@ function KpiCard({ label, value, loading, delta }: {
 }
 
 export function FinancePage() {
+  const { data: caps, isLoading: capsLoading } = useCapabilities();
   const { data: overview, isLoading: ovLoading } = useFinanceOverview();
   const { data: summary, isLoading: sumLoading } = useFinanceSummary();
-  // Deposit is held in trust — not earned income, exclude from all revenue views
-  const revenueByType = (summary?.revenueByType ?? []).filter(
-    (r) => r.category !== "Deposit",
-  );
-  const revenueChartData = revenueByType.map((r) => ({ name: r.category, value: r.amount }));
-  const depositTotal = (summary?.revenueByType ?? [])
+
+  // BUG-116: block the page entirely until capabilities are known — prevents
+  // tenants from briefly seeing finance charts before the access check fires.
+  if (capsLoading) {
+    return (
+      <div>
+        <PageHeader title="Finance" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-bg-card rounded-xl shadow-card p-5">
+              <Skeleton className="h-4 w-24 mb-3" />
+              <Skeleton className="h-7 w-32" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (caps && !caps.isLandlord) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 text-center px-6">
+        <p className="text-4xl">🔒</p>
+        <p className="text-lg font-semibold text-fg">Host finances only</p>
+        <p className="text-sm text-fg-muted">This section is for property owners. You don't have any properties listed.</p>
+      </div>
+    );
+  }
+  // BUG-104/UX-105: show all revenue categories including deposits in the chart.
+  // Deposits are real cash received — label them "(held by Siamo)" so landlords
+  // understand they're not earned income yet.
+  const allRevByType = summary?.revenueByType ?? [];
+  const depositTotal = allRevByType
     .filter((r) => r.category === "Deposit")
     .reduce((sum, r) => sum + r.amount, 0);
-  const trueRevenue = (summary?.totalRevenue ?? 0) - depositTotal;
-  const trueNetProfit = (summary?.netProfit ?? 0) - depositTotal;
+  // Chart: relabel "Deposit" → "Deposit (held)" so bars match KPI total
+  const revenueChartData = allRevByType.map((r) => ({
+    name: r.category === "Deposit" ? "Deposit (held)" : r.category,
+    value: r.amount,
+    isDeposit: r.category === "Deposit",
+  }));
+  // KPIs: totalRevenue from API already includes deposit; keep consistent with "This month"
+  const trueRevenue = summary?.totalRevenue ?? 0;
+  const trueNetProfit = summary?.netProfit ?? 0;
   const expenseChartData = (summary?.expensesByType ?? []).map((e, i) => ({
     name: e.category, value: e.amount,
     pct: summary?.totalExpenses ? (e.amount / summary.totalExpenses) * 100 : 0,
@@ -88,23 +124,44 @@ export function FinancePage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-bg-card rounded-xl shadow-card p-5">
-          <p className="text-sm font-semibold text-fg mb-4">Revenue by type</p>
+          <div className="flex items-start justify-between mb-4">
+            <p className="text-sm font-semibold text-fg">Revenue by type</p>
+            {depositTotal > 0 && (
+              <p className="text-[11px] text-fg-muted text-right leading-tight max-w-[140px]">
+                {formatThb(depositTotal)} deposit held by Siamo
+              </p>
+            )}
+          </div>
           {revenueChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={revenueChartData} barSize={28}>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={revenueChartData} barSize={36} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#717171" }} axisLine={false} tickLine={false} />
                 <YAxis
                   tick={{ fontSize: 10, fill: "#717171" }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v) => `฿${(v / 1000).toFixed(0)}k`}
-                  width={48}
+                  width={52}
+                  domain={[0, "auto"]}
                 />
                 <Tooltip
-                  formatter={(v) => [formatThb(v as number), "Revenue"]}
+                  formatter={(v, _name, props) => [
+                    formatThb(v as number),
+                    props.payload?.isDeposit ? "Held by Siamo" : "Earned",
+                  ]}
                   contentStyle={{ fontSize: 12, border: "1px solid #E5E5E5", background: "#fff", borderRadius: 8 }}
                 />
-                <Bar dataKey="value" fill="#E0945C" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {revenueChartData.map((entry, i) => (
+                    <Cell key={i} fill={entry.isDeposit ? "#A89B85" : "#E0945C"} />
+                  ))}
+                  <LabelList
+                    dataKey="value"
+                    position="top"
+                    formatter={(v: number) => `฿${(v / 1000).toFixed(0)}k`}
+                    style={{ fontSize: 10, fill: "#717171", fontWeight: 600 }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (

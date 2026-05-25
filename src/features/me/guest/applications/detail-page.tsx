@@ -262,7 +262,7 @@ export function GuestApplicationDetailPage() {
                   <span className="text-fg-muted">Refundable deposit</span>
                   <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
                 </div>
-                <span className="font-medium text-fg">{formatThb(app.monthlyRate)}</span>
+                <span className="font-medium text-fg">{formatThb(app.depositAmount)}</span>
               </div>
             </div>
             {totalPets({ cats: app.petCatsCount, dogs: app.petDogsCount, other: app.petOtherCount }) > 0 && (

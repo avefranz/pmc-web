@@ -24,7 +24,7 @@ function UtilitiesDialog({ draft, patch }: SectionDialogProps) {
               key={u.key}
               className="flex items-center gap-2.5 p-3 rounded-xl border-2 border-border bg-bg cursor-pointer hover:border-fg-subtle"
             >
-              <Checkbox checked={checked} onCheckedChange={(c) => patch({ [u.key]: !!c } as never)} />
+              <Checkbox checked={checked} onCheckedChange={(c) => patch({ [u.key]: !!c, utilitiesTouched: true } as never)} />
               <span className="text-sm font-medium text-fg">{u.label}</span>
             </label>
           );
@@ -40,7 +40,8 @@ export const utilitiesSection: SectionDef = {
   group: "included",
   required: false,
   estTime: "1 min",
-  isComplete: () => true,
+  // UX-75: only complete once host has explicitly interacted with the section
+  isComplete: (d) => d.utilitiesTouched,
   summary: (d) => {
     const yes = UTILITY_FIELDS.filter((u) => d[u.key]).map((u) => u.label);
     if (yes.length === 0) return "None included — tenant pays separately";

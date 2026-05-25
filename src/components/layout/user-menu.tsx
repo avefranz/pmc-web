@@ -1,9 +1,10 @@
 import { useNavigate, Link } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { Building2, CreditCard, Inbox, Menu, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -52,14 +53,34 @@ export function UserMenu() {
           </div>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem onClick={() => navigate("/me/profile")}>
-          Profile
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel className="text-xs text-fg-muted font-normal truncate">
+          {me?.email ?? me?.lineName ?? "Account"}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate("/me/profile")} className="gap-2">
+          <User size={13} className="text-fg-muted" />Profile
+        </DropdownMenuItem>
+        {(caps?.isLandlord || caps?.isManager) && (
+          <DropdownMenuItem onClick={() => navigate("/me/host/properties")} className="gap-2">
+            <Building2 size={13} className="text-fg-muted" />My properties
+          </DropdownMenuItem>
+        )}
+        {(caps?.isLandlord || caps?.isManager) && (
+          <DropdownMenuItem onClick={() => navigate("/me/host/requests")} className="gap-2">
+            <Inbox size={13} className="text-fg-muted" />Booking requests
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={() => navigate("/me/guest/bookings")} className="gap-2">
+          <CreditCard size={13} className="text-fg-muted" />My stays
         </DropdownMenuItem>
         {caps?.isAdmin && (
-          <DropdownMenuItem onClick={() => navigate("/admin")}>
-            Admin panel
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate("/admin")}>
+              Admin panel
+            </DropdownMenuItem>
+          </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} className="text-destructive">

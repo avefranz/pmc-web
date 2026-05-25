@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Pencil, ImagePlus, X,
   BedDouble, Bath, Users, Zap, AlertTriangle,
-  LayoutGrid, FileText, CalendarDays, Wrench, Settings,
+  LayoutGrid, FileText, CalendarDays, Settings,
   BarChart2, Home, ChevronRight, CheckCircle2,
   ImageIcon, TrendingUp,
 } from "lucide-react";
@@ -20,20 +20,18 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { AmenityToggleGrid } from "@/components/amenity-toggle-grid";
 import { useAsset, useAssetSummary, useDeleteAsset } from "@/lib/hooks/use-assets";
 import { useBookingsByAsset, useCreateBooking } from "@/lib/hooks/use-bookings";
-import { useTicketsByAsset, useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useUtilitiesByAsset, useCreateUtility, useDeleteUtility } from "@/lib/hooks/use-utilities";
 import { useListingsByAsset, useCreateNewVersion, useHotfixListing, usePublishListing } from "@/lib/hooks/use-listings";
 import { useAmenities, useAmenityCategories } from "@/lib/hooks/use-references";
 import { listingsApi } from "@/lib/api/listings.api";
 import { formatThb, formatDate } from "@/lib/utils/format";
-import { ticketStatusColor, ticketKindIcon } from "@/lib/utils/ticket-status";
-import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus, TicketType, TicketKind } from "@/lib/types/enums";
+import { UtilityType, RentalType, ListingStatus, AssetOccupancyStatus } from "@/lib/types/enums";
 import type { AmenityDto, ListingMediaDto } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 import { PhotoPlaceholder } from "@/components/shared/photo-placeholder";
 import { useQueryClient } from "@tanstack/react-query";
 
-type Section = "overview" | "photos" | "listing" | "bookings" | "tickets" | "utilities" | "amenities" | "finances";
+type Section = "overview" | "photos" | "listing" | "bookings" | "utilities" | "amenities" | "finances";
 
 
 // ─── Photo gallery ────────────────────────────────────────────────────────────
@@ -273,7 +271,6 @@ export function PropertyDetailPage() {
   const { data: asset, isLoading } = useAsset(id!);
   const { data: summary } = useAssetSummary(id!);
   const { data: bookings } = useBookingsByAsset(id!);
-  const { data: tickets } = useTicketsByAsset(id!);
   const { data: utilities } = useUtilitiesByAsset(id!);
   const { data: listings } = useListingsByAsset(id!);
 
@@ -299,30 +296,6 @@ export function PropertyDetailPage() {
       setBookingOpen(false);
       setBookingCheckIn(""); setBookingCheckOut(""); setBookingDeposit("");
     } catch { toast.error("Failed to create booking"); }
-  }
-
-  const createTicket = useCreateTicket();
-  const [ticketOpen, setTicketOpen] = useState(false);
-  const [ticketTitle, setTicketTitle] = useState("");
-  const [ticketDesc, setTicketDesc] = useState("");
-  const [ticketType, setTicketType] = useState<TicketType>(TicketType.Maintenance);
-  const [ticketKind, setTicketKind] = useState<TicketKind>(TicketKind.WorkOrder);
-
-  async function handleCreateTicket() {
-    if (!ticketTitle.trim()) return;
-    try {
-      await createTicket.mutateAsync({
-        assetId: id!,
-        title: ticketTitle,
-        description: ticketDesc,
-        type: ticketType,
-        kind: ticketKind,
-        estimatedCost: 0,
-      });
-      toast.success("Ticket created");
-      setTicketOpen(false);
-      setTicketTitle(""); setTicketDesc("");
-    } catch { toast.error("Failed to create ticket"); }
   }
 
   const draftListing = listings?.find((l) => l.status === ListingStatus.Draft);
@@ -463,7 +436,6 @@ export function PropertyDetailPage() {
   if (!asset) return <p className="text-fg-muted">Property not found.</p>;
 
   const activeBooking = bookings?.find((b) => b.status === "Active");
-  const openTickets = tickets?.filter((t) => !["Closed", "Cancelled"].includes(t.status)) ?? [];
   const coverPhoto = listing?.media?.[0]?.url ?? asset.primaryImageUrl;
 
   // ── Nav sections
@@ -472,7 +444,6 @@ export function PropertyDetailPage() {
     { id: "photos",     icon: LayoutGrid,   label: "Photos",     badge: listing?.media?.length ? undefined : 0 },
     { id: "listing",    icon: FileText,     label: "Listing" },
     { id: "bookings",   icon: CalendarDays, label: "Bookings",   badge: bookings?.length },
-    { id: "tickets",    icon: Wrench,       label: "Tickets",    badge: openTickets.length || undefined },
     { id: "utilities",  icon: Zap,          label: "Utilities" },
     { id: "amenities",  icon: Settings,     label: "Amenities" },
     { id: "finances",   icon: BarChart2,    label: "Finances" },
@@ -901,10 +872,6 @@ export function PropertyDetailPage() {
                         <p className="text-2xl font-bold text-fg">{bookings?.length ?? 0}</p>
                         <p className="text-xs text-fg-muted mt-1">Total bookings</p>
                       </div>
-                      <div className="bg-bg-subtle rounded-xl p-4 text-center">
-                        <p className="text-2xl font-bold text-fg">{openTickets.length}</p>
-                        <p className="text-xs text-fg-muted mt-1">Open tickets</p>
-                      </div>
                       {summary && (
                         <div className={cn("bg-bg-subtle rounded-xl p-4 text-center", "sm:col-span-1 col-span-2")}>
                           <p className={cn("text-2xl font-bold", summary.netProfit >= 0 ? "text-success" : "text-danger")}>
@@ -938,7 +905,6 @@ export function PropertyDetailPage() {
                     { icon: LayoutGrid, label: "Manage photos", onClick: () => setSection("photos") },
                     { icon: FileText,   label: "Edit listing",  onClick: () => setSection("listing") },
                     { icon: CalendarDays, label: "New booking", onClick: () => setBookingOpen(true) },
-                    { icon: Wrench,     label: "New ticket",   onClick: () => setTicketOpen(true) },
                   ].map((a) => (
                     <button
                       key={a.label}
@@ -1070,51 +1036,6 @@ export function PropertyDetailPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">{b.status}</Badge>
-                        <ChevronRight size={14} className="text-fg-subtle" />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TICKETS */}
-          {section === "tickets" && (
-            <div>
-              <SectionHeading
-                title="Tickets"
-                subtitle="Maintenance requests and issues."
-                action={
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="gap-1.5" onClick={() => setTicketOpen(true)}>
-                      <Plus size={14} />New ticket
-                    </Button>
-                    <Button asChild variant="ghost">
-                      <Link to="/me/host/tickets">View all</Link>
-                    </Button>
-                  </div>
-                }
-              />
-              {!openTickets.length ? (
-                <div className="text-center py-12">
-                  <Wrench size={36} className="text-fg-subtle mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-fg mb-1">No open tickets</p>
-                  <p className="text-sm text-fg-muted">Create a ticket to track maintenance or issues.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {openTickets.map((t) => (
-                    <Link key={t.id} to={`/me/host/tickets/${t.id}`}
-                      className="flex items-center justify-between py-3.5 hover:bg-bg-subtle -mx-2 px-2 rounded-lg transition-colors group">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-lg shrink-0">{ticketKindIcon(t.kind)}</span>
-                        <p className="text-sm text-fg group-hover:text-brand line-clamp-1">{t.title}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", ticketStatusColor(t.status))}>
-                          {t.status}
-                        </span>
                         <ChevronRight size={14} className="text-fg-subtle" />
                       </div>
                     </Link>
@@ -1264,42 +1185,6 @@ export function PropertyDetailPage() {
             <Button variant="outline" onClick={() => setBookingOpen(false)}>Cancel</Button>
             <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white" disabled={!bookingCheckIn || !bookingCheckOut || createBooking.isPending} onClick={handleCreateBooking}>
               {createBooking.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={ticketOpen} onOpenChange={setTicketOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>New ticket</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Title</Label>
-              <Input value={ticketTitle} onChange={(e) => setTicketTitle(e.target.value)} placeholder="Brief description of the issue" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <select className="w-full text-sm rounded-lg border border-border bg-bg-card px-3 py-2 text-fg outline-none focus:ring-2 focus:ring-brand/30" value={ticketType} onChange={(e) => setTicketType(e.target.value as TicketType)}>
-                  {Object.values(TicketType).map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Kind</Label>
-                <select className="w-full text-sm rounded-lg border border-border bg-bg-card px-3 py-2 text-fg outline-none focus:ring-2 focus:ring-brand/30" value={ticketKind} onChange={(e) => setTicketKind(e.target.value as TicketKind)}>
-                  {Object.values(TicketKind).map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description (optional)</Label>
-              <Textarea value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} className="min-h-[80px] resize-none" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTicketOpen(false)}>Cancel</Button>
-            <Button className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white" disabled={!ticketTitle.trim() || createTicket.isPending} onClick={handleCreateTicket}>
-              {createTicket.isPending ? "Creating…" : "Create ticket"}
             </Button>
           </DialogFooter>
         </DialogContent>

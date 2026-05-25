@@ -40,7 +40,7 @@
   --color-footer-bg:    rgba(242, 237, 232, 0.5);
 
   /* ── Typography ── */
-  --font-sans:    "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font-sans:    "Plus Jakarta Sans", "Noto Sans Thai", "Inter", system-ui, sans-serif;
   --font-display: "Playfair Display", Georgia, serif;
   --font-mono:    "JetBrains Mono", "Fira Code", monospace;
 

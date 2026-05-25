@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera, XCircle } from "lucide-react";
+import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera, XCircle, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { PassportPageGuide } from "@/components/shared/passport-page-guide";
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
 import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport } from "@/lib/hooks/use-bookings";
+import { useMyProfile } from "@/lib/hooks/use-profile";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { contractSigningDeadline } from "@/lib/types";
 import { CountdownPill } from "@/components/shared/countdown-pill";
@@ -28,6 +29,7 @@ export function GuestContractSignPage() {
   const signContract = useTenantSignContract(id!);
   const { data: guests } = useBookingGuests(id!);
   const updatePassport = useUpdatePassport(id!);
+  const { data: profile } = useMyProfile();
 
   // Passport data
   const [passportFirstName, setPassportFirstName] = useState("");
@@ -39,6 +41,25 @@ export function GuestContractSignPage() {
   const [passportVisaType, setPassportVisaType] = useState("");
   const [passportEntryDate, setPassportEntryDate] = useState("");
   const [passportEntryPort, setPassportEntryPort] = useState("");
+
+  // UX-101: pre-populate passport fields from user profile once loaded.
+  // Only applied once so subsequent manual edits are not overwritten.
+  const profileApplied = useRef(false);
+  useEffect(() => {
+    if (!profile || profileApplied.current) return;
+    profileApplied.current = true;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (profile.firstName) setPassportFirstName(profile.firstName);
+    if (profile.lastName) setPassportLastName(profile.lastName);
+    if (profile.nationality) setPassportNationality(profile.nationality);
+    if (profile.dateOfBirth) setPassportDob(profile.dateOfBirth);
+    if (profile.passportNumber) setPassportNumber(profile.passportNumber);
+    if (profile.passportExpiry) setPassportExpiry(profile.passportExpiry);
+    if (profile.visaType) setPassportVisaType(profile.visaType);
+    if (profile.lastEntryDate) setPassportEntryDate(profile.lastEntryDate);
+    if (profile.lastEntryPort) setPassportEntryPort(profile.lastEntryPort);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [profile]);
   const [passportPhotos, setPassportPhotos] = useState<File[]>([]);
 
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -49,6 +70,18 @@ export function GuestContractSignPage() {
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Co-resident gate ──────────────────────────────────────────────────────
+  // "alone" | "withOthers" | null (not yet answered)
+  const [soloAnswer, setSoloAnswer] = useState<"alone" | "withOthers" | null>(null);
+  const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
+  // Auto-answer "withOthers" if they already added co-residents before landing here
+  useEffect(() => {
+    if (coResidents.length > 0 && soloAnswer === null) setSoloAnswer("withOthers");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guests]);
+  // Gate cleared when: answered "alone" OR answered "withOthers" and has ≥1 co-resident
+  const gateCleared = soloAnswer === "alone" || (soloAnswer === "withOthers" && coResidents.length > 0);
 
   const passportComplete =
     passportFirstName.trim().length > 0 &&
@@ -62,6 +95,7 @@ export function GuestContractSignPage() {
 
   const canSubmit =
     passportComplete &&
+    passportPhotos.length > 0 &&
     agreedTerms && agreedEta && agreedPdpa && agreedPenalty &&
     typedName.trim().length > 0 &&
     !isSubmitting;
@@ -282,8 +316,84 @@ export function GuestContractSignPage() {
         </div>
       </div>
 
-      {/* Signing form — only shown when pending tenant signature */}
+      {/* ── Co-resident gate ── */}
       {!alreadySigned && (
+        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
+            <Users size={15} className="text-fg-muted" />
+            <h2 className="text-sm font-semibold text-fg">Will you be living alone?</h2>
+            {gateCleared && (
+              <CheckCircle2 size={14} className="text-success ml-auto" />
+            )}
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-xs text-fg-muted leading-relaxed">
+              All people who will live at the property must be registered for TM-30 immigration reporting.
+              Add them under the Co-residents tab before signing.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSoloAnswer("alone")}
+                className={cn(
+                  "rounded-xl border px-4 py-3 text-sm font-medium transition-all text-center",
+                  soloAnswer === "alone"
+                    ? "border-brand bg-brand/8 text-brand"
+                    : "border-border text-fg-muted hover:border-fg-muted hover:text-fg",
+                )}
+              >
+                Yes, just me
+              </button>
+              <button
+                type="button"
+                onClick={() => setSoloAnswer("withOthers")}
+                className={cn(
+                  "rounded-xl border px-4 py-3 text-sm font-medium transition-all text-center",
+                  soloAnswer === "withOthers"
+                    ? "border-brand bg-brand/8 text-brand"
+                    : "border-border text-fg-muted hover:border-fg-muted hover:text-fg",
+                )}
+              >
+                No, with others
+              </button>
+            </div>
+
+            {/* Blocker — said "withOthers" but no co-residents added yet */}
+            {soloAnswer === "withOthers" && coResidents.length === 0 && (
+              <div className="rounded-xl bg-warning/10 border border-warning/20 p-4 flex items-start gap-3">
+                <AlertCircle size={15} className="text-warning shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <p className="text-sm font-semibold text-fg">Add your co-residents first</p>
+                  <p className="text-xs text-fg-muted leading-relaxed">
+                    Go to the <strong>Co-residents</strong> tab on your booking page, add everyone who will be
+                    living with you, then come back here to sign.
+                  </p>
+                  <Link
+                    to={`/me/guest/bookings/${id}?addResident=1`}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline"
+                  >
+                    <Users size={13} />
+                    Add co-resident now →
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Success — has co-residents */}
+            {soloAnswer === "withOthers" && coResidents.length > 0 && (
+              <div className="rounded-xl bg-success/8 border border-success/20 px-4 py-3 flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-success shrink-0" />
+                <p className="text-xs text-success font-medium">
+                  {coResidents.length} co-resident{coResidents.length > 1 ? "s" : ""} added — you're good to sign.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Signing form — only shown when pending tenant signature AND gate cleared */}
+      {!alreadySigned && gateCleared && (
         <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* ── Passport / identity data ── */}
@@ -350,7 +460,7 @@ export function GuestContractSignPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Entry port <span className="text-danger">*</span></Label>
-                <Input value={passportEntryPort} onChange={(e) => setPassportEntryPort(e.target.value)} placeholder="Suvarnabhumi…" />
+                <Input value={passportEntryPort} onChange={(e) => setPassportEntryPort(e.target.value)} placeholder="e.g. Chiang Mai" />
               </div>
             </div>
             <p className="text-[11px] text-fg-muted leading-relaxed">
@@ -360,7 +470,7 @@ export function GuestContractSignPage() {
             {/* Passport photo guide + upload */}
             <PassportPageGuide />
             <div className="space-y-1.5">
-              <Label className="text-xs text-fg-muted">Upload passport pages (up to 3 photos)</Label>
+              <Label className="text-xs text-fg-muted">Upload passport pages (up to 3 photos) <span className="text-danger">*</span></Label>
               <label className={cn(
                 "flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-colors",
                 passportPhotos.length > 0 ? "border-success bg-success/5" : "border-border hover:border-brand hover:bg-brand/5"

@@ -1,10 +1,10 @@
-import React, { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useState, useRef, useEffect } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen,
   CalendarDays, Key, Lock, ConciergeBell, MapPin, Bus, Building2, FileText,
   CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone,
-  Wrench, Home, ListChecks, AlertCircle, Clock,
+  Home, ListChecks, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,13 +20,10 @@ import { NationalityInput } from "@/components/ui/nationality-input";
 import {
   useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation,
   useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests,
-  useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTickets,
+  useAddGuest, useRemoveGuest, useBookingTm30,
   useMarkBookingSeen, useRenewBooking,
 } from "@/lib/hooks/use-bookings";
-import { useCreateTicket } from "@/lib/hooks/use-tickets";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
-import { TicketKind, TicketType, TicketPriority } from "@/lib/types/enums";
-import { ticketStatusColor, ticketKindIcon, tenantTicketStatusLabel } from "@/lib/utils/ticket-status";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
 import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
@@ -231,7 +228,7 @@ void INVOICE_TYPE_LABELS;
 
 // ─── Tabs nav ─────────────────────────────────────────────────────────────────
 
-type TabId = "stay" | "payments" | "property" | "residents" | "issues";
+type TabId = "stay" | "payments" | "property" | "residents";
 
 function TabsNav({
   active,
@@ -240,14 +237,13 @@ function TabsNav({
 }: {
   active: TabId;
   onChange: (t: TabId) => void;
-  counts: { payments?: string; residents?: number; issues?: number };
+  counts: { payments?: string; residents?: number };
 }) {
   const tabs: { id: TabId; label: string; icon: React.ReactNode; count?: string | number }[] = [
     { id: "stay",      label: "Stay",         icon: <Key size={13} /> },
     { id: "payments",  label: "Payments",     icon: <ListChecks size={13} />, count: counts.payments },
     { id: "property",  label: "Property",     icon: <Home size={13} /> },
     { id: "residents", label: "Co-residents", icon: <Users size={13} />,      count: counts.residents },
-    { id: "issues",    label: "Issues",       icon: <Wrench size={13} />,     count: counts.issues },
   ];
   return (
     <div className="border-b border-border overflow-x-auto">
@@ -313,12 +309,10 @@ export function GuestBookingDetailPage() {
   const { refetch: refetchBooking } = useBooking(id!);
   const { data: contract } = useBookingContract(id!);
   const { data: guests } = useBookingGuests(id!);
-  const { data: bookingTickets } = useBookingTickets(id!);
   const { data: myTm30 } = useMyTm30();
-  const createTicket = useCreateTicket();
   const addGuest = useAddGuest(id!);
   const removeGuest = useRemoveGuest(id!);
-  const updatePassport = useUpdatePassport(id!);
+
 
   // Initial payment = Deposit + MonthlyRent[1]. All other months are separate transactions.
   const initialPayments = (payment?.payments ?? []).filter(
@@ -328,6 +322,7 @@ export function GuestBookingDetailPage() {
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
 
   const [tab, setTab] = useState<TabId>("stay");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [gatewayOpen, setGatewayOpen] = useState(false);
   const [gatewayAmount, setGatewayAmount] = useState(0);
@@ -344,11 +339,33 @@ export function GuestBookingDetailPage() {
   const [addGuestOpen, setAddGuestOpen] = useState(false);
   const [newResident, setNewResident] = useState<UpsertPassportRequest>({});
   const [residentPhotos, setResidentPhotos] = useState<File[]>([]);
-  const [reportIssueOpen, setReportIssueOpen] = useState(false);
-  const [issueTitle, setIssueTitle] = useState("");
-  const [issueDescription, setIssueDescription] = useState("");
-  const [issueType, setIssueType] = useState<TicketType>(TicketType.Maintenance);
-  const [issuePriority, setIssuePriority] = useState<TicketPriority>(TicketPriority.Normal);
+  const [residentTried, setResidentTried] = useState(false);
+
+  const isThai = newResident.nationality === "TH";
+  const residentErrors = {
+    firstName:      !newResident.firstName?.trim(),
+    lastName:       !newResident.lastName?.trim(),
+    nationality:    !newResident.nationality?.trim(),
+    dateOfBirth:    !newResident.dateOfBirth?.trim(),
+    passportNumber: !isThai && !newResident.passportNumber?.trim(),
+    passportExpiry: !isThai && !newResident.passportExpiry?.trim(),
+    visaType:       !isThai && !newResident.visaType?.trim(),
+    entryDate:      !isThai && !newResident.entryDate?.trim(),
+    entryPort:      !isThai && !newResident.entryPort?.trim(),
+    photos:         residentPhotos.length === 0,
+  };
+  const residentValid = !Object.values(residentErrors).some(Boolean);
+
+  // ?addResident=1 — deep-link from contract page: switch to residents tab + open dialog
+  useEffect(() => {
+    if (searchParams.get("addResident") !== "1") return;
+    setTab("residents");
+    setAddGuestOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("addResident");
+    setSearchParams(next, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [renewOpen, setRenewOpen] = useState(false);
   const [renewMonths, setRenewMonths] = useState(1);
   const renewIdempotencyKey = useState(() => crypto.randomUUID())[0];
@@ -436,11 +453,6 @@ export function GuestBookingDetailPage() {
   const paidSoFar = rentPayments.filter((p) => p.status === "Paid").reduce((s, p) => s + p.amount, 0);
   const totalRent = rentPayments.reduce((s, p) => s + p.amount, 0);
 
-  // Open tickets
-  const openTickets = (bookingTickets ?? []).filter(
-    (t) => !["Closed", "Completed", "Cancelled", "Canceled", "Verified"].includes(t.status),
-  );
-
   // Foreign-guest TM-30 summary
   const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
 
@@ -451,7 +463,6 @@ export function GuestBookingDetailPage() {
   const counts = {
     payments: rentPayments.length > 0 ? `${paidRentCount}/${rentPayments.length}` : undefined,
     residents: guests?.length ?? 0,
-    issues: openTickets.length,
   };
 
   // ── Glance strip ──
@@ -637,9 +648,9 @@ export function GuestBookingDetailPage() {
           <Button
             size="sm"
             className="shrink-0 rounded-xl h-9 text-sm bg-fg text-bg hover:bg-fg/90"
-            onClick={() => toast.info("In-app messaging is coming soon — for now, use the contact details on the Property tab.")}
+            onClick={() => toast.info("Use the contact details on the Property tab — WhatsApp, phone or LINE.")}
           >
-            <MessageCircle size={14} className="mr-1.5" />Message host
+            <MessageCircle size={14} className="mr-1.5" />Contact host
           </Button>
         </div>
       );
@@ -946,7 +957,7 @@ export function GuestBookingDetailPage() {
             )}
             {totalRent > 0 && (
               <div className="px-5 py-2.5 flex justify-between gap-3">
-                <dt className="text-fg-muted">Paid so far</dt>
+                <dt className="text-fg-muted">Rent paid</dt>
                 <dd className="text-fg">{formatThb(paidSoFar)} of {formatThb(totalRent)}</dd>
               </div>
             )}
@@ -1065,6 +1076,15 @@ export function GuestBookingDetailPage() {
       {/* Initial payments — when booking is PendingPayment */}
       {isPendingPayment && initialPayments.length > 0 && (
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+          {/* UX-63: proactive explanation when payment is blocked behind contract signature */}
+          {contract?.status === "PendingTenantSignature" && (
+            <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 flex items-start gap-2">
+              <span className="text-amber-500 mt-0.5 shrink-0">ℹ</span>
+              <p className="text-xs text-amber-800">
+                You'll be able to pay after signing the rental agreement.
+              </p>
+            </div>
+          )}
           <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
             <h3 className="text-sm font-semibold text-fg">Initial payment</h3>
             {pendingPayments.length > 0 && (
@@ -1181,20 +1201,22 @@ export function GuestBookingDetailPage() {
                 </div>
                 <p className="text-3xl font-bold text-fg tabular-nums">{formatThb(nextRent.amount)}</p>
                 {nextRent.dueDate && <p className="text-xs text-fg-muted mt-1">Due {formatDate(nextRent.dueDate)}</p>}
+                {/* BE-19: disabled until pay window opens; removed "early payment also fine" */}
                 <Button
+                  disabled={!windowIsOpen}
                   className={cn(
                     "w-full mt-4 rounded-xl h-10 text-sm font-semibold",
                     windowIsOpen
                       ? "bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
-                      : "bg-bg-subtle hover:bg-border text-fg border border-border",
+                      : "bg-bg-subtle text-fg-muted border border-border cursor-not-allowed opacity-70",
                   )}
-                  onClick={() => openGateway(nextRent.amount, nextRent.id)}
+                  onClick={() => windowIsOpen && openGateway(nextRent.amount, nextRent.id)}
                 >
                   <CreditCard size={14} className="mr-1.5" />Pay {formatThb(nextRent.amount)} now
                 </Button>
                 {!windowIsOpen && payWindowOpen && (
                   <p className="text-[11px] text-fg-muted text-center mt-2">
-                    Pay window opens {formatDate(payWindowOpen.toISOString().slice(0, 10))} — early payment also fine, no extra charge.
+                    Payment window opens {formatDate(payWindowOpen.toISOString().slice(0, 10))}
                   </p>
                 )}
               </>
@@ -1216,7 +1238,7 @@ export function GuestBookingDetailPage() {
         <div className="bg-bg-card rounded-2xl shadow-card p-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-fg-muted">Paid so far</p>
+              <p className="text-xs text-fg-muted">Rent paid</p>
               <p className="text-lg font-bold text-fg tabular-nums">
                 {formatThb(paidSoFar)}{" "}
                 <small className="text-sm font-medium text-fg-muted">of {formatThb(totalRent)}</small>
@@ -1564,6 +1586,22 @@ export function GuestBookingDetailPage() {
   const residentsPane = (
     <div className="space-y-5">
 
+      {/* "Return to sign" banner — shown when contract awaits signature (deep-linked from contract page) */}
+      {contract?.status === "PendingTenantSignature" && (
+        <div className="rounded-2xl bg-brand/8 border border-brand/20 px-5 py-4 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-fg">Add your co-residents below, then sign the contract</p>
+            <p className="text-xs text-fg-muted mt-0.5">Once added, go back to finish signing.</p>
+          </div>
+          <Link
+            to={`/me/guest/bookings/${id}/contract`}
+            className="shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold bg-brand text-white px-4 py-2 rounded-xl hover:bg-[rgb(var(--color-primary-hover))] transition-colors whitespace-nowrap"
+          >
+            Sign contract →
+          </Link>
+        </div>
+      )}
+
       {/* TM-30 summary banner */}
       {foreignGuests.length > 0 ? (
         <TmSummaryBanner bookingId={id!} guests={foreignGuests} />
@@ -1728,185 +1766,11 @@ export function GuestBookingDetailPage() {
     </div>
   );
 
-  // ─── ISSUES PANE ─────────────────────────────────────────────────────────────
-  const issuesPane = (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-      {/* Left column: inline form */}
-      <div className="space-y-5">
-        <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-4">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-fg">Report an issue</h3>
-            <p className="text-xs text-fg-muted leading-relaxed">
-              Describe what's wrong. Your host gets notified instantly and you can track progress here.
-            </p>
-          </div>
-
-          {/* Category chips */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-fg-muted">Category</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { id: TicketType.Maintenance, label: "Maintenance" },
-                { id: TicketType.Cleaning,    label: "Cleaning" },
-                { id: TicketType.Utilities,   label: "Utilities (Wi-Fi, water…)" },
-                { id: TicketType.Complaint,   label: "Complaint" },
-                { id: TicketType.Request,     label: "Request" },
-                { id: TicketType.Other,       label: "Other" },
-              ] as const).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setIssueType(c.id)}
-                  className={cn(
-                    "flex items-center justify-center px-3 py-2 rounded-xl border text-xs font-medium transition-colors",
-                    issueType === c.id
-                      ? "border-brand bg-brand/5 text-brand"
-                      : "border-border text-fg-muted hover:border-fg-muted",
-                  )}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Title */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-fg-muted">Title</Label>
-            <Input
-              value={issueTitle}
-              onChange={(e) => setIssueTitle(e.target.value)}
-              placeholder="e.g. AC not cooling in bedroom"
-              maxLength={120}
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-fg-muted">Describe what's wrong</Label>
-            <Textarea
-              value={issueDescription}
-              onChange={(e) => setIssueDescription(e.target.value)}
-              placeholder="When did it start? What have you tried?"
-              rows={5}
-              className="resize-none"
-            />
-          </div>
-
-          {/* Urgency */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-fg-muted">Urgency</Label>
-            <Select value={issuePriority} onValueChange={(v) => setIssuePriority(v as TicketPriority)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TicketPriority.Low}>Low — can wait a few days</SelectItem>
-                <SelectItem value={TicketPriority.Normal}>Normal — within 24-48h please</SelectItem>
-                <SelectItem value={TicketPriority.High}>High — affects daily life</SelectItem>
-                <SelectItem value={TicketPriority.Urgent}>Emergency — unsafe / no utilities</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
-            <p className="text-[11px] text-fg-muted">
-              Your host will be notified instantly.
-            </p>
-            <Button
-              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-9"
-              disabled={
-                createTicket.isPending ||
-                issueTitle.trim().length < 3 ||
-                issueDescription.trim().length < 5
-              }
-              onClick={async () => {
-                try {
-                  await createTicket.mutateAsync({
-                    assetId: booking.assetId,
-                    bookingId: id!,
-                    title: issueTitle.trim(),
-                    description: issueDescription.trim(),
-                    type: issueType,
-                    kind: TicketKind.Incident,
-                    priority: issuePriority,
-                    estimatedCost: 0,
-                  });
-                  toast.success("Issue reported — your host has been notified");
-                  setIssueTitle("");
-                  setIssueDescription("");
-                  setIssueType(TicketType.Maintenance);
-                  setIssuePriority(TicketPriority.Normal);
-                } catch {
-                  toast.error("Failed to report issue");
-                }
-              }}
-            >
-              {createTicket.isPending ? "Submitting…" : "Submit report"}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Right column: existing reports + emergency */}
-      <div className="space-y-5">
-
-        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-fg">
-              Your reports {openTickets.length > 0 && <span className="text-fg-muted font-normal">· {openTickets.length} open</span>}
-            </h3>
-          </div>
-          {!bookingTickets?.length ? (
-            <div className="px-5 py-8 text-center">
-              <Wrench size={24} className="text-fg-subtle mx-auto mb-2" />
-              <p className="text-sm font-semibold text-fg">No active reports</p>
-              <p className="text-xs text-fg-muted mt-1">Submitted reports show up here with your host's reply and resolution status.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {bookingTickets.map((t) => (
-                <Link
-                  key={t.id}
-                  to={`/me/guest/tickets/${t.id}`}
-                  className="flex items-start gap-3 px-5 py-3 hover:bg-bg-subtle transition-colors"
-                >
-                  <span className="text-base shrink-0 mt-0.5">{ticketKindIcon(t.kind)}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-fg line-clamp-1">{t.title}</p>
-                    <p className="text-[11px] text-fg-muted mt-0.5">{formatDate(t.createdAt)}</p>
-                  </div>
-                  <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", ticketStatusColor(t.status))}>
-                    {tenantTicketStatusLabel(t.status)}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-bg-card rounded-2xl shadow-card p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <AlertCircle size={15} className="text-danger" />
-            <h3 className="text-sm font-semibold text-fg">Emergency?</h3>
-          </div>
-          <p className="text-xs text-fg-muted leading-relaxed">
-            For life-safety issues (gas, fire, flood, break-in) — call emergency services first, then your host.
-          </p>
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-fg-muted">Police</span><a href="tel:191" className="font-mono font-semibold text-fg">191</a></div>
-            <div className="flex justify-between"><span className="text-fg-muted">Ambulance</span><a href="tel:1669" className="font-mono font-semibold text-fg">1669</a></div>
-            <div className="flex justify-between"><span className="text-fg-muted">Tourist police</span><a href="tel:1155" className="font-mono font-semibold text-fg">1155</a></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   // ─── Header meta ──
   const metaParts: React.ReactNode[] = [];
   metaParts.push(<span key="dates" className="font-medium text-fg">{formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}</span>);
   if (durationMonths > 0) metaParts.push(<span key="dur">{durationMonths} month{durationMonths !== 1 ? "s" : ""}</span>);
-  metaParts.push(<span key="host">Hosted by <span className="text-fg font-medium">your host</span></span>);
+  metaParts.push(<span key="host">Hosted by <span className="text-fg font-medium">{booking.landlordName ?? "the host"}</span></span>);
 
   return (
     <div className="space-y-5">
@@ -1951,13 +1815,12 @@ export function GuestBookingDetailPage() {
         {tab === "payments"  && paymentsPane}
         {tab === "property"  && propertyPane}
         {tab === "residents" && residentsPane}
-        {tab === "issues"    && issuesPane}
       </div>
 
       {/* ─── Dialogs ─── */}
 
       {/* Add co-resident dialog — full passport form */}
-      <Dialog open={addGuestOpen} onOpenChange={(v) => { setAddGuestOpen(v); if (!v) { setNewResident({}); setResidentPhotos([]); } }}>
+      <Dialog open={addGuestOpen} onOpenChange={(v) => { setAddGuestOpen(v); if (!v) { setNewResident({}); setResidentPhotos([]); setResidentTried(false); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 pt-5 pb-3 border-b border-border shrink-0">
             <DialogTitle>Add co-resident</DialogTitle>
@@ -1968,20 +1831,35 @@ export function GuestBookingDetailPage() {
 
           <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
 
+            {/* NAME */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Name</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-fg-muted">First name <span className="text-danger">*</span></Label>
-                  <Input autoFocus value={newResident.firstName ?? ""} onChange={(e) => setNewResident((p) => ({ ...p, firstName: e.target.value }))} placeholder="As on passport" />
+                  <Input
+                    autoFocus
+                    value={newResident.firstName ?? ""}
+                    onChange={(e) => setNewResident((p) => ({ ...p, firstName: e.target.value }))}
+                    placeholder="As on passport"
+                    className={cn(residentTried && residentErrors.firstName && "border-destructive")}
+                  />
+                  {residentTried && residentErrors.firstName && <p className="text-xs text-danger">Required</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-fg-muted">Last name <span className="text-danger">*</span></Label>
-                  <Input value={newResident.lastName ?? ""} onChange={(e) => setNewResident((p) => ({ ...p, lastName: e.target.value }))} placeholder="As on passport" />
+                  <Input
+                    value={newResident.lastName ?? ""}
+                    onChange={(e) => setNewResident((p) => ({ ...p, lastName: e.target.value }))}
+                    placeholder="As on passport"
+                    className={cn(residentTried && residentErrors.lastName && "border-destructive")}
+                  />
+                  {residentTried && residentErrors.lastName && <p className="text-xs text-danger">Required</p>}
                 </div>
               </div>
             </div>
 
+            {/* GENDER */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Gender</p>
               <div className="flex gap-3">
@@ -2003,39 +1881,73 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
+            {/* PASSPORT */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Passport</p>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Nationality</Label>
-                    <NationalityInput value={newResident.nationality ?? ""} onChange={(v) => setNewResident((p) => ({ ...p, nationality: v }))} />
+                    <Label className="text-xs text-fg-muted">Nationality <span className="text-danger">*</span></Label>
+                    <NationalityInput
+                      value={newResident.nationality ?? ""}
+                      onChange={(v) => setNewResident((p) => ({ ...p, nationality: v }))}
+                      className={cn(residentTried && residentErrors.nationality && "border-destructive")}
+                    />
+                    {residentTried && residentErrors.nationality && <p className="text-xs text-danger">Required</p>}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Date of birth</Label>
-                    <DateInput value={newResident.dateOfBirth} onChange={(v) => setNewResident((p) => ({ ...p, dateOfBirth: v }))} maxYear={new Date().getFullYear()} />
+                    <Label className="text-xs text-fg-muted">Date of birth <span className="text-danger">*</span></Label>
+                    <DateInput
+                      value={newResident.dateOfBirth}
+                      onChange={(v) => setNewResident((p) => ({ ...p, dateOfBirth: v }))}
+                      maxYear={new Date().getFullYear()}
+                      className={cn(residentTried && residentErrors.dateOfBirth && "border-destructive")}
+                    />
+                    {residentTried && residentErrors.dateOfBirth && <p className="text-xs text-danger">Required</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Passport number</Label>
-                    <Input className="font-mono" value={newResident.passportNumber ?? ""} onChange={(e) => setNewResident((p) => ({ ...p, passportNumber: e.target.value }))} placeholder="e.g. 7123456789" />
+                    <Label className="text-xs text-fg-muted">
+                      Passport number {!isThai && <span className="text-danger">*</span>}
+                    </Label>
+                    <Input
+                      className={cn("font-mono", residentTried && residentErrors.passportNumber && "border-destructive")}
+                      value={newResident.passportNumber ?? ""}
+                      onChange={(e) => setNewResident((p) => ({ ...p, passportNumber: e.target.value }))}
+                      placeholder="e.g. 7123456789"
+                    />
+                    {residentTried && residentErrors.passportNumber && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Passport expiry</Label>
-                    <DateInput value={newResident.passportExpiry} onChange={(v) => setNewResident((p) => ({ ...p, passportExpiry: v }))} minYear={2000} maxYear={2060} />
+                    <Label className="text-xs text-fg-muted">
+                      Passport expiry {!isThai && <span className="text-danger">*</span>}
+                    </Label>
+                    <DateInput
+                      value={newResident.passportExpiry}
+                      onChange={(v) => setNewResident((p) => ({ ...p, passportExpiry: v }))}
+                      minYear={2000}
+                      maxYear={2060}
+                      className={cn(residentTried && residentErrors.passportExpiry && "border-destructive")}
+                    />
+                    {residentTried && residentErrors.passportExpiry && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
                   </div>
                 </div>
               </div>
             </div>
 
+            {/* VISA & ENTRY */}
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Visa & Entry into Thailand</p>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-fg-muted">Visa type</Label>
+                  <Label className="text-xs text-fg-muted">
+                    Visa type {!isThai && <span className="text-danger">*</span>}
+                  </Label>
                   <Select value={newResident.visaType ?? ""} onValueChange={(v) => setNewResident((p) => ({ ...p, visaType: v as VisaType }))}>
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectTrigger className={cn(residentTried && residentErrors.visaType && "border-destructive")}>
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={VisaType.VisaExempt}>Visa Exempt (30-day stamp)</SelectItem>
                       <SelectItem value={VisaType.Tourist}>Tourist Visa (TR)</SelectItem>
@@ -2047,15 +1959,33 @@ export function GuestBookingDetailPage() {
                       <SelectItem value={VisaType.Other}>Other</SelectItem>
                     </SelectContent>
                   </Select>
+                  {residentTried && residentErrors.visaType && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Entry date</Label>
-                    <DateInput value={newResident.entryDate} onChange={(v) => setNewResident((p) => ({ ...p, entryDate: v }))} minYear={2015} maxYear={new Date().getFullYear()} />
+                    <Label className="text-xs text-fg-muted">
+                      Entry date {!isThai && <span className="text-danger">*</span>}
+                    </Label>
+                    <DateInput
+                      value={newResident.entryDate}
+                      onChange={(v) => setNewResident((p) => ({ ...p, entryDate: v }))}
+                      minYear={2015}
+                      maxYear={new Date().getFullYear()}
+                      className={cn(residentTried && residentErrors.entryDate && "border-destructive")}
+                    />
+                    {residentTried && residentErrors.entryDate && <p className="text-xs text-danger">Required</p>}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">Entry port</Label>
-                    <Input value={newResident.entryPort ?? ""} onChange={(e) => setNewResident((p) => ({ ...p, entryPort: e.target.value }))} placeholder="Suvarnabhumi…" />
+                    <Label className="text-xs text-fg-muted">
+                      Entry port {!isThai && <span className="text-danger">*</span>}
+                    </Label>
+                    <Input
+                      value={newResident.entryPort ?? ""}
+                      onChange={(e) => setNewResident((p) => ({ ...p, entryPort: e.target.value }))}
+                      placeholder="e.g. Chiang Mai"
+                      className={cn(residentTried && residentErrors.entryPort && "border-destructive")}
+                    />
+                    {residentTried && residentErrors.entryPort && <p className="text-xs text-danger">Required</p>}
                   </div>
                 </div>
                 <p className="text-[11px] text-fg-muted leading-relaxed">
@@ -2064,19 +1994,28 @@ export function GuestBookingDetailPage() {
               </div>
             </div>
 
+            {/* PASSPORT PHOTOS */}
             <div>
-              <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Passport photos</p>
+              <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">
+                Passport photos <span className="text-danger">*</span>
+              </p>
               <PassportPageGuide />
               <label className={cn(
                 "mt-3 flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-colors",
-                residentPhotos.length > 0 ? "border-success bg-success/5" : "border-border hover:border-brand hover:bg-brand/5"
+                residentPhotos.length > 0
+                  ? "border-success bg-success/5"
+                  : residentTried && residentErrors.photos
+                    ? "border-danger bg-danger/5"
+                    : "border-border hover:border-brand hover:bg-brand/5"
               )}>
-                <Camera size={16} className={residentPhotos.length > 0 ? "text-success" : "text-fg-muted"} />
+                <Camera size={16} className={residentPhotos.length > 0 ? "text-success" : residentTried && residentErrors.photos ? "text-danger" : "text-fg-muted"} />
                 <div className="flex-1 min-w-0">
                   {residentPhotos.length > 0 ? (
                     <p className="text-sm font-medium text-success">{residentPhotos.length} photo{residentPhotos.length > 1 ? "s" : ""} selected</p>
                   ) : (
-                    <p className="text-sm text-fg-muted">Upload passport pages (up to 3)</p>
+                    <p className={cn("text-sm", residentTried && residentErrors.photos ? "text-danger font-medium" : "text-fg-muted")}>
+                      {residentTried && residentErrors.photos ? "At least 1 passport photo required" : "Upload passport pages (up to 3)"}
+                    </p>
                   )}
                   <p className="text-xs text-fg-muted mt-0.5">Select multiple files at once</p>
                 </div>
@@ -2102,13 +2041,19 @@ export function GuestBookingDetailPage() {
           <DialogFooter className="px-5 py-4 border-t border-border shrink-0">
             <Button variant="outline" onClick={() => setAddGuestOpen(false)}>Cancel</Button>
             <Button
-              disabled={!newResident.firstName?.trim() || addGuest.isPending || updatePassport.isPending}
+              disabled={addGuest.isPending}
               className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               onClick={async () => {
+                setResidentTried(true);
+                if (!residentValid) return;
                 try {
-                  await addGuest.mutateAsync(newResident);
+                  const added = await addGuest.mutateAsync(newResident);
+                  if (residentPhotos.length > 0 && added?.id) {
+                    await bookingsApi.uploadPassportPhotos(id!, added.id, residentPhotos);
+                  }
                   toast.success("Co-resident added");
                   setAddGuestOpen(false);
+                  setResidentTried(false);
                   setNewResident({});
                   setResidentPhotos([]);
                 } catch { toast.error("Failed to add co-resident"); }
@@ -2127,9 +2072,22 @@ export function GuestBookingDetailPage() {
             <DialogTitle>Request early exit</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-fg-muted">
-              An early exit penalty of 1 month's rent applies. The exact calculation will be shown after submission.
-            </p>
+            {/* UX-114: show exact penalty amount before submit — booking has cancellationPenaltyMonths + monthlyRate */}
+            {(booking.cancellationPenaltyMonths ?? 1) > 0 ? (
+              <div className="rounded-lg bg-danger/8 border border-danger/20 p-3">
+                <p className="text-xs text-danger font-semibold mb-0.5">Early exit penalty</p>
+                <p className="text-lg font-bold text-danger tabular-nums">
+                  {formatThb((booking.cancellationPenaltyMonths ?? 1) * monthlyRate)}
+                </p>
+                <p className="text-xs text-fg-muted mt-1">
+                  {booking.cancellationPenaltyMonths ?? 1} month{(booking.cancellationPenaltyMonths ?? 1) > 1 ? "s" : ""} rent · applied upon host confirmation
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-fg-muted">
+                No early exit penalty applies per your rental agreement.
+              </p>
+            )}
             <Textarea
               placeholder="Optional note for your host…"
               value={exitNote}
@@ -2153,115 +2111,6 @@ export function GuestBookingDetailPage() {
               }}
             >
               {requestCancellation.isPending ? "Submitting…" : "Submit request"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Report issue dialog — kept for any external trigger callers */}
-      <Dialog
-        open={reportIssueOpen}
-        onOpenChange={(v) => {
-          setReportIssueOpen(v);
-          if (!v) {
-            setIssueTitle("");
-            setIssueDescription("");
-            setIssueType(TicketType.Maintenance);
-            setIssuePriority(TicketPriority.Normal);
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Report an issue</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-xs text-fg-muted leading-relaxed">
-              Describe what's wrong. Your host gets notified and you can track progress here.
-            </p>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-fg-muted">Title</Label>
-              <Input
-                value={issueTitle}
-                onChange={(e) => setIssueTitle(e.target.value)}
-                placeholder="e.g. AC not cooling in bedroom"
-                maxLength={120}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">Category</Label>
-                <Select value={issueType} onValueChange={(v) => setIssueType(v as TicketType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={TicketType.Maintenance}>Maintenance / repair</SelectItem>
-                    <SelectItem value={TicketType.Cleaning}>Cleaning</SelectItem>
-                    <SelectItem value={TicketType.Utilities}>Utilities</SelectItem>
-                    <SelectItem value={TicketType.Complaint}>Complaint</SelectItem>
-                    <SelectItem value={TicketType.Request}>Request</SelectItem>
-                    <SelectItem value={TicketType.Other}>Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">Priority</Label>
-                <Select value={issuePriority} onValueChange={(v) => setIssuePriority(v as TicketPriority)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={TicketPriority.Low}>Low</SelectItem>
-                    <SelectItem value={TicketPriority.Normal}>Normal</SelectItem>
-                    <SelectItem value={TicketPriority.High}>High</SelectItem>
-                    <SelectItem value={TicketPriority.Urgent}>Urgent (safety / can't live without it)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-fg-muted">Details</Label>
-              <Textarea
-                value={issueDescription}
-                onChange={(e) => setIssueDescription(e.target.value)}
-                placeholder="When did it start? What have you tried?"
-                rows={4}
-                className="resize-none"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setReportIssueOpen(false)}
-              disabled={createTicket.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
-              disabled={
-                createTicket.isPending ||
-                issueTitle.trim().length < 3 ||
-                issueDescription.trim().length < 5
-              }
-              onClick={async () => {
-                try {
-                  await createTicket.mutateAsync({
-                    assetId: booking.assetId,
-                    bookingId: id!,
-                    title: issueTitle.trim(),
-                    description: issueDescription.trim(),
-                    type: issueType,
-                    kind: TicketKind.Incident,
-                    priority: issuePriority,
-                    estimatedCost: 0,
-                  });
-                  toast.success("Issue reported — your host has been notified");
-                  setReportIssueOpen(false);
-                } catch {
-                  toast.error("Failed to report issue");
-                }
-              }}
-            >
-              {createTicket.isPending ? "Submitting…" : "Report issue"}
             </Button>
           </DialogFooter>
         </DialogContent>

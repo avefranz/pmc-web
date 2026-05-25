@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronRight, Sparkles } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Check, ChevronRight, Sparkles, Rocket, CalendarDays, Infinity as InfinityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils/cn";
 import { formatThb } from "@/lib/utils/format";
 import type { DraftPatch, SectionDef, SectionGroup } from "./types";
@@ -13,6 +15,8 @@ import { celebrate, crossedMilestone, floatPlusOne } from "./celebrate";
 
 interface Props {
   editor: EditorApi;
+  occupancyStatus?: string;
+  currentTenantName?: string;
 }
 
 /**
@@ -21,7 +25,7 @@ interface Props {
  * No modals — the flow stays on a single canvas so the user never loses
  * momentum and "what's next" stays visible at all times.
  */
-export function SectionsList({ editor }: Props) {
+export function SectionsList({ editor, occupancyStatus, currentTenantName }: Props) {
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const dotRefs = useRef<Record<string, HTMLElement | null>>({});
   // Track completeness at the moment a section is opened so handleContinue can
@@ -41,6 +45,8 @@ export function SectionsList({ editor }: Props) {
   const firstUndoneRequired = visibleSections.find((s) => s.required && !s.isComplete(editor.draft));
   const [activeId, setActiveId] = useState<string | null>(firstUndoneRequired?.id ?? null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // BUG-140: occupied-rules confirmation — holds the section to save after user confirms
+  const [pendingRulesSection, setPendingRulesSection] = useState<SectionDef | null>(null);
 
   // In create mode, editOnly sections (Photos) can't be completed yet —
   // exclude them from required counts so the progress bar reflects what's actually fillable.
@@ -79,6 +85,16 @@ export function SectionsList({ editor }: Props) {
   }
 
   async function handleContinue(section: SectionDef) {
+    // BUG-140: Warn host before changing rules on an occupied property
+    if (
+      section.id === "rules" &&
+      editor.mode === "edit" &&
+      occupancyStatus === "Occupied" &&
+      pendingRulesSection === null
+    ) {
+      setPendingRulesSection(section);
+      return;
+    }
     const wasComplete = wasCompleteOnOpen.current[section.id] ?? section.isComplete(editor.draft);
     const nowComplete = section.isComplete(editor.draft);
     setSavingId(section.id);
@@ -103,12 +119,16 @@ export function SectionsList({ editor }: Props) {
           visibleSections.filter((s) => s.required && s.isComplete(editor.draft)).length;
         const nextPct = totalRequired === 0 ? 0 : Math.round((nextDone / totalRequired) * 100);
         const milestone = section.required ? crossedMilestone(progressPct, nextPct) : null;
-        celebrate({
-          x: r.left + r.width / 2,
-          y: r.top + r.height / 2,
-          count: milestone ? 80 : 24,
-          scale: milestone ? 1.2 : 0.8,
-        });
+        // Celebrate only on milestone crossings — trivial completions (e.g.
+        // "Pets: Not allowed") get a floatPlusOne but no confetti burst.
+        if (milestone) {
+          celebrate({
+            x: r.left + r.width / 2,
+            y: r.top + r.height / 2,
+            count: 80,
+            scale: 1.2,
+          });
+        }
         floatPlusOne(dot, "+1", "rgb(var(--color-success))");
         if (milestone === 100) {
           setTimeout(
@@ -178,14 +198,40 @@ export function SectionsList({ editor }: Props) {
   const today = new Date().toISOString().split("T")[0];
   const [publishDialog, setPublishDialog] = useState(false);
   const [pubStartDate, setPubStartDate] = useState(today);
-  const [pubEndDate, setPubEndDate] = useState("");
+  const [pubDurationMonths, setPubDurationMonths] = useState<string>("open");
   const [publishing, setPublishing] = useState(false);
+
+  function computePubEndDate(): string | undefined {
+    if (pubDurationMonths === "open") return undefined;
+    const months = Number(pubDurationMonths);
+    if (!months || !pubStartDate) return undefined;
+    const d = new Date(pubStartDate);
+    d.setMonth(d.getMonth() + months);
+    return d.toISOString().split("T")[0];
+  }
+  // BE-14 fixed: use editor.isPublished (derived from API listing.status) instead of session flag
+
+  // After the create flow's first save, use-editor navigates here with
+  // ?publish=1 so the host can confirm dates and go live without an extra
+  // click. We open the dialog once everything has hydrated and required
+  // sections are complete, then strip the param so a refresh doesn't reopen.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wantsPublish = searchParams.get("publish") === "1";
+  useEffect(() => {
+    if (!wantsPublish) return;
+    if (editor.mode !== "edit") return;
+    if (!allRequiredDone) return;
+    setPublishDialog(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("publish");
+    setSearchParams(next, { replace: true });
+  }, [wantsPublish, editor.mode, allRequiredDone, searchParams, setSearchParams]);
 
   async function handlePublish() {
     setPublishing(true);
     try {
+      await editor.publishListing(pubStartDate || undefined, computePubEndDate());
       celebrate({ x: window.innerWidth / 2, y: window.innerHeight * 0.3, count: 140, scale: 1.4, spread: Math.PI * 1.4 });
-      await editor.publishListing(pubStartDate || undefined, pubEndDate || undefined);
       setPublishDialog(false);
     } finally {
       setPublishing(false);
@@ -249,13 +295,24 @@ export function SectionsList({ editor }: Props) {
             </Button>
           ) : (
             allRequiredDone && (
-              <Button
-                type="button"
-                onClick={() => setPublishDialog(true)}
-                className="h-11 px-5 font-semibold bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white shrink-0 shadow-[0_8px_24px_rgba(99,102,241,0.35)]"
-              >
-                Publish →
-              </Button>
+              editor.isPublished && editor.listingId ? (
+                <a
+                  href={`/listings/${editor.listingId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-11 px-5 font-semibold bg-gradient-to-r from-emerald-500 to-teal-500 text-white shrink-0 shadow-[0_8px_24px_rgba(16,185,129,0.35)] inline-flex items-center rounded-md text-sm"
+                >
+                  View on marketplace →
+                </a>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() => setPublishDialog(true)}
+                  className="h-11 px-5 font-semibold bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white shrink-0 shadow-[0_8px_24px_rgba(99,102,241,0.35)]"
+                >
+                  Publish →
+                </Button>
+              )
             )
           )}
         </div>
@@ -374,13 +431,24 @@ export function SectionsList({ editor }: Props) {
                   </span>
                 )}
                 {allRequiredDone && (
-                  <Button
-                    type="button"
-                    onClick={() => setPublishDialog(true)}
-                    className="h-9 px-4 font-semibold bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white"
-                  >
-                    Publish →
-                  </Button>
+                  editor.isPublished && editor.listingId ? (
+                    <a
+                      href={`/listings/${editor.listingId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="h-9 px-4 font-semibold bg-gradient-to-r from-emerald-500 to-teal-500 text-white inline-flex items-center rounded-full text-sm"
+                    >
+                      View on marketplace →
+                    </a>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={() => setPublishDialog(true)}
+                      className="h-9 px-4 font-semibold bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white"
+                    >
+                      Publish →
+                    </Button>
+                  )
                 )}
               </div>
             )}
@@ -388,45 +456,106 @@ export function SectionsList({ editor }: Props) {
         </div>
       )}
 
-      {/* Publish dialog — collects availability window before going live */}
+      {/* Publish dialog — collects availability before going live */}
       <Dialog open={publishDialog} onOpenChange={(o) => !o && setPublishDialog(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>When is this listing available?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-fg-muted -mt-2">
-            Set the dates tenants can move in. You can change these anytime after publishing.
-          </p>
-          <div className="space-y-4 pt-1">
-            <div>
-              <label className="text-sm font-medium text-fg block mb-1.5">Available from</label>
+        <DialogContent className="max-w-sm p-0 overflow-hidden">
+          {/* Hero strip */}
+          <div className="bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 px-6 pt-6 pb-5 text-white">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                <Rocket size={20} />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold text-white">Ready to go live?</DialogTitle>
+                <p className="text-sm text-white/75 mt-0.5">Set your availability — you can change it anytime.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            {/* Available from */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-fg flex items-center gap-1.5">
+                <CalendarDays size={13} className="text-fg-muted" />
+                Available from
+              </label>
               <Input
                 type="date"
                 value={pubStartDate}
                 min={today}
                 onChange={(e) => setPubStartDate(e.target.value)}
+                className="rounded-xl"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-fg block mb-1.5">
-                Available until <span className="text-fg-muted font-normal">(optional — leave blank for open-ended)</span>
+
+            {/* Duration */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-fg flex items-center gap-1.5">
+                <InfinityIcon size={13} className="text-fg-muted" />
+                Listed for
               </label>
-              <Input
-                type="date"
-                value={pubEndDate}
-                min={pubStartDate || today}
-                onChange={(e) => setPubEndDate(e.target.value)}
-              />
+              <Select value={pubDurationMonths} onValueChange={setPubDurationMonths}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 month</SelectItem>
+                  <SelectItem value="2">2 months</SelectItem>
+                  <SelectItem value="3">3 months</SelectItem>
+                  <SelectItem value="6">6 months</SelectItem>
+                  <SelectItem value="12">12 months</SelectItem>
+                  <SelectItem value="open">Open-ended (no end date)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-fg-muted">
+                {pubDurationMonths === "open"
+                  ? "Your listing stays live until you take it down manually."
+                  : `Listing auto-expires ${Number(pubDurationMonths)} month${Number(pubDurationMonths) > 1 ? "s" : ""} after the start date.`}
+              </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setPublishDialog(false)}>Cancel</Button>
+
+          <DialogFooter className="px-6 pb-5 gap-2">
+            <Button variant="ghost" onClick={() => setPublishDialog(false)} disabled={publishing}>
+              Cancel
+            </Button>
             <Button
               disabled={!pubStartDate || publishing}
               onClick={handlePublish}
-              className="bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white"
+              className="flex-1 bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white font-semibold rounded-xl h-10 shadow-[0_4px_16px_rgba(99,102,241,0.4)]"
             >
               {publishing ? "Publishing…" : "Go live 🚀"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* BUG-140: Confirm before saving rules on an occupied property */}
+      <Dialog open={!!pendingRulesSection} onOpenChange={(o) => { if (!o) setPendingRulesSection(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update rules for current tenant?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-fg-muted leading-relaxed">
+            <span className="font-semibold text-fg">{currentTenantName ?? "Your current tenant"}</span> is renting this property right now.
+            Saving new house rules will immediately apply to their active stay — they will see the updated rules in their booking.
+          </p>
+          <p className="text-sm text-warning font-medium">
+            ⚠️ Note: rule changes don&apos;t modify the signed contract — they're advisory only.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingRulesSection(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
+              onClick={async () => {
+                const sec = pendingRulesSection!;
+                setPendingRulesSection(null);
+                await handleContinue(sec);
+              }}
+            >
+              Update rules anyway
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -480,10 +609,10 @@ function SectionShell({
   const continueLabel = blockedByRequired
     ? "Fill required fields (marked *)"
     : upNextLabel == null
-    ? isDone
+    ? isDone && editor.mode === "edit"
       ? "Update & finish ✨"
       : "Save & finish ✨"
-    : isDone
+    : isDone && editor.mode === "edit"
     ? "Update & continue"
     : "Looks good — continue";
 
@@ -531,7 +660,11 @@ function SectionShell({
           </div>
           {isActive ? (
             <div className="text-xs text-fg-muted mt-1">
-              {isDone ? "Editing — your changes will be saved" : `Takes ~ ${section.estTime}`}
+              {isDone
+                ? editor.mode === "edit"
+                  ? "Your changes will be saved when you continue"
+                  : "Changes will apply when you save the property"
+                : `Takes ~ ${section.estTime}`}
             </div>
           ) : (
             <div className="text-xs text-fg-muted mt-0.5 truncate">
@@ -564,6 +697,7 @@ function SectionShell({
               pendingPhotos={editor.pendingPhotos}
               addPendingPhotos={editor.addPendingPhotos}
               removePendingPhotoAt={editor.removePendingPhotoAt}
+              movePendingPhotoToCover={editor.movePendingPhotoToCover}
             />
           </div>
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border">
@@ -618,7 +752,7 @@ function headlineFor(section: SectionDef, draft: import("./types").PropertyDraft
 
 // ── First-time hero ─────────────────────────────────────────────────────
 function HeroCard({ sections }: { sections: SectionDef[] }) {
-  const stops = sections.filter((s) => s.required).slice(0, 6);
+  const stops = sections.filter((s) => s.required);
   return (
     <div
       className="relative overflow-hidden rounded-3xl p-7 lg:p-8 text-white"
@@ -640,7 +774,7 @@ function HeroCard({ sections }: { sections: SectionDef[] }) {
           A few quick steps — most hosts finish in under 6&nbsp;minutes.
         </h2>
         <p className="text-sm text-white/70 mt-2 max-w-xl">
-          Smart defaults are pre-filled. You can change anything, in any order, and we'll auto-save as you go.
+          Smart defaults are pre-filled. You can change anything, in any order — your data saves when you click "Save property".
         </p>
         <div className="flex flex-wrap gap-2 mt-5">
           {stops.map((s, i) => (

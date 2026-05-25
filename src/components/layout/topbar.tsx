@@ -144,6 +144,8 @@ function isToggleHidden(pathname: string): boolean {
   if (!pathname.startsWith("/me")) return true;
   if (pathname === "/me") return true;
   if (pathname.startsWith("/me/onboarding")) return true;
+  // UX-169: profile page is role-neutral — the toggle is noise there
+  if (pathname.startsWith("/me/profile")) return true;
   return false;
 }
 
@@ -155,10 +157,9 @@ export function TopBar() {
   const { data: caps } = useCapabilities();
   const unseenApps = useUnseenApplications();
 
-  // Hide host nav tabs until at least one property exists (or user is a manager)
-  const ownedAssets = caps?.stats.ownedAssetsCount ?? 0;
-  const hostHasContent = !caps || ownedAssets > 0 || caps.isManager;
-  const nav = isHost ? (hostHasContent ? HOST_NAV : null) : isGuest ? GUEST_NAV : null;
+  // UX-174: always show host nav tabs in the hosting section — even on an empty
+  // portfolio the user needs to navigate to Requests / Finance / etc.
+  const nav = isHost ? HOST_NAV : isGuest ? GUEST_NAV : null;
 
   function getBadge(item: typeof HOST_NAV[number] | typeof GUEST_NAV[number]) {
     if (!item.badgeKey) return undefined;

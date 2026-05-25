@@ -170,7 +170,12 @@ function LandingNav() {
           <div className="hidden md:flex items-center gap-6 ml-6 text-sm font-medium text-fg-muted">
             <a href="#browse"   className="hover:text-fg transition-colors">{t("nav.browseRentals")}</a>
             <a href="#services" className="hover:text-fg transition-colors">{t("nav.services")}</a>
-            <a href="#host"     className="hover:text-fg transition-colors">{t("nav.hosting")}</a>
+            {/* BUG-70: logged-in hosts go straight to their dashboard, not the marketing anchor */}
+            {token ? (
+              <Link to="/me/host/properties" className="hover:text-fg transition-colors">{t("nav.hosting")}</Link>
+            ) : (
+              <a href="#host" className="hover:text-fg transition-colors">{t("nav.hosting")}</a>
+            )}
           </div>
         </>
       }

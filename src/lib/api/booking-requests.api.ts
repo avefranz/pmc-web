@@ -20,6 +20,7 @@ export interface HostBookingRequestDto {
   moveOutDate: string;      // normalized from backend's checkOutDate
   durationMonths: number;
   monthlyRate: number;      // normalized from backend's effectiveMonthlyRate
+  depositAmount?: number;   // security deposit; may be absent if backend hasn't added it yet (BE-23)
   totalRent: number;
   status: BookingRequestStatus;
   rejectionReason?: string;
@@ -70,6 +71,7 @@ function normalizeHostRequest(r: any): HostBookingRequestDto {
     durationMonths:       r.durationMonths,
     // Backend sends effectiveMonthlyRate; monthlyRate is a legacy alias
     monthlyRate:          r.monthlyRate ?? r.effectiveMonthlyRate ?? 0,
+    depositAmount:        r.depositAmount ?? r.securityDeposit ?? undefined,
     totalRent:            r.totalRent ?? 0,
     status:               r.status,
     rejectionReason:      r.rejectionReason ?? undefined,

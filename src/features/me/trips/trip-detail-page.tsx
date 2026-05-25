@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check, Plus } from "lucide-react";
+import { ArrowLeft, Home, Wifi, Eye, EyeOff, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useBooking, useBookingInvoices } from "@/lib/hooks/use-bookings";
 import { useListing } from "@/lib/hooks/use-listings";
@@ -169,15 +168,6 @@ export function TripDetailPage() {
         </Card>
       ) : null}
 
-      {/* Support CTA */}
-      <Button
-        asChild
-        className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
-      >
-        <Link to="/me/host/tickets">
-          <Plus size={14} className="mr-1.5" />Contact support
-        </Link>
-      </Button>
     </div>
   );
 }

@@ -57,4 +57,7 @@ export const assetsApi = {
     apiClient
       .get<{ data: NearbyPoisResponse }>(`/api/assets/${assetId}/nearby-pois`, { params: { radius } })
       .then((r) => r.data.data),
+
+  enrichNearby: (assetId: string) =>
+    apiClient.post(`/api/assets/${assetId}/enrich-nearby`).then((r) => r.data),
 };

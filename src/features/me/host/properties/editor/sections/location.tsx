@@ -1,10 +1,14 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Loader2, MapPin } from "lucide-react";
+import { Loader2, MapPin, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMarketplaceCities } from "@/lib/hooks/use-marketplace";
+import { useReferenceCities } from "@/lib/hooks/use-references";
+import { useListing } from "@/lib/hooks/use-listings";
+import { useEnrichNearby } from "@/lib/hooks/use-assets";
 import { cn } from "@/lib/utils/cn";
+import { formatDate } from "@/lib/utils/format";
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field, Row } from "../ui";
 
@@ -34,8 +38,95 @@ interface NominatimResult {
 // while city = Bangkok won't return matches in other countries.
 const CITY_RADIUS = 0.5;
 
-function LocationDialog({ draft, patch }: SectionDialogProps) {
-  const { data: cities } = useMarketplaceCities();
+function NearbyStatus({ listingId, assetId }: { listingId: string; assetId: string }) {
+  const { data: listing } = useListing(listingId);
+  const { mutate: refresh, isPending } = useEnrichNearby(assetId);
+
+  const transit = listing?.transportInfo?.split(" · ").filter(Boolean) ?? [];
+  const nearby = listing?.nearbyPlaces?.split(" · ").filter(Boolean) ?? [];
+  const enrichedAt = listing?.nearbyEnrichedAt;
+  const hasData = transit.length > 0 || nearby.length > 0;
+
+  // Auto-trigger on first open if location is set but no enrichment has run yet.
+  useEffect(() => {
+    if (hasData || enrichedAt || isPending) return;
+    refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId]);
+
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-bg-subtle p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+          <MapPin size={14} className="shrink-0" />
+          <span>Nearby places</span>
+          {enrichedAt && (
+            <span className="text-xs font-normal text-fg-muted">· {formatDate(enrichedAt)}</span>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs shrink-0"
+          onClick={() => refresh()}
+          disabled={isPending}
+        >
+          <RefreshCw size={12} className={cn("mr-1", isPending && "animate-spin")} />
+          Refresh
+        </Button>
+      </div>
+
+      {hasData ? (
+        <div className="space-y-2">
+          {transit.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {transit.slice(0, 5).map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-card px-2.5 py-1 text-xs text-fg-subtle"
+                >
+                  🚇 {t}
+                </span>
+              ))}
+            </div>
+          )}
+          {nearby.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {nearby.slice(0, 6).map((n) => (
+                <span
+                  key={n}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-card px-2.5 py-1 text-xs text-fg-subtle"
+                >
+                  📍 {n}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-fg-muted">
+          {enrichedAt
+            ? "No places found nearby — try refreshing after pinning a more precise location."
+            : "Places near your property will appear here automatically after saving location."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LocationDialog({ draft, patch, mode, assetId, listingId }: SectionDialogProps) {
+  const { data: rawCities } = useReferenceCities();
+  // UX-83: pin Chiang Mai + Bangkok to the top (current platform focus), then alphabetical
+  const PRIORITY = ["Chiang Mai", "Bangkok"];
+  const cities = rawCities?.slice().sort((a, b) => {
+    const ai = PRIORITY.indexOf(a.name.en);
+    const bi = PRIORITY.indexOf(b.name.en);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.name.en.localeCompare(b.name.en);
+  });
   const city = cities?.find((c) => c.id === draft.cityId);
   const lat = draft.latitude ?? city?.latitude ?? 13.7563;
   const lng = draft.longitude ?? city?.longitude ?? 100.5018;
@@ -48,9 +139,13 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
   // Suppresses the next debounce-driven search — used when we set the input
   // value programmatically (city change, suggestion picked).
   const suppressNext = useRef(false);
+  // Only search when the user has explicitly typed — prevents firing Nominatim
+  // on open when the field is pre-filled (BUG-autocomplete-on-open).
+  const userHasTyped = useRef(false);
   const lastSeq = useRef(0);
 
   useEffect(() => {
+    if (!userHasTyped.current) return;
     if (suppressNext.current) {
       suppressNext.current = false;
       return;
@@ -122,7 +217,8 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
           <SelectTrigger>
             <SelectValue placeholder="Select city" />
           </SelectTrigger>
-          <SelectContent>
+          {/* @ts-ignore — onOpenAutoFocus is a valid Radix prop at runtime (UX-82) */}
+          <SelectContent onOpenAutoFocus={(e: Event) => e.preventDefault()}>
             {(cities ?? []).map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.name.en}
@@ -152,13 +248,14 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
               value={searchQuery}
               disabled={!city}
               onChange={(e) => {
+                userHasTyped.current = true;
                 setSearchQuery(e.target.value);
                 // Push raw text into draft so closing the dialog doesn't lose it.
                 patch({ streetAddress: e.target.value });
               }}
               onFocus={() => setShowResults(true)}
               onBlur={() => setTimeout(() => setShowResults(false), 150)}
-              placeholder="e.g. Sukhumvit Rd, 123"
+              placeholder={city ? `e.g. 123 ${city.name.en} Rd` : "e.g. 123 Main Rd"}
               className="pl-9 pr-9"
               autoComplete="off"
             />
@@ -204,7 +301,7 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
       </Field>
 
       <Field label="Map" hint="Or tap on the map to drop a pin directly.">
-        <div className="h-48 rounded-xl overflow-hidden border border-border">
+        <div className="h-48 rounded-xl overflow-hidden border border-border isolate">
           <Suspense fallback={<div className="h-full bg-bg-subtle animate-pulse" />}>
             <LocationPicker
               lat={lat}
@@ -212,6 +309,10 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
               zoom={draft.latitude ? 16 : 11}
               onChange={async (la, ln) => {
                 patch({ latitude: la, longitude: ln });
+                // Only fill address fields from reverse-geocode if the user
+                // hasn't manually typed something — we must not silently
+                // overwrite their input (BUG-01).
+                const userHasTypedAddress = draft.streetAddress.trim().length > 0;
                 try {
                   const resp = await fetch(
                     `https://nominatim.openstreetmap.org/reverse?format=json&lat=${la}&lon=${ln}&addressdetails=1`,
@@ -224,12 +325,14 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
                       (a.house_number ? `${a.house_number} ` : "") + (a.road ?? "") ||
                       data.display_name.split(",")[0]?.trim() ||
                       "";
-                    suppressNext.current = true;
-                    setSearchQuery(street);
-                    patch({
-                      streetAddress: street,
-                      zipCode: a.postcode ?? draft.zipCode,
-                    });
+                    if (!userHasTypedAddress) {
+                      suppressNext.current = true;
+                      setSearchQuery(street);
+                      patch({
+                        streetAddress: street,
+                        zipCode: a.postcode ?? draft.zipCode,
+                      });
+                    }
                   }
                 } catch {
                   /* reverse geocode failed — coordinates still saved */
@@ -249,7 +352,14 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
           />
         </Field>
         <Field label="Postal code" required>
-          <Input value={draft.zipCode} onChange={(e) => patch({ zipCode: e.target.value })} placeholder="10110" />
+          {/* BUG-80: select-all on focus so autocomplete-filled value is fully replaced on re-type */}
+          <Input
+            value={draft.zipCode}
+            onChange={(e) => patch({ zipCode: e.target.value })}
+            onFocus={(e) => e.target.select()}
+            placeholder="10110"
+            autoComplete="postal-code"
+          />
         </Field>
       </Row>
 
@@ -268,6 +378,10 @@ function LocationDialog({ draft, patch }: SectionDialogProps) {
           placeholder="https://maps.app.goo.gl/…"
         />
       </Field>
+
+      {mode === "edit" && assetId && listingId && (
+        <NearbyStatus assetId={assetId} listingId={listingId} />
+      )}
     </div>
   );
 }

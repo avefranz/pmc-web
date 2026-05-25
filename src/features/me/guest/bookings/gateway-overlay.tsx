@@ -1,17 +1,9 @@
 import { useState } from "react";
-import { Check, Lock, Smartphone, CreditCard, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
-// Vite's CJS interop hands back the whole CJS module object as the "default" export
-// for react-qr-code, so we have to drill into `.default.default` to get the actual
-// component. Fall back to `.default` if a future Vite version straightens this out.
-import QRCodeDefault from "react-qr-code";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const QRCode: any = (QRCodeDefault as { default?: unknown })?.default ?? QRCodeDefault;
-import generatePayload from "promptpay-qr";
+import { Check, Lock, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 import { formatThb } from "@/lib/utils/format";
-import { cn } from "@/lib/utils/cn";
+// BUG-69: PromptPay tab removed — card-only flow per product decision
 
 type GatewayStep = "select" | "processing" | "success";
-type PayMethod = "promptpay" | "card";
 
 export function GatewayOverlay({
   amount,
@@ -25,16 +17,10 @@ export function GatewayOverlay({
   onClose: () => void;
 }) {
   const [step, setStep] = useState<GatewayStep>("select");
-  const [method, setMethod] = useState<PayMethod>(promptPayId ? "promptpay" : "card");
   const [cardNum, setCardNum] = useState("");
   const [cardExp, setCardExp] = useState("");
   const [cardCvv, setCardCvv] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  let qrPayload: string | null = null;
-  if (promptPayId) {
-    try { qrPayload = generatePayload(promptPayId, { amount }); } catch { /* noop */ }
-  }
 
   async function handlePay() {
     if (step !== "select") return; // guard against double-click while processing
@@ -113,91 +99,44 @@ export function GatewayOverlay({
               <p className="text-4xl font-bold text-fg dark:text-white tabular-nums">{formatThb(amount)}</p>
             </div>
 
-            {/* Method switcher */}
-            {promptPayId && (
-              <div className="px-6 pt-4">
-                <div className="flex rounded-xl bg-bg-subtle dark:bg-zinc-800 p-1 gap-1">
-                  <button
-                    onClick={() => setMethod("promptpay")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all",
-                      method === "promptpay"
-                        ? "bg-bg-card dark:bg-zinc-700 text-fg dark:text-white shadow-sm"
-                        : "text-fg-muted hover:text-fg"
-                    )}
-                  >
-                    <Smartphone size={14} /> PromptPay
-                  </button>
-                  <button
-                    onClick={() => setMethod("card")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all",
-                      method === "card"
-                        ? "bg-bg-card dark:bg-zinc-700 text-fg dark:text-white shadow-sm"
-                        : "text-fg-muted hover:text-fg"
-                    )}
-                  >
-                    <CreditCard size={14} /> Card
-                  </button>
-                </div>
+            {/* Card — BUG-69: PromptPay tab removed, card-only */}
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-fg-muted block mb-1">Card number</label>
+                <input
+                  type="text" placeholder="4111 1111 1111 1111" value={cardNum} maxLength={19}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 16);
+                    setCardNum(v.replace(/(.{4})/g, "$1 ").trim());
+                  }}
+                  className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 text-fg dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
-            )}
-
-            {/* PromptPay */}
-            {method === "promptpay" && promptPayId && (
-              <div className="px-6 py-4 flex flex-col items-center gap-3">
-                <div className="p-3 bg-white rounded-2xl border border-border shadow-sm">
-                  {qrPayload
-                    ? <QRCode value={qrPayload} size={160} />
-                    : <div className="w-40 h-40 bg-bg-subtle rounded-xl flex items-center justify-center"><Smartphone size={32} className="text-fg-subtle" /></div>
-                  }
-                </div>
-                <p className="text-xs text-fg-subtle text-center max-w-[220px]">
-                  Scan with any Thai banking app, then tap <strong className="text-fg-muted dark:text-gray-300">Confirm</strong> below
-                </p>
-              </div>
-            )}
-
-            {/* Card */}
-            {method === "card" && (
-              <div className="px-6 py-4 space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-fg-muted block mb-1">Card number</label>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-fg-muted block mb-1">Expiry</label>
                   <input
-                    type="text" placeholder="4111 1111 1111 1111" value={cardNum} maxLength={19}
+                    type="text" placeholder="MM / YY" value={cardExp} maxLength={7}
                     onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, "").slice(0, 16);
-                      setCardNum(v.replace(/(.{4})/g, "$1 ").trim());
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setCardExp(v.length > 2 ? `${v.slice(0, 2)} / ${v.slice(2)}` : v);
                     }}
-                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 text-fg dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="text-xs font-medium text-fg-muted block mb-1">Expiry</label>
-                    <input
-                      type="text" placeholder="MM / YY" value={cardExp} maxLength={7}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/\D/g, "").slice(0, 4);
-                        setCardExp(v.length > 2 ? `${v.slice(0, 2)} / ${v.slice(2)}` : v);
-                      }}
-                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="w-24">
-                    <label className="text-xs font-medium text-fg-muted block mb-1">CVV</label>
-                    <input
-                      type="text" placeholder="123" value={cardCvv} maxLength={4}
-                      onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                <div className="w-24">
+                  <label className="text-xs font-medium text-fg-muted block mb-1">CVV</label>
+                  <input
+                    type="text" placeholder="123" value={cardCvv} maxLength={4}
+                    onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-border dark:border-zinc-700 bg-bg-card dark:bg-zinc-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-                <p className="text-[11px] text-fg-subtle text-center">
-                  Sandbox · test card: <span className="font-mono text-fg-muted">4111 1111 1111 1111</span>
-                </p>
               </div>
-            )}
+              <p className="text-[11px] text-fg-subtle text-center">
+                Sandbox · test card: <span className="font-mono text-fg-muted">4111 1111 1111 1111</span>
+              </p>
+            </div>
 
             {error && (
               <div className="mx-6 mb-1 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center gap-2">

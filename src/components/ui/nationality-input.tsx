@@ -49,6 +49,10 @@ async function fetchNationalities(): Promise<[string, string][]> {
   return pairs.sort((a, b) => a[1].localeCompare(b[1]));
 }
 
+// ── Priority codes: these bubble to the top of search results when demonyms tie ──
+// Prevents MP (Mariana Islands, demonym "American") from appearing before US (UX-106)
+const PRIORITY_CODES = new Set(["US","GB","TH","AU","CA","DE","FR","JP","CN","IN","KR","SG","MY","ID","PH","VN"]);
+
 // ── Component ─────────────────────────────────────────────────────────────
 interface NationalityInputProps {
   /** ISO 3166-1 alpha-2 code, e.g. "RU", "TH" */
@@ -70,7 +74,8 @@ export function NationalityInput({
   const [apiDown, setApiDown] = useState(false);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [highlighted, setHighlighted] = useState(0);
+  // UX-94: start at -1 so no item is pre-highlighted on open
+  const [highlighted, setHighlighted] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -96,7 +101,17 @@ export function NationalityInput({
       !dem.toLowerCase().startsWith(q) && !code.toLowerCase().startsWith(q) &&
       (dem.toLowerCase().includes(q) || code.toLowerCase().includes(q))
     );
-    return [...starts, ...contains];
+    // UX-106: within starts-group, sort by (1) exact demonym match, (2) priority codes, (3) original order
+    // This prevents MP ("American") from appearing before US ("American") in search results
+    const sortedStarts = [...starts].sort((a, b) => {
+      const aExact = a[1].toLowerCase() === q ? 0 : 1;
+      const bExact = b[1].toLowerCase() === q ? 0 : 1;
+      if (aExact !== bExact) return aExact - bExact;
+      const aPrio = PRIORITY_CODES.has(a[0]) ? 0 : 1;
+      const bPrio = PRIORITY_CODES.has(b[0]) ? 0 : 1;
+      return aPrio - bPrio;
+    });
+    return [...sortedStarts, ...contains];
   })();
 
   const select = useCallback((code: string) => {
@@ -130,9 +145,9 @@ export function NationalityInput({
       return;
     }
     if (e.key === "ArrowDown") { setHighlighted((h) => Math.min(h + 1, filtered.length - 1)); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { setHighlighted((h) => Math.max(h - 1, 0)); e.preventDefault(); }
-    else if (e.key === "Enter") { if (filtered[highlighted]) select(filtered[highlighted][0]); e.preventDefault(); }
-    else if (e.key === "Escape") { setOpen(false); setQuery(""); }
+    else if (e.key === "ArrowUp") { setHighlighted((h) => Math.max(h - 1, -1)); e.preventDefault(); }
+    else if (e.key === "Enter") { if (highlighted >= 0 && filtered[highlighted]) select(filtered[highlighted][0]); e.preventDefault(); }
+    else if (e.key === "Escape") { setOpen(false); setQuery(""); setHighlighted(-1); }
   }
 
   return (
@@ -144,7 +159,7 @@ export function NationalityInput({
           open && "ring-2 ring-ring ring-offset-2",
           disabled && "opacity-50 cursor-not-allowed",
         )}
-        onClick={() => { if (!disabled) { setOpen((v) => !v); setHighlighted(0); setTimeout(() => inputRef.current?.focus(), 0); } }}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setHighlighted(-1); setTimeout(() => inputRef.current?.focus(), 0); } }}
       >
         {open ? (
           <Search size={13} className="shrink-0 text-muted-foreground" />
@@ -158,7 +173,7 @@ export function NationalityInput({
             type="text"
             value={query}
             placeholder="Type to search…"
-            onChange={(e) => { setQuery(e.target.value); setHighlighted(0); }}
+            onChange={(e) => { setQuery(e.target.value); setHighlighted(-1); }}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
             className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
@@ -205,7 +220,7 @@ export function NationalityInput({
               onMouseEnter={() => setHighlighted(i)}
               className={cn(
                 "flex items-center justify-between px-3 py-2 cursor-pointer transition-colors",
-                i === highlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                highlighted >= 0 && i === highlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
                 code === value && "font-semibold",
               )}
             >

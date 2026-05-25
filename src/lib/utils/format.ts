@@ -60,6 +60,22 @@ export function initials(name?: string): string {
     .join("");
 }
 
+// UX-74: format raw VisaType enum values into human-readable labels
+const VISA_LABELS: Record<string, string> = {
+  VisaExempt:       "Visa Exempt",
+  Tourist:          "Tourist Visa",
+  NonImmigrantB:    "Non-Immigrant B",
+  NonImmigrantO:    "Non-Immigrant O",
+  NonImmigrantOA:   "Non-Immigrant O-A",
+  Education:        "Education Visa",
+  SpecialTourist:   "Special Tourist Visa",
+  Other:            "Other",
+};
+export function formatVisaType(visa: string | null | undefined): string {
+  if (!visa) return "—";
+  return VISA_LABELS[visa] ?? visa;
+}
+
 export function changePercentColor(pct: number): string {
   if (pct > 0) return "text-green-600";
   if (pct < 0) return "text-red-500";

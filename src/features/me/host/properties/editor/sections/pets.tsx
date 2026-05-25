@@ -6,8 +6,9 @@ function PetsDialog({ draft, patch }: SectionDialogProps) {
   return (
     <div>
       <Field label="Are pets allowed?">
+        {/* UX-79: pass undefined when host hasn't made a choice — neither chip highlighted */}
         <ChipGroup
-          value={draft.petsAllowed ? "yes" : "no"}
+          value={draft.petsExplicitlySet ? (draft.petsAllowed ? "yes" : "no") : undefined}
           onChange={(v) => patch({ petsAllowed: v === "yes", petsExplicitlySet: true })}
           options={[
             { value: "no", label: "Not allowed" },

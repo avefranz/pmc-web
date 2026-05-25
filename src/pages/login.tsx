@@ -43,8 +43,10 @@ export default function LoginPage() {
     try {
       await login.mutateAsync({ email: email.trim(), password });
       navigate(redirectTo, { replace: true });
-    } catch {
-      setServerError("Invalid email or password.");
+    } catch (err: unknown) {
+      // BUG-110: show the specific error detail from BE (401 "Invalid email or password.", etc.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setServerError(detail ?? "Invalid email or password.");
     }
   }
 
@@ -78,7 +80,9 @@ export default function LoginPage() {
               <Label htmlFor="email" className="text-sm font-medium text-fg">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: undefined })); setServerError(""); }}
@@ -91,7 +95,9 @@ export default function LoginPage() {
               <Label htmlFor="password" className="text-sm font-medium text-fg">Password</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })); setServerError(""); }}

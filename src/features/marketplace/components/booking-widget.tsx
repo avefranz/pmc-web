@@ -61,7 +61,7 @@ function DurationSlider({
         })}
       </div>
 
-      {/* Thumb */}
+      {/* Thumb — z-0 so label buttons (z-10) receive clicks */}
       <input
         type="range"
         min={min}
@@ -69,24 +69,28 @@ function DurationSlider({
         step={1}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="absolute inset-0 w-full opacity-0 cursor-pointer h-6 top-0"
+        className="absolute inset-x-0 top-0 h-6 w-full opacity-0 cursor-pointer"
       />
 
-      {/* Tick labels */}
+      {/* Tick labels — UX-55: clickable presets, not just decorative labels */}
       <div className="flex justify-between mt-2 px-0.5">
         {TICK_MONTHS.filter((t) => t >= min && t <= maxVal).map((tick) => {
           const tickPct = ((tick - min) / (maxVal - min)) * 100;
           return (
-            <span
+            <button
               key={tick}
+              type="button"
+              onClick={() => onChange(tick)}
               className={cn(
-                "text-[11px] absolute -translate-x-1/2 transition-colors",
-                value === tick ? "text-brand font-semibold" : "text-fg-muted",
+                "text-[11px] absolute -translate-x-1/2 transition-colors leading-none py-0.5 px-0.5 rounded z-10",
+                value === tick
+                  ? "text-brand font-semibold"
+                  : "text-fg-muted hover:text-fg cursor-pointer",
               )}
               style={{ left: `${tickPct}%` }}
             >
               {tick}m
-            </span>
+            </button>
           );
         })}
       </div>
@@ -138,21 +142,25 @@ export function BookingWidget({
     discountTiers: DiscountTier[];
     // compat fields
     baseMonthlyRate?: number | null;
+    /** Deposit configured by the host (BUG-40/BE-16). Falls back to 1 month rent if absent. */
+    depositAmount?: number | null;
   };
   availability: ListingAvailabilityDto;
   onRequestBook: (moveIn: string, months: number) => void;
 }) {
   const baseRate =
     listing.monthlyRate || listing.baseMonthlyRate || 0;
+  // BUG-40: use host-configured deposit; fall back to 1 month rent only if not set
+  const deposit = listing.depositAmount ?? baseRate;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const defaultMoveIn = max([today, parseISO(availability.availableFrom)]);
   const defaultMoveInStr = format(defaultMoveIn, "yyyy-MM-dd");
-  // Move-in window: if availableFrom is in the future → 30 days from it;
-  // if availableFrom is already past → 30 days from today.
-  const moveInDeadline = addDays(defaultMoveIn, 30);
+  // Move-in window: up to 6 months ahead (BUG-54: was incorrectly limited to 30 days).
+  // If availableUntil is set, the calendar will already cap to that date via isDisabled.
+  const moveInDeadline = addMonths(defaultMoveIn, 6);
 
   const [moveInStr, setMoveInStr] = useState(defaultMoveInStr);
   const [duration, setDuration] = useState(
@@ -300,7 +308,7 @@ export function BookingWidget({
             <span className="text-fg-muted">Refundable deposit</span>
             <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
           </div>
-          <span className="text-fg font-semibold">{formatThb(monthRate)}</span>
+          <span className="text-fg font-semibold">{formatThb(deposit)}</span>
         </div>
         {/* Due on move-in */}
         <div className="flex justify-between border-t border-border pt-2.5">
@@ -310,7 +318,7 @@ export function BookingWidget({
               1st month{hasDiscount ? ` (−${tier!.discountPercent}%)` : ""} + deposit
             </div>
           </div>
-          <span className="text-fg font-semibold">{formatThb(monthRate * 2)}</span>
+          <span className="text-fg font-semibold">{formatThb(monthRate + deposit)}</span>
         </div>
       </div>
 
