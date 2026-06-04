@@ -311,6 +311,17 @@ export const bookingsApi = {
       .then((r) => r.data.data),
 
   /**
+   * UX-278: tenant marks themselves as moved-in. Transitions Confirmed → Active.
+   * Backend validates `today >= checkInDate` and current status.
+   *
+   * Expected backend: POST /api/bookings/{id}/check-in
+   */
+  checkIn: (bookingId: string) =>
+    apiClient
+      .post<{ data: BookingDto }>(`/api/bookings/${bookingId}/check-in`, {})
+      .then((r) => r.data.data),
+
+  /**
    * Tenant renews their lease for 1–12 additional months.
    * Source booking must be Active or Confirmed.
    *

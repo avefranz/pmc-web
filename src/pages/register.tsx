@@ -8,6 +8,7 @@ import { useRegister } from "@/lib/hooks/use-auth";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { SiamoLogo } from "@/components/layout/siamo-logo";
 import { PasswordHints } from "@/components/shared/password-hints";
+import { cn } from "@/lib/utils/cn";
 
 const LINE_CLIENT_ID = import.meta.env.VITE_LINE_CLIENT_ID;
 const LINE_REDIRECT_URI = import.meta.env.VITE_LINE_REDIRECT_URI ?? `${window.location.origin}/line-callback`;
@@ -150,7 +151,18 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5 pt-1">
-              <label className="flex items-start gap-2 cursor-pointer select-none">
+              {/* UX-287: highlight the ToS row when the host has filled
+                  everything but missed the checkbox. Without the visual
+                  delta it looked the same as the disabled-but-not-required
+                  state. */}
+              <label
+                className={cn(
+                  "flex items-start gap-2 cursor-pointer select-none rounded-md p-1 -m-1 transition-colors",
+                  !acceptedTerms && (firstName || lastName || email || password)
+                    ? "ring-1 ring-warning/40 bg-warning/5"
+                    : "",
+                )}
+              >
                 <input
                   id="terms"
                   type="checkbox"
@@ -170,13 +182,25 @@ export default function RegisterPage() {
 
             {serverError && <p className="text-sm text-destructive">{serverError}</p>}
 
-            <Button
-              className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-medium"
-              type="submit"
-              disabled={register.isPending || !acceptedTerms}
-            >
-              {register.isPending ? "Creating account…" : "Create account"}
-            </Button>
+            <div>
+              <Button
+                className={cn(
+                  "w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white font-medium",
+                  // UX-287: stronger disabled cue so the user notices the
+                  // gate instead of clicking it twice with no feedback.
+                  !acceptedTerms && "opacity-50 cursor-not-allowed",
+                )}
+                type="submit"
+                disabled={register.isPending || !acceptedTerms}
+              >
+                {register.isPending ? "Creating account…" : "Create account"}
+              </Button>
+              {!acceptedTerms && (firstName || lastName || email || password) && (
+                <p className="text-xs text-warning mt-2 text-center">
+                  ↑ Tick the agreement above to continue
+                </p>
+              )}
+            </div>
           </form>
 
           {LINE_CLIENT_ID && (

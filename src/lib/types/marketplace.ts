@@ -54,6 +54,9 @@ export interface MarketplaceListingPreviewDto {
   endDate: string | null;
   coverImageUrl: string | null;
   amenityIds: number[];
+  /** UX-303: when the listing went live. Drives the conditional "New" badge
+   * (shown only for the first 14 days). Added by BE to the preview DTO. */
+  publishedAt?: string | null;
 }
 
 export interface MarketplaceListingMediaDto {
@@ -160,6 +163,25 @@ export interface MarketplaceListingsQuery {
 }
 
 // ─── Booking request ──────────────────────────────────────────────────────────
+
+export type CoResidentRelationship = "Partner" | "Child" | "Family" | "Friend" | "Other";
+
+// UX-268: composition snapshot collected up-front, before approve. BE
+// migration 20260526130000_AddAdditionalResidents stores this as JSONB on
+// BookingRequest.AdditionalResidents and surfaces it in the host request
+// detail so the landlord knows the count without chasing the tenant.
+export interface AdditionalResidentInput {
+  firstName: string;
+  lastName: string;
+  // BUG-325: relationship to the tenant is not relevant to the lease / TM-30
+  // (only name, passport, DOB are). Field removed from the form and no longer
+  // sent. Kept optional for backwards compatibility until the BE drops it from
+  // the DTO. @BE: remove `relationship` from ResidentPreviewItem / the
+  // AdditionalResidents JSONB schema.
+  relationship?: CoResidentRelationship;
+  dateOfBirth: string; // ISO yyyy-mm-dd
+}
+
 export interface BookingRequestData {
   listingId: string;
   moveInDate: string;      // ISO date
@@ -171,6 +193,7 @@ export interface BookingRequestData {
   petCatsCount?: number;
   petDogsCount?: number;
   petOtherCount?: number;
+  additionalResidents?: AdditionalResidentInput[];
 }
 
 export interface BookingRequestResult {

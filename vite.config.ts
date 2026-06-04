@@ -17,5 +17,30 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    // BE-Sec-5: Security headers for the dev server.
+    // In production add these at the reverse-proxy (nginx/Caddy) level.
+    //
+    // Recommended nginx snippet for the SPA shell:
+    //   add_header X-Frame-Options "DENY" always;
+    //   add_header X-Content-Type-Options "nosniff" always;
+    //   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    //   add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+    //   add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' wss: https:; frame-ancestors 'none';" always;
+    headers: {
+      "X-Frame-Options": "DENY",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
+      // BE-Sec-5: CSP must live on HTML responses, not just JSON API responses.
+      // unsafe-inline needed for Vite HMR in dev; tighten with nonce in prod nginx config.
+      "Content-Security-Policy":
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' data: blob: https:; " +
+        "connect-src 'self' wss: https:; " +
+        "frame-ancestors 'none';",
+    },
   },
 });

@@ -39,7 +39,13 @@ apiClient.interceptors.response.use(
     // Anonymous users hitting a 401 (e.g. submitting a booking request before auth)
     // should NOT be redirected — the UI handles that inline.
     const hadToken = !!useAuthStore.getState().token;
-    if (err.response?.status === 401 && !redirecting && hadToken) {
+    // BUG-267: some feature endpoints return 401 for an authorization quirk
+    // rather than an expired session (e.g. the landlord-identity PATCH for a
+    // brand-new host). Blowing away the session there logged the host out
+    // mid-form and lost everything they'd typed. Callers can opt a request out
+    // of the auto-logout via `skipAuthRedirect` and handle the error inline.
+    const skipAuthRedirect = (err.config as { skipAuthRedirect?: boolean } | undefined)?.skipAuthRedirect;
+    if (err.response?.status === 401 && !redirecting && hadToken && !skipAuthRedirect) {
       useAuthStore.getState().clearAuth();
       if (!window.location.pathname.startsWith("/login")) {
         redirecting = true;

@@ -530,12 +530,26 @@ function MarketplaceUserMenu() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
+        // UX-285: surface the menu purpose on hover. Before this, the "?"
+        // avatar (rendered when a logged-in user had no display name yet)
+        // looked like an unread/notification badge with no explanation.
+        title={token ? (name ? `Signed in as ${name}` : "Your account menu") : "Sign in or browse rentals"}
+        aria-label={token ? "Account menu" : "Sign in"}
         className="flex items-center gap-2.5 rounded-full border border-border px-3 py-2 hover:shadow-md transition-shadow bg-bg-card"
       >
         <Menu size={16} className="text-fg" />
         {token ? (
           <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center">
-            <span className="text-white text-xs font-semibold leading-none">{initials(name) || "?"}</span>
+            {/* UX-285: when we don't yet have a display name (profile still
+                loading, OAuth user without firstName), show the silhouette
+                instead of "?". A literal ? looks like a notification badge. */}
+            {initials(name) ? (
+              <span className="text-white text-xs font-semibold leading-none">{initials(name)}</span>
+            ) : (
+              <svg viewBox="0 0 32 32" className="w-4 h-4 fill-white">
+                <path d="M16 .7a15.3 15.3 0 100 30.6A15.3 15.3 0 0016 .7zm0 7a5.1 5.1 0 110 10.2A5.1 5.1 0 0116 7.7zm0 21.5a11.7 11.7 0 01-8.9-4.1c.1-2.9 5.9-4.6 8.9-4.6s8.8 1.7 8.9 4.6a11.7 11.7 0 01-8.9 4.1z" />
+              </svg>
+            )}
           </div>
         ) : (
           <div className="w-7 h-7 rounded-full bg-fg-muted flex items-center justify-center">
@@ -551,19 +565,21 @@ function MarketplaceUserMenu() {
           {token ? (
             <>
               {name && <div className="px-4 py-2 text-sm font-semibold text-fg border-b border-border mb-1">{name}</div>}
-              <button onClick={() => { navigate("/me"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
-                My account
+              <button onClick={() => { navigate("/me/guest/bookings"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
+                My stays
               </button>
-              <button onClick={() => { navigate("/me/host/requests"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors flex items-center justify-between">
-                <span>Host dashboard</span>
-                {pendingRequests > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-brand text-white leading-none">
-                    {pendingRequests > 9 ? "9+" : pendingRequests}
-                  </span>
-                )}
-              </button>
+              {(caps?.isLandlord || caps?.isManager) && (
+                <button onClick={() => { navigate("/me/host/requests"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors flex items-center justify-between">
+                  <span>Host dashboard</span>
+                  {pendingRequests > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-brand text-white leading-none">
+                      {pendingRequests > 9 ? "9+" : pendingRequests}
+                    </span>
+                  )}
+                </button>
+              )}
               <button onClick={() => { navigate("/me/profile"); setOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
-                Account
+                Profile
               </button>
               <div className="border-t border-border mt-1 pt-1">
                 <button onClick={signOut} className="w-full text-left px-4 py-2.5 text-sm text-fg hover:bg-bg transition-colors">
@@ -595,7 +611,7 @@ function HostSwitchButton({ token }: { token: string | null }) {
 
   return (
     <Link
-      to={token ? "/me/host" : "/login"}
+      to={token ? "/me/host/properties" : "/login"}
       className="relative hidden md:flex items-center gap-1.5 text-sm font-semibold text-fg px-3 py-2 rounded-full hover:bg-bg-subtle transition-colors whitespace-nowrap"
     >
       <Home size={14} />

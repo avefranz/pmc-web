@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { addMonths, addDays, format, parseISO, isBefore, isAfter, max } from "date-fns";
+import { addMonths, format, parseISO, isBefore, isAfter, max, differenceInMonths } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -144,6 +144,9 @@ export function BookingWidget({
     baseMonthlyRate?: number | null;
     /** Deposit configured by the host (BUG-40/BE-16). Falls back to 1 month rent if absent. */
     depositAmount?: number | null;
+    /** BUG-263/274: pet deposit shown alongside security deposit when the host has set one. */
+    petDeposit?: number | null;
+    petsAllowed?: boolean | null;
   };
   availability: ListingAvailabilityDto;
   onRequestBook: (moveIn: string, months: number) => void;
@@ -157,49 +160,113 @@ export function BookingWidget({
   today.setHours(0, 0, 0, 0);
 
   const defaultMoveIn = max([today, parseISO(availability.availableFrom)]);
-  const defaultMoveInStr = format(defaultMoveIn, "yyyy-MM-dd");
-  // Move-in window: up to 6 months ahead (BUG-54: was incorrectly limited to 30 days).
-  // If availableUntil is set, the calendar will already cap to that date via isDisabled.
-  const moveInDeadline = addMonths(defaultMoveIn, 6);
+  // BUG-327: a host can publish a fixed window (Available-to). BE returns it as
+  // `availableTo`; older payloads use the `availableUntil` alias. Either caps
+  // how late a tenant can move in AND how long they can stay, so we resolve a
+  // single window-end here and feed it into the move-in picker + duration cap.
+  const windowEndStr = availability.availableUntil ?? availability.availableTo;
+  const windowEnd = windowEndStr ? parseISO(windowEndStr) : null;
+  // UX-305: avoid landing the move-in default inside an occupied range. The
+  // previous behaviour parked the picker on `availableFrom`, which the BE
+  // sometimes returns even when that day is already booked — the host saw a
+  // confident "Due ฿77,000" up top with a buried conflict warning below.
+  // We now scan occupiedRanges and bump the default forward (or use the
+  // BE-supplied nextAvailableDate when present) so the widget opens on a
+  // bookable day in 95% of cases.
+  function firstBookableDate(start: Date, dur: number): Date {
+    let candidate = start;
+    for (let safety = 0; safety < 24; safety++) {
+      const out = addMonths(candidate, dur);
+      const { conflict, nextAvailable } = checkConflict(candidate, out, availability);
+      if (!conflict) return candidate;
+      if (!nextAvailable) return candidate;
+      const bumped = parseISO(nextAvailable);
+      // Guard against pathological data where nextAvailable doesn't actually
+      // move us forward (otherwise we'd loop until the safety counter).
+      if (!isAfter(bumped, candidate)) return candidate;
+      candidate = bumped;
+    }
+    return candidate;
+  }
+  const initialDuration = Math.min(3, availability.maxMonths ?? 12);
+  const seedFromBe = availability.nextAvailableDate
+    ? max([parseISO(availability.nextAvailableDate), defaultMoveIn])
+    : defaultMoveIn;
+  // BUG-323: the first day actually free of existing bookings (steps over
+  // occupiedRanges, UX-305). This is what the move-in window must anchor on.
+  const rawSafeDefault = firstBookableDate(seedFromBe, initialDuration);
+  // BUG-319/BUG-323: move-in must be within ~1 month of the earliest the tenant
+  // could ACTUALLY move in. The old code anchored on `availableFrom`, ignoring
+  // active bookings — so any listing with a current booking had its deadline
+  // fall before the first free day, making it un-bookable in the widget while
+  // the BE (which anchors on nextAvailable + 1 month) would have accepted it.
+  // Anchoring on the first bookable date keeps a vacant listing's behaviour
+  // identical (firstBookable == defaultMoveIn) and re-opens booked listings.
+  // (⚠️ BUG-54/BUG-319 boundary still @PM to confirm; BE mirrors it on POST.)
+  const moveInDeadline = addMonths(max([defaultMoveIn, rawSafeDefault]), 1);
+
+  // The only genuine "no dates" case left is a FIXED window (availableTo) whose
+  // first free day already falls past the host's window end. Open-ended listings
+  // always have a bookable default now, so they never show the dead-end banner.
+  const noBookableInWindow =
+    windowEnd != null && isAfter(rawSafeDefault, windowEnd);
+  const safeDefaultMoveIn = noBookableInWindow ? defaultMoveIn : rawSafeDefault;
+  const defaultMoveInStr = format(safeDefaultMoveIn, "yyyy-MM-dd");
 
   const [moveInStr, setMoveInStr] = useState(defaultMoveInStr);
-  const [duration, setDuration] = useState(
-    Math.min(3, availability.maxMonths ?? 12),
-  );
+  const [duration, setDuration] = useState(initialDuration);
 
   const moveIn = parseISO(moveInStr);
-  const moveOut = addMonths(moveIn, duration);
+
+  const minMonths = availability.minMonths ?? 1;
+  // BUG-327: never offer a stay that runs past the fixed window. Cap the host
+  // max (and the 12-month slider ceiling) by the months remaining until
+  // windowEnd from the chosen move-in.
+  const windowMaxMonths = windowEnd
+    ? Math.max(0, differenceInMonths(windowEnd, moveIn))
+    : 12;
+  const maxMonths = Math.min(availability.maxMonths ?? 12, 12, windowMaxMonths);
+  // Clamp the chosen duration into the bookable window so move-out, price and
+  // the request payload can't exceed a fixed window even if state is stale.
+  const effDuration = Math.min(Math.max(duration, minMonths), Math.max(minMonths, maxMonths));
+
+  const moveOut = addMonths(moveIn, effDuration);
 
   const { conflict, nextAvailable } = useMemo(
     () => checkConflict(moveIn, moveOut, availability),
-    [moveInStr, duration],
+    [moveInStr, effDuration],
   );
 
   const maxAllowed = useMemo(
-    () => maxDurationWithoutConflict(moveIn, availability, availability.maxMonths ?? 12),
-    [moveInStr, availability],
+    () => Math.min(
+      maxMonths,
+      maxDurationWithoutConflict(moveIn, availability, availability.maxMonths ?? 12),
+    ),
+    [moveInStr, availability, maxMonths],
   );
 
   // Cap duration when move-in changes
   function handleMoveInChange(val: string) {
     setMoveInStr(val);
     const newMoveIn = parseISO(val);
-    const newMax = maxDurationWithoutConflict(
-      newMoveIn,
-      availability,
+    const newWindowMax = windowEnd
+      ? Math.max(0, differenceInMonths(windowEnd, newMoveIn))
+      : 12;
+    const newMax = Math.min(
       availability.maxMonths ?? 12,
+      12,
+      newWindowMax,
+      maxDurationWithoutConflict(newMoveIn, availability, availability.maxMonths ?? 12),
     );
     if (duration > newMax) setDuration(Math.max(1, newMax));
   }
 
-  const monthRate = effectiveMonthlyRate(baseRate, duration, listing.discountTiers ?? []);
-  const tier = getApplicableTier(duration, listing.discountTiers ?? []);
+  const monthRate = effectiveMonthlyRate(baseRate, effDuration, listing.discountTiers ?? []);
+  const tier = getApplicableTier(effDuration, listing.discountTiers ?? []);
   const hasDiscount = !!tier;
   const moveOutFormatted = format(moveOut, "MMMM d, yyyy");
 
-  const minMonths = availability.minMonths ?? 1;
-  const maxMonths = Math.min(availability.maxMonths ?? 12, 12);
-  const isAvailable = !conflict && maxAllowed >= minMonths;
+  const isAvailable = !conflict && !noBookableInWindow && maxAllowed >= minMonths;
 
   return (
     <div className="bg-bg-card rounded-2xl border border-border shadow-pop p-6 space-y-5">
@@ -267,9 +334,18 @@ export function BookingWidget({
           onChange={handleMoveInChange}
           isDisabled={(d) => {
             if (d < today) return true;
-            if (isBefore(d, parseISO(availability.availableFrom))) return true;
+            // BUG-323: don't offer days before the first bookable date (which
+            // already accounts for availableFrom + existing bookings) …
+            if (isBefore(d, rawSafeDefault)) return true;
             if (isAfter(d, moveInDeadline)) return true;
-            if (availability.availableUntil && isAfter(d, parseISO(availability.availableUntil))) return true;
+            if (windowEnd && isAfter(d, windowEnd)) return true;
+            // … and grey out any day that falls inside an occupied range so the
+            // picker only ever proposes genuinely free move-in dates.
+            for (const range of availability.occupiedRanges) {
+              const from = parseISO(range.from);
+              const to = parseISO(range.to);
+              if (!isBefore(d, from) && isBefore(d, to)) return true;
+            }
             return false;
           }}
           className="w-full"
@@ -281,11 +357,11 @@ export function BookingWidget({
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold text-fg uppercase tracking-wide">Length of stay</label>
           <span className="text-sm font-semibold text-fg">
-            {duration} month{duration !== 1 ? "s" : ""}
+            {effDuration} month{effDuration !== 1 ? "s" : ""}
           </span>
         </div>
         <DurationSlider
-          value={duration}
+          value={effDuration}
           min={minMonths}
           max={maxMonths}
           onChange={(v) => {
@@ -295,35 +371,28 @@ export function BookingWidget({
 
       </div>
 
-      {/* Summary — monthly framing, no scary total */}
-      <div className="bg-bg-subtle rounded-xl px-4 py-3 space-y-2.5 text-sm">
-        {/* Move-out */}
-        <div className="flex justify-between">
-          <span className="text-fg-muted">Move-out</span>
-          <span className="text-fg font-semibold">{moveOutFormatted}</span>
-        </div>
-        {/* Deposit */}
-        <div className="flex justify-between border-t border-border pt-2.5">
+      {/* UX-305: conflict warning moved ABOVE the summary so the tenant
+          can't miss it while reading the "Due on move-in" number. Buried
+          alerts at the bottom of the widget gave a false sense of "this
+          booking is fine, just scroll past for the small print". */}
+      {/* BUG-323: the earliest opening is past the allowed move-in window
+          (an existing booking fills the next month, or it runs beyond a fixed
+          window). Offering "Use this date" would only park the picker on a
+          disabled day, so we show a dead-end-free message instead. */}
+      {noBookableInWindow ? (
+        <div className="flex items-start gap-2.5 bg-warning/10 border border-warning/20 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
           <div>
-            <span className="text-fg-muted">Refundable deposit</span>
-            <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
+            <p className="font-medium text-fg">No move-in dates available right now</p>
+            <p className="text-xs text-fg-muted mt-0.5">
+              The earliest opening is{" "}
+              <strong>{format(rawSafeDefault, "MMMM d, yyyy")}</strong>, which is
+              outside this listing's booking window. Message the host to ask
+              about later dates.
+            </p>
           </div>
-          <span className="text-fg font-semibold">{formatThb(deposit)}</span>
         </div>
-        {/* Due on move-in */}
-        <div className="flex justify-between border-t border-border pt-2.5">
-          <div>
-            <span className="text-fg-muted">Due on move-in</span>
-            <div className="text-[11px] text-fg-muted mt-0.5">
-              1st month{hasDiscount ? ` (−${tier!.discountPercent}%)` : ""} + deposit
-            </div>
-          </div>
-          <span className="text-fg font-semibold">{formatThb(monthRate + deposit)}</span>
-        </div>
-      </div>
-
-      {/* Conflict warning */}
-      {conflict && nextAvailable && (
+      ) : conflict && nextAvailable && (
         <div className="flex items-start gap-2.5 bg-warning/10 border border-warning/20 rounded-xl px-4 py-3 text-sm">
           <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
           <div>
@@ -341,11 +410,66 @@ export function BookingWidget({
         </div>
       )}
 
+      {/* Summary — monthly framing, no scary total. When dates conflict we
+          collapse the price total down to a placeholder so the widget stops
+          quoting a confident "Due ฿X" for a booking the tenant can't make. */}
+      <div className="bg-bg-subtle rounded-xl px-4 py-3 space-y-2.5 text-sm">
+        {/* Move-out */}
+        <div className="flex justify-between">
+          <span className="text-fg-muted">Move-out</span>
+          <span className="text-fg font-semibold">{moveOutFormatted}</span>
+        </div>
+        {/* Deposit */}
+        <div className="flex justify-between border-t border-border pt-2.5">
+          <div>
+            <span className="text-fg-muted">Refundable deposit</span>
+            <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
+          </div>
+          <span className="text-fg font-semibold">{formatThb(deposit)}</span>
+        </div>
+        {/* BUG-263/274: pet deposit line — visible only when the listing has
+            one configured. Same refund mechanics as the security deposit, so
+            the tenant sees it as a separate refundable line rather than as a
+            mystery surcharge once they're past Request-to-book. */}
+        {(listing.petDeposit ?? 0) > 0 && listing.petsAllowed !== false && (
+          <div className="flex justify-between border-t border-border pt-2.5">
+            <div>
+              <span className="text-fg-muted">Pet deposit · if travelling with pets</span>
+              <div className="text-[11px] text-fg-muted mt-0.5">refunded on check-out if no damage</div>
+            </div>
+            <span className="text-fg font-semibold">{formatThb(listing.petDeposit!)}</span>
+          </div>
+        )}
+        {/* UX-327: no scary "Due on move-in ฿71,000" grand total. A big number
+            at the request stage frightens tenants when nothing is owed yet.
+            We keep the individual monthly-rate (headline) and refundable-
+            deposit lines, but drop the combined total in favour of a neutral
+            reassurance. When dates conflict we say so instead. */}
+        {conflict ? (
+          <div className="border-t border-border pt-2.5">
+            <p className="text-fg-muted font-medium">
+              Move-in unavailable — choose another date
+            </p>
+            <p className="text-[11px] text-fg-muted mt-0.5">
+              These dates overlap an existing booking. Pick a later move-in
+              to continue.
+            </p>
+          </div>
+        ) : (
+          <div className="border-t border-border pt-2.5">
+            <p className="text-[11px] text-fg-muted">
+              Nothing to pay now. After the host approves, you'll settle the
+              first month{(listing.petDeposit ?? 0) > 0 && listing.petsAllowed !== false ? " + deposits" : " + deposit"} to confirm your move-in.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* CTA */}
       <Button
         className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-12 text-base font-semibold shadow-sm"
         disabled={!isAvailable || conflict}
-        onClick={() => onRequestBook(moveInStr, duration)}
+        onClick={() => onRequestBook(moveInStr, effDuration)}
       >
         Request to Book
       </Button>

@@ -10,6 +10,18 @@ import { SiamoLogo } from "@/components/layout/siamo-logo";
 const LINE_CLIENT_ID = import.meta.env.VITE_LINE_CLIENT_ID;
 const LINE_REDIRECT_URI = import.meta.env.VITE_LINE_REDIRECT_URI ?? `${window.location.origin}/line-callback`;
 
+// UX-356: a `?redirect=` captured from a previous session can point at a
+// role-scoped resource the freshly-signed-in user doesn't own (e.g. a tenant's
+// application URL when a host logs in) — landing them on "not found". Drop any
+// role-scoped deep link and route through /role-router (`/me`), which sends the
+// user to the correct portal for their actual role. Also guards against
+// open-redirects to external/protocol-relative URLs.
+function safeRedirect(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/me";
+  if (raw.startsWith("/me/guest") || raw.startsWith("/me/host")) return "/me";
+  return raw;
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +31,7 @@ export default function LoginPage() {
   const token = useAuthStore((s) => s.token);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/me/trips";
+  const redirectTo = safeRedirect(searchParams.get("redirect"));
 
   if (token) {
     navigate(redirectTo, { replace: true });

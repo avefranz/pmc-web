@@ -412,7 +412,7 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Последствия: пользователь может через self-booking манипулировать своими же показателями (occupancy, статистика), создавать фейк-конверсии, искажать рейтинг. Также — двусмысленность: что произойдёт, если он сам себе "approve" эту заявку?
   - Как должно: на детальной странице листинга вместо `Request to Book` показывать `Edit listing` / `Manage`, если viewer === owner. На бэке — 403 при создании booking где `tenantUserId === listing.ownerUserId`.
 
-- [ ] **UX-45. Меню аккаунта содержит дубликат: "My account" и "Account".**
+- [x] **UX-45. Меню аккаунта содержит дубликат: "My account" и "Account".**
   - Где: правый верхний avatar-меню (в режиме лендлорда).
   - Что: два пункта с почти одинаковым названием подряд. Куда ведёт каждый — непонятно.
   - Как должно: оставить один пункт ("Profile" + "Settings", или просто "Account").
@@ -517,7 +517,7 @@ Marina-аккаунт зарегистрирован заново, объект 
 
 ### Landlord cabinet (Marina)
 
-- [ ] **UX-157. `My properties` card: «Sarah Chen · Active tenant» — но Sarah pre-checkin (Confirmed, 22 дня до).**
+- [x] **UX-157. `My properties` card: «Sarah Chen · Active tenant» — но Sarah pre-checkin (Confirmed, 22 дня до).**
   - Где: `/me/host/properties`.
   - Что: status "Active tenant" — но Sarah ещё не въехала. "Active" = живёт сейчас. Marina путается: тенант реально живёт или ещё нет?
   - Как должно: `Confirmed · Move-in in 22 days`. Active — только после check-in date.
@@ -537,7 +537,7 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Что: Marina видит 2 заявки на Jan 15 - Mar 15 2027 в AWAITING YOUR RESPONSE — Liam (Pending) и сразу же ниже одобренный Mike в APPROVED. Marina может попытаться approve Liam → 500 (BUG-132). Никакого визуального indication «эти даты конфликтуют с уже подтверждённым Mike».
   - Как должно: после approve Mike — Liam'а карточка автоматически в `AUTO-DECLINED · Dates already booked`, с CTA «Suggest other dates» / `Notify guest`.
 
-- [ ] **UX-161. `Booking requests` — Approved секция захламляет inbox.**
+- [x] **UX-161. ✅ FIXED —  `Booking requests` — Approved секция захламляет inbox.**
   - Где: `/me/host/requests` → APPROVED.
   - Что: Mike Park + Sarah Chen лежат в APPROVED списке. Это уже стали бронированиями — должны жить в Reservations, не плодить дубли. Inbox теряет фокус.
   - Как должно: APPROVED секция collapsed по умолчанию, или показывает только за последние 7д, либо вообще убирается (есть Reservations).
@@ -552,7 +552,7 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Что: card показывает только Sarah Chen / даты / ฿35,000/mo / Move-in 15 Jun. Нет: contract signed, 6/6 paid, TM-30 pending. Marina вынуждена кликнуть чтобы понять полное состояние.
   - Как должно: under tenant name — chips `✓ Signed`, `✓ 6/6 paid`, `⚠ TM-30 pending` (или подобное).
 
-- [ ] **UX-164. `Reservations` Past tab — без preview какие там данные / есть ли вообще.**
+- [x] **UX-164. `Reservations` Past tab — без preview какие там данные / есть ли вообще.**
   - Где: `/me/host/bookings` → Past.
   - Что: tab без счётчика. Marina не знает, есть ли там что — кликает наугад.
   - Как должно: `Past · 0` или скрывать tab пока пусто.
@@ -639,7 +639,7 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Что: банер «TM-30 filing required · 1 of 1 foreign guest unreported. Thai immigration fine exposure: up to ฿2,000.» + 3 CTA: `Download TM-30 template`, `How to file`, `Open immigration portal ↗`. + «Each non-Thai guest needs a TM-30 receipt uploaded after you file.» + per-guest card.
   - Это хороший паттерн compliance-flow.
 
-- [ ] **🚨 UX-216. TM-30 red urgency банер показывается за 22 дня до check-in — преждевременная паника.**
+- [x] **🚨 UX-216. ✅ FIXED —  TM-30 red urgency банер показывается за 22 дня до check-in — преждевременная паника.**
   - Где: TM-30 filing banner.
   - Что: Sarah check-in 15 Jun (22 days from now). TM-30 filing required в течение 24h ПОСЛЕ arrival. Сейчас показывать «filing required · fine up to ฿2,000» — early panic.
   - Как должно: до check-in date — show neutral «TM-30 will be required within 24h of check-in (15 Jun). [Prepare template]» серым. После check-in (window opens) — red urgency.
@@ -658,6 +658,62 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Как должно: pill stays amber/neutral до явного review.
 
 - [ ] **UX-209. `Hosting · / Renting · 1` персистит над property-editor — для хоста, в работе с listing, режим-toggle не имеет смысла.**
+
+## Round 11 — Hypotheses + TM-30 flow 2026-05-26
+
+- [ ] **✅ TM-30 host UI верифицирован solid.**
+  - Где: `/me/host/bookings/:id` → Guests tab.
+  - Что отлично:
+    - Statefull banner: «You're fully compliant — TM-30 filed for all guests» / «1 of 1 filings on record. No action needed until a new guest arrives.» (compliant) vs red urgency (before filing)
+    - Per-guest card с full passport details (number/expiry/nationality/visa/DOB/Entry port)
+    - TM-30 row: `Filed 24 May 2026` badge + `View` + `Replace` buttons
+    - TM-30 FILING tile: «1/1 filed · Compliant» green
+    - Tab counter «Guests · 1 · 1/1 TM-30»
+  - Use as референс для compliance flows.
+
+- [x] **🚨 BUG-249. ✅ FRONTEND FIXED (upload disabled before check-in) — BACKEND still needed —  TM-30 можно filed 22 дня до check-in — нарушает Thai immigration law.**
+  - Где: `POST /api/bookings/{id}/guests/{guestId}/tm30/upload`.
+  - Что: Sarah check-in 15 Jun 2026. TM-30 filed 24 May 2026 (today, 22 days before). По Thai immigration rule TM-30 должен filing within 24h **после** arrival (не до).
+  - Как должно: backend reject upload пока `now < checkInDate`. Frontend disables «Upload TM-30 receipt» button или показывает «Available after check-in».
+
+### Hypotheses verified (running notes)
+
+- ✅ **H-01** Host видит «Awaiting payment» badge явно для Mike + Sarah's new booking в Reservations tab.
+- ⏳ **H-02** Auto-expire 3d — нельзя проверить без time-travel.
+- ✅ **H-03** Reject reason templates — recorded Round 5 (5 pre-canned + custom).
+- ⏳ **H-04** Expired application copy — нет реальных expired apps для проверки.
+- ✅ **H-05** Two tenants race — BUG-131 recorded.
+- ✅ **H-06** Listing видим на marketplace несмотря на confirmed booking. Booking widget сам блокирует conflicting dates.
+- ✅ **H-07** Cross-date conflict → «Use this date» pattern works.
+- ✅ **H-08** Cancellation refund boundaries — BUG-128 (netRefund ignores pre-paid rent).
+- ✅ **H-09** Early-exit penalty — BUG-128.
+
+7/9 закрыты, 2 нельзя проверить без специальной staging.
+
+## Round 10 — Adversarial 2026-05-26
+
+- [x] **BUG-245. ✅ FIXED —  Payment details: Account number принимает спецсимволы и unlimited length.**
+  - Где: Property wizard → Payment details → Account number.
+  - Что: `<input type="text" maxLength="-1">`. setNative `!@#$%^&*()_` сохраняется, 25-значное число сохраняется. Thai bank account numbers — 10 digits. Backend получит garbage.
+  - Как должно: `inputMode="numeric" pattern="\d{10,12}" maxLength={12}` + frontend strip non-digits на blur. Backend separate validation.
+
+- [ ] **UX-246. Payment details: warning «Fill in your bank details — without this, bookings stall at the payment step»** — отличный copy, использовать как референс для других finance fields.
+
+- [ ] **✅ Contact details fix verified**: LINE chip toggle → LINE ID required (*) появляется, value persists через toggle off/on, save blocked если пусто.
+
+- [ ] **✅ Payment details fix verified**: PromptPay убран полностью, только Bank section. Account name prefilled из user.fullName.
+
+- [ ] **UX-247. Photos upload: HEIC явно rejected — Thai iPhone users увидят friction.**
+  - Где: Property wizard → Photos section.
+  - Что: photos.tsx line 32: `if (/\.(heic|heif)$/i.test(name)) rejected.push({reason: "HEIC/HEIF not supported — export as JPEG"})`. iPhone с iOS 11+ default-saves фото в HEIC. Thai market = много iPhone users. Tenant-host workflow: «сфоткал → загрузить → нет, конвертируй» = drop-off.
+  - Как должно: либо frontend конвертирует HEIC→JPEG через `heic-to` / `libheif-js`, либо backend принимает HEIC и конвертирует (preferable — less bundle weight).
+
+- [ ] **UX-248. Photo upload: MIME-only validation bypassable.**
+  - Где: photos.tsx — `if (!ALLOWED_MIME.has(file.type))`.
+  - Что: `file.type` определяется браузером по extension. Файл `payload.pdf` переименованный в `photo.jpg` имеет `file.type = "image/jpeg"`. Frontend пропустит, backend должен sniff magic bytes.
+  - Как должно: backend проверяет actual file header bytes (PNG signature `89 50 4E 47`, JPEG `FF D8 FF`, etc.) перед сохранением. Frontend — best-effort defense.
+
+- [ ] **✅ Publish modal fix verified**: indigo→violet gradient hero + Rocket icon + «Ready to go live?» + «Set your availability — you can change it anytime». «Available from» date (min=today) + «Listed for» dropdown (1/2/3/6/12 months + Open-ended). Hint copy auto-explains. Cancel + «Go live 🚀» с loading state.
 
 ### Reject application modal
 
@@ -737,10 +793,11 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Что: top nav показывает только `Browse rentals`. Внутри страницы — нет breadcrumb / back-link. Если пользователь поделил URL — попадает в тупик.
   - Как должно: даже на empty hosting mode оставить breadcrumb `Hosting → Booking requests` или back-link.
 
-- [ ] **🚨 BUG-165. Security секция: НЕТ смены пароля, нет 2FA, нет active sessions.**
+- [x] **🚨 BUG-165. Security секция: НЕТ смены пароля, нет 2FA, нет active sessions.**
   - Где: `/me/profile?s=security`.
   - Что: единственный контент — `Email · used to sign in` + `Sign out`. **Нельзя сменить пароль через UI.** Если кто-то скомпрометировал учётку — пользователь беспомощен. На платформе где люди передают паспорта, банк-реквизиты, оплачивают ฿200k+ — отсутствие даже базового password change — production blocker.
   - Как должно: `Change password`, `Two-factor authentication`, `Active sessions / devices`, `Login history`, `Download my data`, `Delete account`.
+  - **FIX**: добавлена форма смены пароля в `SectionSecurity` (`profile.tsx`). Current + new + confirm поля, show/hide toggle, валидация длины и совпадения. LINE-only аккаунты видят информационное сообщение вместо формы. Вызов `POST /api/auth/change-password` через новый `useChangePassword` хук.
 
 - [ ] **BUG-166. Documents vault показывает «No documents yet» хотя контракт подписан.**
   - Где: `/me/profile?s=documents` (Marina, у которой подписан 6-мес контракт с Sarah).
@@ -757,10 +814,11 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Что: `Phone ✓` / `Passport ✗` — кликов нет, нужно догадаться идти в соответствующий раздел.
   - Как должно: clickable pill → go to that section.
 
-- [ ] **UX-169. Profile mode-tabs `Hosting · / Renting ·` persist на /me/profile.**
+- [x] **UX-169. Profile mode-tabs `Hosting · / Renting ·` persist на /me/profile.**
   - Где: header на всех /me/profile/*.
   - Что: tabs «Hosting · 1 / Renting · 1» — на странице settings бессмысленны, добавляют когнитивный шум.
   - Как должно: скрывать на settings.
+  - **FIX**: `isToggleHidden` в `topbar.tsx` уже содержал `pathname.startsWith("/me/profile") → true`. Было реализовано в предыдущей сессии.
 
 - [ ] **UX-170. `Hosting · 1 / Renting · 1` у Marina — что значит `Renting · 1`?**
   - Где: header (Marina, landlord one property, but Renting · 1).
@@ -799,6 +857,8 @@ Marina-аккаунт зарегистрирован заново, объект 
   - Как должно: на host-side booking detail — банер «✓ Early exit confirmed · Sarah moves out 15 Jul · Refund ฿245,000 processing» + Move-out card обновлён + Payments tab показывает Refund-запись. То же в Finance dashboard.
   - Почему важно: **catastrophic** — host физически не видит что отпустил тенанта, продолжает считать что Sarah остаётся до Dec 15, легко может пытаться требовать платежи которые она уже не должна, или сдавать те же даты ещё одному — двойное бронирование.
   - **Связано с BUG-134 / BE-33** — это та же проблема с другой стороны: booking entity не обновляется после Confirmed cancellation, поэтому ни tenant view, ни host view не отражают реальность.
+
+> **Round 12 (2026-05-26) вынесен в [BUG_TRACKER.md](BUG_TRACKER.md)** — единый файл для FE/BE/QA с детальными статусами и acceptance criteria. Сюда (LANDLORD_FLOW_QA) новые находки этого round'а НЕ добавлять.
 
 ## Что в [TENANT_FLOW_QA.md](TENANT_FLOW_QA.md)
 

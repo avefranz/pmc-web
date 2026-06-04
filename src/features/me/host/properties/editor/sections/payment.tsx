@@ -73,8 +73,14 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
         >
           <Input
             value={draft.paymentBankAccountNumber}
-            onChange={(e) => patch({ paymentBankAccountNumber: e.target.value })}
-            placeholder="123-4-56789-0"
+            onChange={(e) => {
+              // Strip non-digit characters (allow digits only — Thai bank accounts are numeric)
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 15);
+              patch({ paymentBankAccountNumber: digits });
+            }}
+            inputMode="numeric"
+            placeholder="1234567890"
+            maxLength={15}
             className={accountNumError ? "border-destructive" : ""}
           />
         </Field>

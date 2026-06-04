@@ -44,6 +44,22 @@ interface DatePickerProps {
   className?: string;
   disabled?: boolean;
   isDisabled?: (date: Date) => boolean;
+  // UX-335: which view to open on. Day-pickers (move-in etc.) keep "day";
+  // for date-of-birth / passport-expiry pass "year" so the year grid is the
+  // first thing shown — picking a 1990s birth year via month-by-month arrows
+  // was undiscoverable. The caption drill (year → month → day) still works.
+  startView?: View;
+  // UX-342: when there's no value yet, anchor the initial year/month/day view
+  // here instead of "today". DOB pickers pass ~1995 so the year grid opens on
+  // plausible birth years (1990s) rather than the current decade, sparing the
+  // user ~3 "previous decade" clicks. Ignored once a value is selected.
+  yearAnchor?: Date;
+  // UX-342 (reopened): the popover content portals to <body> at z-50, which sits
+  // BELOW custom modals rendered at z-[100] (e.g. the booking-request modal) — so
+  // the calendar opened behind the backdrop and day-clicks landed on the overlay,
+  // i.e. "the date never records". Inside such a modal, pass a higher z (e.g.
+  // "z-[200]") so the calendar floats above it. Default keeps z-50 for page use.
+  contentClassName?: string;
 }
 
 export function DatePicker({
@@ -53,20 +69,26 @@ export function DatePicker({
   className,
   disabled,
   isDisabled,
+  startView = "day",
+  yearAnchor,
+  contentClassName,
 }: DatePickerProps) {
   const selected = parseDate(value);
+  const fallbackAnchor = yearAnchor ?? new Date();
   const [open, setOpen] = React.useState(false);
-  const [view, setView] = React.useState<View>("day");
-  const [viewDate, setViewDate] = React.useState<Date>(selected ?? new Date());
-  const [yearBase, setYearBase] = React.useState(() => yearGridStart(getYear(selected ?? new Date())));
+  const [view, setView] = React.useState<View>(startView);
+  const [viewDate, setViewDate] = React.useState<Date>(selected ?? fallbackAnchor);
+  const [yearBase, setYearBase] = React.useState(() => yearGridStart(getYear(selected ?? fallbackAnchor)));
 
   function handleOpen(next: boolean) {
     if (!next) { setOpen(false); return; }
-    // Reset to day view on open, anchored to selected or today
-    const anchor = selected ?? new Date();
+    // Anchor to the selected date, the caller's yearAnchor, or today, then open
+    // on the configured view (UX-335: "year" for DOB/expiry; UX-342: yearAnchor
+    // so DOB opens on the 1990s instead of the current decade).
+    const anchor = selected ?? fallbackAnchor;
     setViewDate(anchor);
     setYearBase(yearGridStart(getYear(anchor)));
-    setView("day");
+    setView(startView);
     setOpen(true);
   }
 
@@ -118,13 +140,24 @@ export function DatePicker({
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
           align="start"
+          side="bottom"
           sideOffset={6}
+          // UX-306: explicit avoidCollisions + collisionPadding ensures the
+          // popover always lands in-viewport even when the trigger is at the
+          // bottom of a sticky sidebar (booking widget on listing detail).
+          // Without it, on short viewports the calendar opened below the
+          // fold and the host thought clicking "did nothing".
+          avoidCollisions
+          collisionPadding={12}
           className={cn(
             "z-50 w-[280px] rounded-xl border border-border/60 bg-popover p-4 shadow-xl",
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
             "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
             "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+            // UX-342: callers inside custom modals override z so the calendar
+            // floats above the modal backdrop instead of behind it.
+            contentClassName,
           )}
         >
           {/* ── DAY VIEW ── */}

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { useReferences } from "@/lib/hooks/use-references";
-import { useReferenceCities } from "@/lib/hooks/use-references";
-import { aiApi, type AiPropertyType } from "@/lib/api/ai.api";
+import { useReferenceCities, useAmenities } from "@/lib/hooks/use-references";
+import { aiApi, type AiPropertyType, type AiDescriptionStyle } from "@/lib/api/ai.api";
 import { cn } from "@/lib/utils/cn";
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field } from "../ui";
@@ -26,15 +27,30 @@ const AI_SHIMMER_STYLE = `
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+  @keyframes ai-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5), 0 4px 14px rgba(99, 102, 241, 0.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(168, 85, 247, 0),   0 4px 14px rgba(99, 102, 241, 0.4); }
+  }
+  .ai-cta-pulse { animation: ai-pulse 2.4s ease-in-out infinite; }
 `;
+
+const DESCRIPTION_STYLES: { id: AiDescriptionStyle; label: string; emoji: string }[] = [
+  { id: "Professional", label: "Professional", emoji: "🎩" },
+  { id: "Emotional",    label: "Emotional",    emoji: "💛" },
+  { id: "Playful",      label: "Playful",      emoji: "🎈" },
+];
 
 function TitleDialog({ draft, patch }: SectionDialogProps) {
   const { data: refs } = useReferences();
   const { data: cities } = useReferenceCities();
   const [variation, setVariation] = useState(0);
-  const [genTitle, setGenTitle] = useState(false);
+  const [genTitles, setGenTitles] = useState(false);
+  const [titleSuggestions, setTitleSuggestions] = useState<string[]>([]);
   const [genDesc, setGenDesc] = useState(false);
+  const [descStyle, setDescStyle] = useState<AiDescriptionStyle>("Professional");
+  const [descNonce, setDescNonce] = useState(0);
   const suggestSeq = useRef(0);
+  const descSeq = useRef(0);
   const userEditedTitle = useRef(false);
 
   const propTypeName =
@@ -45,107 +61,106 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
 
   const cityName = cities?.find((c) => c.id === draft.cityId)?.name?.en ?? "";
 
+  // UX-324: the AI payload's `propertyType` must come from the *building
+  // category* (House / Villa / Condo / Townhouse), NOT the unit type
+  // (Entire place / Private room…) — the latter never matches the
+  // AiPropertyType enum, so every listing was sent as "Other" and the prose
+  // read "…3-bedroom Other property…". Map the chosen category onto the enum.
+  const propCategory = refs?.propertyCategories?.find((c) => c.id === draft.propertyCategoryId);
+  const propCategoryKey = (
+    propCategory?.code ??
+    (typeof propCategory?.name === "string" ? propCategory?.name : propCategory?.name?.en) ??
+    ""
+  ).toLowerCase();
+  const aiPropertyType: AiPropertyType =
+    propCategoryKey.includes("villa") ? "Villa"
+    : propCategoryKey.includes("townhouse") ? "Townhouse"
+    : /house|cottage|bungalow/.test(propCategoryKey) ? "House"
+    : /condo|apart/.test(propCategoryKey) ? "Condo"
+    : draft.bedrooms === 0 ? "Studio"
+    : "Other";
+
+  // UX-324: feed the neighbourhood (subdistrict / district) into the
+  // description so the BE centres it on the area, not the city the tenant
+  // already picked. Sent as discrete fields the BE expects (not folded into
+  // `area`). Title stays city-only — district names transliterate awkwardly
+  // into short headlines.
+  // UX-347: the municipal district (e.g. "Mueang Chiang Mai") is far too broad
+  // to be useful — a listing on Nimman shouldn't be described as "the Mueang
+  // Chiang Mai District". When we have the narrower subdistrict/tambon, send
+  // ONLY that as the locality and drop the municipal district, so the AI
+  // centres on the real neighbourhood. Fall back to the district only when no
+  // subdistrict is set. (BE should ideally map subdistrict → known landmark.)
+  const descSubdistrict = draft.subdistrict?.trim() || undefined;
+  const descDistrict = descSubdistrict ? undefined : (draft.district?.trim() || undefined);
+
+  // UX-347: ground the AI description in the host's REAL amenities instead of
+  // letting the model invent features (the owner saw fabricated "garden /
+  // parking / built-in wardrobes" on a listing that declared none). We resolve
+  // the selected amenityIds to their names and pass them as `features`; the BE
+  // must describe only these and not embellish with unverified amenities.
+  const { data: allAmenities } = useAmenities();
+  const selectedIds = new Set(draft.amenityIds.map((id) => String(id)));
+  const selectedFeatures: string[] = (allAmenities ?? [])
+    .filter((a) => selectedIds.has(String(a.id)))
+    .map((a) => a.name)
+    .filter(Boolean);
+
   const canGenerate = !!draft.assetTypeId && draft.bedrooms !== null && cityName.length > 0;
 
-  async function generateTitle() {
+  // BUG-315: accept an explicit variation. The Regenerate handler used to call
+  // setVariation(next) then generateTitles(), but generateTitles closed over
+  // the STALE `variation` state (setState is async) — so every Regenerate sent
+  // the same variation and the titles never changed. Passing the next value
+  // directly fixes it.
+  async function generateTitles(variationOverride?: number) {
     if (!canGenerate || !propTypeName) return;
     const seq = ++suggestSeq.current;
-    setGenTitle(true);
+    setGenTitles(true);
     try {
       const resp = await aiApi.suggestListingTitle({
-        propertyType: propTypeName as AiPropertyType,
+        propertyType: aiPropertyType,
         area: cityName,
         bedrooms: draft.bedrooms!,
-        variation,
+        variation: variationOverride ?? variation,
       });
       if (seq !== suggestSeq.current) return;
-      // Never overwrite a title the user is actively editing or has typed.
-      if (userEditedTitle.current || _titleFocused) return;
-      patch({ title: resp.title.slice(0, TITLE_MAX) });
+      const trimmed = (resp.titles ?? []).map((t) => t.slice(0, TITLE_MAX)).filter(Boolean);
+      setTitleSuggestions(trimmed);
+      // First load: pre-fill the title with the first suggestion so the user
+      // sees something concrete immediately (matches old "auto-suggest on
+      // open" behaviour). Don't overwrite a title they've already touched.
+      if (!userEditedTitle.current && !_titleFocused && !draft.title.trim()) {
+        if (trimmed[0]) patch({ title: trimmed[0] });
+      }
     } finally {
-      if (seq === suggestSeq.current) setGenTitle(false);
+      if (seq === suggestSeq.current) setGenTitles(false);
     }
   }
 
-  // Build a structured, fact-based Airbnb-style description from the draft.
-  // Uses ONLY data the landlord entered — no AI features endpoint (avoids
-  // hallucinations like "mountain view" / "corner unit") and no exact street
-  // address (privacy: exact address is shared after booking confirmation).
-  async function generateDescription() {
+  async function generateDescription(style: AiDescriptionStyle, nonceBump = false) {
     if (!canGenerate || !propTypeName) return;
+    const seq = ++descSeq.current;
     setGenDesc(true);
+    const nonce = nonceBump ? descNonce + 1 : descNonce;
+    if (nonceBump) setDescNonce(nonce);
+    setDescStyle(style);
     try {
-      const bedLabel  = draft.bedrooms === 0 ? "studio" : `${draft.bedrooms}-bedroom`;
-      const typeLower = propTypeName.toLowerCase();
-
-      const furnishedLabel =
-        draft.furnished === "Fully"       ? "fully furnished" :
-        draft.furnished === "Semi"        ? "partially furnished" :
-        draft.furnished === "Unfurnished" ? "unfurnished" : null;
-
-      const petsLabel =
-        draft.petsExplicitlySet && draft.petsAllowed ? "pet-friendly" : null;
-
-      const aboutTags = [furnishedLabel, petsLabel].filter(Boolean).join(" and ");
-      const about = `A welcoming ${bedLabel} ${typeLower} in ${cityName}${aboutTags ? ", " + aboutTags : ""}. Ideal for monthly stays.`;
-
-      // ── The space — facts only
-      const space: string[] = [];
-      const bedNum  = draft.bedrooms ?? 0;
-      const bathNum = draft.bathrooms;
-      if (bedNum > 0 || bathNum > 0) {
-        const bedPart  = bedNum === 0 ? "Studio" : `${bedNum} ${bedNum === 1 ? "bedroom" : "bedrooms"}`;
-        const bathPart = `${bathNum} ${bathNum === 1 ? "bathroom" : "bathrooms"}`;
-        space.push(`${bedPart} · ${bathPart}`);
-      }
-      if (draft.maxOccupancy > 0) space.push(`Sleeps up to ${draft.maxOccupancy}`);
-      if (draft.areaSqm)          space.push(`${draft.areaSqm} m² of living space`);
-      if (draft.floor !== null && draft.totalFloors) {
-        space.push(`Floor ${draft.floor} of ${draft.totalFloors}`);
-      }
-      if (furnishedLabel) space.push(furnishedLabel.charAt(0).toUpperCase() + furnishedLabel.slice(1));
-      if (draft.parkingSpaces > 0) {
-        const incl = draft.parkingIncluded ? " (included in rent)" : "";
-        space.push(`Parking: ${draft.parkingSpaces} space${draft.parkingSpaces > 1 ? "s" : ""}${incl}`);
-      }
-
-      // ── Guest access — method only; never expose codes/passwords
-      const checkInLabel: Record<string, string> = {
-        KeyHandover: "Key handover at meeting",
-        Smartlock:   "Smart lock access",
-        Keybox:      "Lockbox pickup",
-        Reception:   "Doorman / building reception",
-        Other:       "Hosted access",
-      };
-      const guestAccess = draft.checkInMethod && checkInLabel[draft.checkInMethod]
-        ? `${checkInLabel[draft.checkInMethod]}. Full details shared once your booking is confirmed.`
-        : null;
-
-      // ── Other things to note — rules + pets
-      const notes: string[] = [];
-      const ruleLines = draft.houseRules.trim().split("\n").map((l) => l.trim()).filter(Boolean);
-      notes.push(...ruleLines);
-      if (draft.petsExplicitlySet && !ruleLines.some((r) => /pet/i.test(r))) {
-        notes.push(draft.petsAllowed ? "Pets welcome" : "No pets allowed");
-      }
-
-      // Assemble markdown
-      const parts: string[] = [
-        "## About the place",
-        about,
-      ];
-      if (space.length) {
-        parts.push("", "## The space", ...space.map((s) => `- ${s}`));
-      }
-      if (guestAccess) {
-        parts.push("", "## Guest access", guestAccess);
-      }
-      if (notes.length) {
-        parts.push("", "## Other things to note", ...notes.map((n) => `- ${n}`));
-      }
-      patch({ description: parts.join("\n") });
+      const resp = await aiApi.suggestListingDescription({
+        propertyType: aiPropertyType,
+        area: cityName,
+        district: descDistrict,
+        subdistrict: descSubdistrict,
+        bedrooms: draft.bedrooms!,
+        // UX-347: only the host's real amenities — keeps the prose truthful.
+        features: selectedFeatures.length ? selectedFeatures : undefined,
+        style,
+        nonce,
+      });
+      if (seq !== descSeq.current) return;
+      patch({ description: resp.description });
     } finally {
-      setGenDesc(false);
+      if (seq === descSeq.current) setGenDesc(false);
     }
   }
 
@@ -153,10 +168,12 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
   useEffect(() => {
     if (draft.title.trim().length > 0) return;
     if (!canGenerate) return;
-    const t = setTimeout(() => generateTitle(), 200);
+    const t = setTimeout(() => generateTitles(), 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const hasDescription = draft.description.trim().length > 0;
 
   return (
     <div>
@@ -167,15 +184,15 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
         required
         hint={
           canGenerate
-            ? "We drafted this from your details — edit anything you like."
+            ? "Tap a chip to pick a draft — edit anything you like."
             : "Fill in property type, bedrooms and location first to enable AI suggestions."
         }
       >
         <div className="flex items-center justify-between mb-1.5">
           <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold", canGenerate ? "ai-shimmer-title" : "text-fg-muted")}>
-            {genTitle ? (
+            {genTitles ? (
               <>
-                <Loader2 size={11} className="animate-spin" /> AI is drafting…
+                <Loader2 size={11} className="animate-spin" /> AI is drafting 3 options…
               </>
             ) : (
               <>
@@ -185,17 +202,46 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
           </span>
           <button
             type="button"
-            disabled={!canGenerate || genTitle}
+            disabled={!canGenerate || genTitles}
             onClick={() => {
               const next = variation + 1;
               setVariation(next);
-              generateTitle();
+              generateTitles(next);
             }}
             className="text-[11px] text-fg-muted hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
           >
-            <RefreshCw size={10} /> try another
+            <RefreshCw size={10} /> regenerate
           </button>
         </div>
+
+        {/* UX-257: 3-chip picker — Location / Action / Lifestyle shapes. */}
+        {titleSuggestions.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {titleSuggestions.map((t, i) => {
+              const selected = t === draft.title;
+              return (
+                <button
+                  key={`${t}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    userEditedTitle.current = false;
+                    patch({ title: t });
+                  }}
+                  className={cn(
+                    "text-left text-xs rounded-full border px-3 py-1.5 transition-colors max-w-full truncate",
+                    selected
+                      ? "bg-indigo-500 border-indigo-500 text-white shadow-[0_4px_14px_rgba(99,102,241,0.35)]"
+                      : "bg-bg-card border-border text-fg hover:border-indigo-300 hover:bg-indigo-50/40 dark:hover:bg-indigo-500/10",
+                  )}
+                  title={t}
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="relative">
           <Input
             value={draft.title}
@@ -222,34 +268,92 @@ function TitleDialog({ draft, patch }: SectionDialogProps) {
 
       <Field
         label="Description"
-        hint="What makes your place special — neighbourhood, views, transport, what's near."
+        hint="Tap “Write with AI” to draft 4 short paragraphs you can then tweak — space, neighbourhood, amenities, who it's for."
       >
-        <div className="flex items-center justify-between mb-1.5">
-          <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold", canGenerate ? "ai-shimmer-title" : "text-fg-muted")}>
-            {genDesc ? (
-              <>
-                <Loader2 size={11} className="animate-spin" /> Drafting…
-              </>
-            ) : (
-              <>
-                <Sparkles size={11} /> AI-assisted
-              </>
+        {/* UX-258: Prominent CTA. Pulses while the field is empty so first-time
+            hosts notice it. After generation the CTA collapses into a row of
+            style pills + Regenerate. */}
+        {!hasDescription ? (
+          <div className="rounded-2xl border border-dashed border-indigo-300/60 bg-gradient-to-br from-indigo-50/60 via-violet-50/40 to-indigo-50/60 dark:from-indigo-500/10 dark:via-violet-500/10 dark:to-indigo-500/10 p-5 mb-2 flex flex-col items-center text-center">
+            <p className="text-sm font-medium text-fg max-w-md mb-3">
+              Start with a draft — we'll write a Space / Neighbourhood / Amenities / Perfect-for breakdown from your details, then you edit.
+            </p>
+            <Button
+              type="button"
+              disabled={!canGenerate || genDesc}
+              onClick={() => generateDescription(descStyle, false)}
+              className={cn(
+                "h-11 px-5 font-semibold rounded-full text-white border-0",
+                "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500",
+                !genDesc && canGenerate && "ai-cta-pulse",
+              )}
+            >
+              {genDesc ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Drafting…
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <Wand2 size={14} /> Write with AI ✨
+                </span>
+              )}
+            </Button>
+            {!canGenerate && (
+              <p className="text-[11px] text-fg-muted mt-2">
+                Fill property type, bedrooms and location first.
+              </p>
             )}
-          </span>
-          <button
-            type="button"
-            disabled={!canGenerate || genDesc}
-            onClick={generateDescription}
-            className="text-[11px] text-fg-muted hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-          >
-            <Sparkles size={10} /> {draft.description ? "rewrite" : "draft for me"}
-          </button>
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold mr-1", canGenerate ? "ai-shimmer-title" : "text-fg-muted")}>
+              {genDesc ? (
+                <>
+                  <Loader2 size={11} className="animate-spin" /> Rewriting…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={11} /> Tone
+                </>
+              )}
+            </span>
+            {DESCRIPTION_STYLES.map((s) => {
+              const active = s.id === descStyle;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={!canGenerate || genDesc}
+                  onClick={() => generateDescription(s.id, true)}
+                  className={cn(
+                    "text-[11px] font-semibold rounded-full px-3 py-1 border transition-colors",
+                    active
+                      ? "bg-indigo-500 border-indigo-500 text-white shadow-[0_3px_10px_rgba(99,102,241,0.35)]"
+                      : "bg-bg-card border-border text-fg hover:border-indigo-300",
+                    (!canGenerate || genDesc) && "opacity-50 cursor-not-allowed",
+                  )}
+                >
+                  <span className="mr-1">{s.emoji}</span>
+                  {s.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              disabled={!canGenerate || genDesc}
+              onClick={() => generateDescription(descStyle, true)}
+              className="ml-auto text-[11px] text-fg-muted hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+            >
+              <RefreshCw size={10} /> regenerate
+            </button>
+          </div>
+        )}
+
         <Textarea
           value={draft.description}
           onChange={(e) => patch({ description: e.target.value })}
-          rows={6}
-          placeholder="Describe what makes your place special…"
+          rows={8}
+          placeholder={hasDescription ? "" : "Or write your own from scratch…"}
         />
       </Field>
     </div>

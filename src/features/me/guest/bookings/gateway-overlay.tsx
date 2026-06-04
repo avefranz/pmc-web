@@ -7,7 +7,7 @@ type GatewayStep = "select" | "processing" | "success";
 
 export function GatewayOverlay({
   amount,
-  promptPayId,
+  promptPayId: _promptPayId,
   onSuccess,
   onClose,
 }: {

@@ -382,7 +382,7 @@ export function HostBookingsPage() {
             </span>
           </TabsTrigger>
           <TabsTrigger value="past">
-            Past{past.length > 0 ? ` (${past.length})` : ""}
+            {`Past · ${past.length}`}
           </TabsTrigger>
         </TabsList>
 

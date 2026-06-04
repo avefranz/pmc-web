@@ -309,6 +309,8 @@ export function PropertyDetailPage() {
   const [publishStartDate, setPublishStartDate] = useState("");
   const [publishEndDate, setPublishEndDate] = useState("");
   const [publishDurationMonths, setPublishDurationMonths] = useState("");
+  // UX-260: celebration state — after publish, dialog flips to a confetti splash before closing.
+  const [publishCelebrate, setPublishCelebrate] = useState(false);
 
   const isLongTerm = listing?.rentalType === RentalType.LongTerm;
 
@@ -331,8 +333,14 @@ export function PropertyDetailPage() {
     try {
       await listingsApi.update(listing.id, { startDate: publishStartDate, endDate: computedEndDate });
       await publishListing.mutateAsync();
-      toast.success("Listing published");
-      setPublishOpen(false);
+      // UX-260: celebration splash for 1.6s, then close. This is the emotional peak of
+      // the create-property flow — should feel like a launch, not "another save".
+      setPublishCelebrate(true);
+      toast.success("🚀 Live! Your listing is in front of tenants right now.");
+      setTimeout(() => {
+        setPublishCelebrate(false);
+        setPublishOpen(false);
+      }, 1600);
     } catch { toast.error("Failed to publish listing"); }
   }
 
@@ -419,7 +427,11 @@ export function PropertyDetailPage() {
       await deleteAsset.mutateAsync(id!);
       toast.success("Property deleted");
       navigate("/me/host/properties", { replace: true });
-    } catch { toast.error("Failed to delete"); setDeleteOpen(false); }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? "Failed to delete");
+      setDeleteOpen(false);
+    }
   }
 
   if (isLoading) {
@@ -1271,7 +1283,7 @@ export function PropertyDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
+      <Dialog open={publishOpen} onOpenChange={(o) => { if (!publishCelebrate) setPublishOpen(o); }}>
         <DialogContent className="max-w-[460px] overflow-hidden p-0 gap-0 border-0 rounded-2xl shadow-2xl">
           <style>{`
             @keyframes pub-float {
@@ -1292,7 +1304,48 @@ export function PropertyDetailPage() {
               0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,.55); }
               50% { box-shadow: 0 0 0 14px rgba(139,92,246,0); }
             }
+            @keyframes pub-confetti {
+              0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(420px) rotate(720deg); opacity: 0; }
+            }
+            @keyframes pub-burst {
+              0% { transform: scale(.4); opacity: 0; }
+              40% { transform: scale(1.25); opacity: 1; }
+              100% { transform: scale(1); opacity: 1; }
+            }
           `}</style>
+
+          {publishCelebrate && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center text-center px-8"
+              style={{ background: "linear-gradient(160deg,#0f0c29 0%,#302b63 55%,#24243e 100%)" }}
+            >
+              {Array.from({ length: 28 }).map((_, i) => {
+                const colors = ["#f59e0b","#10b981","#6366f1","#f43f5e","#06b6d4","#a78bfa","#fb923c","#34d399"];
+                const c = colors[i % colors.length];
+                const left = (i * 13.7) % 100;
+                const delay = (i % 7) * 0.08;
+                const dur = 1.4 + ((i * 0.17) % 0.8);
+                return (
+                  <span key={i}
+                    style={{
+                      position: "absolute",
+                      top: -8,
+                      left: `${left}%`,
+                      width: 7, height: 11,
+                      background: c,
+                      borderRadius: 2,
+                      animation: `pub-confetti ${dur}s linear ${delay}s forwards`,
+                    }}
+                  />
+                );
+              })}
+              <div style={{ fontSize: 72, animation: "pub-burst .6s cubic-bezier(.34,1.56,.64,1) both" }}>🎉</div>
+              <p className="mt-3 text-white font-extrabold text-xl">You're live!</p>
+              <p className="mt-1 text-sm" style={{ color: "rgba(255,255,255,.7)" }}>
+                Tenants can see your place starting now.
+              </p>
+            </div>
+          )}
 
           {/* ── Dark hero ── */}
           <div className="relative overflow-hidden px-8 pt-10 pb-8 text-center" style={{ background: "linear-gradient(145deg,#0f0c29 0%,#302b63 55%,#24243e 100%)" }}>
@@ -1420,6 +1473,39 @@ export function PropertyDetailPage() {
               <div>
                 <p className="text-[11px] font-bold text-fg-muted uppercase tracking-widest mb-1.5">Available until</p>
                 <DatePicker value={publishEndDate} onChange={setPublishEndDate} />
+              </div>
+            )}
+
+            {/* UX-260: timeline preview — shows the move-in window the host is committing to */}
+            {publishStartDate && computedEndDate && (
+              <div className="rounded-xl border border-border bg-bg-subtle/60 px-3.5 py-3 space-y-1.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted">Move-in window</p>
+                <p className="text-sm text-fg leading-snug">
+                  Tenants can request <strong>move-in between {formatDate(publishStartDate)}</strong> and{" "}
+                  <strong>{formatDate(computedEndDate)}</strong>.
+                </p>
+                {(() => {
+                  const months = isLongTerm && publishDurationMonths
+                    ? parseInt(publishDurationMonths)
+                    : Math.max(1, Math.round(
+                        (new Date(computedEndDate).getTime() - new Date(publishStartDate).getTime())
+                        / (30 * 86_400_000),
+                      ));
+                  return (
+                    <p className="text-xs text-fg-muted">
+                      {months} month{months === 1 ? "" : "s"} window
+                      {months >= 6 && <span className="ml-1 text-success">· listings with 6+ months see 3× more requests</span>}
+                    </p>
+                  );
+                })()}
+              </div>
+            )}
+            {publishStartDate && isLongTerm && !publishDurationMonths && (
+              <div className="rounded-xl border border-border bg-bg-subtle/60 px-3.5 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-1">Move-in window</p>
+                <p className="text-sm text-fg leading-snug">
+                  Tenants can request move-in from <strong>{formatDate(publishStartDate)}</strong> onward — no end date set.
+                </p>
               </div>
             )}
           </div>

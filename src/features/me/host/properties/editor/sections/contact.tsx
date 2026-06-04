@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ContactChannel } from "@/lib/types";
 import type { SectionDef, SectionDialogProps } from "../types";
-import { ChipGroup, Field } from "../ui";
+import { Field } from "../ui";
 
 const CHANNEL_OPTIONS: { value: ContactChannel; label: string }[] = [
   { value: "Call", label: "📞 Call" },
@@ -16,6 +16,18 @@ const CHANNEL_OPTIONS: { value: ContactChannel; label: string }[] = [
 const COUNTRY_CODES = ["+66", "+7", "+1", "+44", "+49", "+33", "+81", "+82", "+86", "+91"];
 
 function ContactDialog({ draft, patch }: SectionDialogProps) {
+  // BUG-300: explicit channel toggle so the section completion picks up the
+  // change deterministically. The old code relied on the multi-select
+  // ChipGroup's onChange wrapper — under fast double-clicks the spread of
+  // the previous array could overlap the next render's read, leaving the
+  // set looking empty after a couple of toggles. This handler always
+  // derives from the latest draft.contactChannels.
+  function toggleChannel(ch: ContactChannel) {
+    const cur = draft.contactChannels ?? [];
+    const next = cur.includes(ch) ? cur.filter((c) => c !== ch) : [...cur, ch];
+    patch({ contactChannels: next });
+  }
+
   return (
     <div>
       <Field
@@ -48,13 +60,39 @@ function ContactDialog({ draft, patch }: SectionDialogProps) {
         </div>
       </Field>
 
-      <Field label="Available on" required hint="Which apps tenants can use to reach you.">
-        <ChipGroup
-          multi
-          value={draft.contactChannels}
-          onChange={(v) => patch({ contactChannels: v as ContactChannel[] })}
-          options={CHANNEL_OPTIONS}
-        />
+      <Field
+        label="Available on"
+        required
+        hint={
+          draft.contactChannels.length === 0
+            ? "Tap one or more channels — tenants will see these in their booking."
+            : `${draft.contactChannels.length} selected · tap again to remove.`
+        }
+      >
+        {/* BUG-300: inline pills (not ChipGroup) so each button has a clear
+            aria-pressed and a generous hit area. Helps both QA scripts and
+            mobile thumbs land the tap. */}
+        <div className="flex flex-wrap gap-2">
+          {CHANNEL_OPTIONS.map((opt) => {
+            const active = draft.contactChannels.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleChannel(opt.value)}
+                className={
+                  "px-3.5 py-2 rounded-full text-xs font-medium border transition-all duration-150 select-none " +
+                  (active
+                    ? "border-fg bg-fg text-bg-card"
+                    : "border-border text-fg hover:border-fg-subtle")
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </Field>
 
       {draft.contactChannels.includes("Line") && (

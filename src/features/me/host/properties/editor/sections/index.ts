@@ -17,6 +17,7 @@ import { rulesSection } from "./rules";
 import { petsSection } from "./pets";
 import { cancelSection } from "./cancel";
 import { utilitiesSection } from "./utilities";
+import { utilityAccountsSection } from "./utility-accounts";
 import { amenitiesSection } from "./amenities";
 import { contactSection } from "./contact";
 import { paymentSection } from "./payment";
@@ -31,6 +32,7 @@ export const SECTIONS: SectionDef[] = [
   petsSection,
   cancelSection,
   utilitiesSection,
+  utilityAccountsSection,
   amenitiesSection,
   contactSection,
   paymentSection,

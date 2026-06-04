@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { profileApi } from "../api/profile.api";
 import { tm30TenantApi } from "../api/tm30-tenant.api";
-import type { UpdateProfileRequest, UserProfileDto } from "../types";
+import type { UpdateProfileRequest, UpdateLandlordIdentityRequest } from "../types";
 
 const keys = {
   profile: ["profile"] as const,
@@ -24,6 +24,18 @@ export const useUpdateProfile = () => {
     mutationFn: (data: UpdateProfileRequest) => profileApi.update(data),
     onSuccess: () => {
       // Simple invalidate — backend now returns the full profile including payment fields.
+      qc.invalidateQueries({ queryKey: keys.profile });
+    },
+  });
+};
+
+// BUG-267: save the landlord identity snapshot, then refresh the profile so
+// the signing page sees `landlordIdentity` populated.
+export const useUpdateLandlordIdentity = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateLandlordIdentityRequest) => profileApi.updateLandlordIdentity(data),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.profile });
     },
   });

@@ -127,24 +127,28 @@ export default function App() {
         <Route path="/me/trips" element={<Navigate to="/me/guest/bookings" replace />} />
         <Route path="/me/trips/:id" element={<TripDetailRedirect />} />
 
-        {/* Host context */}
-        <Route path="/me/host" element={<HostHomePage />} />
+        {/* Property editor — open to any logged-in user so they can create their first property */}
         <Route path="/me/host/properties" element={<PropertiesListPage />} />
         <Route path="/me/host/properties/new" element={<PropertyEditorPage />} />
         <Route path="/me/host/properties/:id" element={<PropertyEditorPage />} />
-        <Route path="/me/host/requests" element={<HostRequestsPage />} />
-        <Route path="/me/host/requests/:id" element={<HostRequestDetailPage />} />
-        <Route path="/me/host/bookings" element={<HostBookingsPage />} />
-        <Route path="/me/host/bookings/new" element={<CreateBookingPage />} />
-        <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
-        <Route path="/me/host/finance" element={<FinancePage />} />
-        <Route path="/me/host/settings/payment" element={<PaymentSettingsPage />} />
-        <Route path="/me/host/settings/contact" element={<ContactSettingsPage />} />
-        <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
-        <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
-          <Route path="/me/host/managed" element={<ManagedListPage />} />
-          <Route path="/me/host/managed/invite" element={<InviteLandlordPage />} />
+
+        {/* All other host context — landlord required (BUG-116: tenant redirect) */}
+        <Route element={<AuthGuard require="landlord"><Outlet /></AuthGuard>}>
+          <Route path="/me/host" element={<HostHomePage />} />
+          <Route path="/me/host/requests" element={<HostRequestsPage />} />
+          <Route path="/me/host/requests/:id" element={<HostRequestDetailPage />} />
+          <Route path="/me/host/bookings" element={<HostBookingsPage />} />
+          <Route path="/me/host/bookings/new" element={<CreateBookingPage />} />
+          <Route path="/me/host/bookings/:id" element={<BookingDetailPage />} />
+          <Route path="/me/host/finance" element={<FinancePage />} />
+          <Route path="/me/host/settings/payment" element={<PaymentSettingsPage />} />
+          <Route path="/me/host/settings/contact" element={<ContactSettingsPage />} />
+          <Route element={<AuthGuard require="manager"><Outlet /></AuthGuard>}>
+            <Route path="/me/host/managed" element={<ManagedListPage />} />
+            <Route path="/me/host/managed/invite" element={<InviteLandlordPage />} />
+          </Route>
         </Route>
+        <Route path="/me/wishlist" element={<ComingSoon label="Wishlist" />} />
       </Route>
 
       {/* Admin */}

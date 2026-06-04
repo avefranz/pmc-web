@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera, XCircle, Users } from "lucide-react";
+import { ArrowLeft, FileText, PenLine, CheckCircle2, AlertCircle, Shield, Camera, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { openAuthPdf } from "@/lib/utils/open-auth-pdf";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +10,29 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VisaType } from "@/lib/types/enums";
+import { VISA_LABELS } from "@/lib/utils/visa-labels";
 import { SignatureCanvas } from "@/components/shared/signature-canvas";
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
-import { DateInput } from "@/components/ui/date-input";
+import { DatePicker } from "@/components/ui/date-picker";
+
+// UX-321: real calendar pickers (not free-form dd/mm/yyyy) with sane bounds.
+// BUG-345: the tenant must be ≥18 (BE rejects younger with a 400 the user
+// couldn't previously see). Disable any DOB more recent than 18 years ago so the
+// invalid value can't be picked in the first place; inline error covers the rest.
+const eighteenYearsAgo = () => {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  t.setFullYear(t.getFullYear() - 18);
+  return t;
+};
+const DOB_UNDER_18 = (d: Date) => d > eighteenYearsAgo();
+// UX-342: open the DOB year-grid on the 1990s, not the current decade.
+const DOB_ANCHOR = new Date(1995, 0, 1);
+const EXPIRY_NOT_PAST = (d: Date) => {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return d < t;
+};
 import { NationalityInput } from "@/components/ui/nationality-input";
 import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport } from "@/lib/hooks/use-bookings";
 import { useMyProfile } from "@/lib/hooks/use-profile";
@@ -39,27 +60,77 @@ export function GuestContractSignPage() {
   const [passportDob, setPassportDob] = useState("");
   const [passportExpiry, setPassportExpiry] = useState("");
   const [passportVisaType, setPassportVisaType] = useState("");
-  const [passportEntryDate, setPassportEntryDate] = useState("");
-  const [passportEntryPort, setPassportEntryPort] = useState("");
+  // BUG-345: field-level errors from the BE (e.g. dateOfBirth "must be ≥18"),
+  // rendered inline under the offending input instead of only as a banner.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // UX-321: signal that the identity fields below were auto-filled from the
+  // user's profile (not asked again from scratch). Fields stay editable.
+  const [prefilledFromProfile, setPrefilledFromProfile] = useState(false);
 
-  // UX-101: pre-populate passport fields from user profile once loaded.
-  // Only applied once so subsequent manual edits are not overwritten.
+  // UX-101 / BUG-272: pre-populate passport fields from user profile once loaded.
+  // Only applied once so subsequent manual edits are not overwritten. Empty
+  // values in profile still write through "" so the input renders empty rather
+  // than uncontrolled — keeps the form deterministic.
   const profileApplied = useRef(false);
   useEffect(() => {
     if (!profile || profileApplied.current) return;
     profileApplied.current = true;
+    // UX-321: did the profile actually carry any identity data we can reuse?
+    // If so, show the "pre-filled from your profile" hint so the user knows
+    // they aren't being asked to re-enter — they just verify/edit.
+    const anyPrefilled = !!(
+      profile.firstName || profile.lastName || profile.nationality ||
+      profile.dateOfBirth || profile.passportNumber || profile.passportExpiry
+    );
     /* eslint-disable react-hooks/set-state-in-effect */
-    if (profile.firstName) setPassportFirstName(profile.firstName);
-    if (profile.lastName) setPassportLastName(profile.lastName);
-    if (profile.nationality) setPassportNationality(profile.nationality);
-    if (profile.dateOfBirth) setPassportDob(profile.dateOfBirth);
-    if (profile.passportNumber) setPassportNumber(profile.passportNumber);
-    if (profile.passportExpiry) setPassportExpiry(profile.passportExpiry);
+    setPrefilledFromProfile(anyPrefilled);
+    setPassportFirstName(profile.firstName ?? "");
+    setPassportLastName(profile.lastName ?? "");
+    setPassportNationality(profile.nationality ?? "");
+    setPassportDob(profile.dateOfBirth ?? "");
+    setPassportNumber(profile.passportNumber ?? "");
+    setPassportExpiry(profile.passportExpiry ?? "");
     if (profile.visaType) setPassportVisaType(profile.visaType);
-    if (profile.lastEntryDate) setPassportEntryDate(profile.lastEntryDate);
-    if (profile.lastEntryPort) setPassportEntryPort(profile.lastEntryPort);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [profile]);
+
+  // BUG-363: visa type (and a few other identity fields) is captured at booking
+  // time and stored on the booking-guest record, NOT the user profile — so the
+  // profile pre-fill above leaves "Visa type" empty even though the tenant
+  // already entered it. Backfill from the main guest record for any field the
+  // profile didn't already provide, so identity is pre-filled from a single
+  // effective source (profile first, booking-guest as fallback).
+  const guestApplied = useRef(false);
+  useEffect(() => {
+    if (!guests || guestApplied.current) return;
+    // Resolve the tenant's own guest record robustly: the `isMainTenant` flag
+    // isn't always set on a self-booked reservation, which previously left
+    // `main` undefined and the visa backfill silently skipped (BUG-363 — visa
+    // lives only on the booking-guest, not the profile, so it stayed empty).
+    // Fall back to the record owned by the signed-in user, then to the sole
+    // guest when there's only one.
+    const main =
+      guests.find((g) => g.isMainTenant) ??
+      (profile ? guests.find((g) => g.userId && g.userId === profile.id) : undefined) ??
+      (guests.length === 1 ? guests[0] : undefined);
+    if (!main) return;
+    guestApplied.current = true;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setPassportFirstName((v) => v || (main.firstName ?? ""));
+    setPassportLastName((v) => v || (main.lastName ?? ""));
+    setPassportNationality((v) => v || (main.nationality ?? ""));
+    setPassportDob((v) => v || (main.dateOfBirth ?? ""));
+    setPassportNumber((v) => v || (main.passportNumber ?? ""));
+    setPassportExpiry((v) => v || (main.passportExpiry ?? ""));
+    setPassportVisaType((v) => v || (main.visaType ?? ""));
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [guests, profile]);
+
+  // BUG-272: surface a clear hint when profile is missing fields so users
+  // know to fix it once (instead of re-typing on every contract).
+  const profileIncomplete =
+    !!profile &&
+    (!profile.firstName || !profile.lastName || !profile.dateOfBirth || !profile.nationality);
   const [passportPhotos, setPassportPhotos] = useState<File[]>([]);
 
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -71,27 +142,16 @@ export function GuestContractSignPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ── Co-resident gate ──────────────────────────────────────────────────────
-  // "alone" | "withOthers" | null (not yet answered)
-  const [soloAnswer, setSoloAnswer] = useState<"alone" | "withOthers" | null>(null);
-  const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
-  // Auto-answer "withOthers" if they already added co-residents before landing here
-  useEffect(() => {
-    if (coResidents.length > 0 && soloAnswer === null) setSoloAnswer("withOthers");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guests]);
-  // Gate cleared when: answered "alone" OR answered "withOthers" and has ≥1 co-resident
-  const gateCleared = soloAnswer === "alone" || (soloAnswer === "withOthers" && coResidents.length > 0);
-
+  // UX-273: Entry date / Entry port are TM-30 fields, NOT contract fields —
+  // exclude them from the contract completeness check. They're collected
+  // separately during TM-30 filing (and remain on the user profile for reuse).
   const passportComplete =
     passportFirstName.trim().length > 0 &&
     passportLastName.trim().length > 0 &&
     passportNumber.trim().length > 0 &&
     passportNationality.trim().length > 0 &&
     passportDob.trim().length > 0 &&
-    passportExpiry.trim().length > 0 &&
-    passportEntryDate.trim().length > 0 &&
-    passportEntryPort.trim().length > 0;
+    passportExpiry.trim().length > 0;
 
   const canSubmit =
     passportComplete &&
@@ -104,6 +164,7 @@ export function GuestContractSignPage() {
     e.preventDefault();
     if (!canSubmit) return;
     setSubmitError(null);
+    setFieldErrors({});
     setIsSubmitting(true);
     try {
       // 1. Save passport data to the main tenant guest record
@@ -119,8 +180,7 @@ export function GuestContractSignPage() {
             dateOfBirth: passportDob,
             passportExpiry: passportExpiry,
             visaType: passportVisaType as VisaType || undefined,
-            entryDate: passportEntryDate,
-            entryPort: passportEntryPort.trim(),
+            // BE-ENTRY: entry date / port removed — not used downstream.
           },
         });
         if (passportPhotos.length > 0) {
@@ -137,16 +197,28 @@ export function GuestContractSignPage() {
       navigate(`/me/guest/bookings/${id}`);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } } | null)?.response?.status;
+      const data = (err as { response?: { data?: { message?: string; title?: string; errors?: Record<string, string[] | string> } } })?.response?.data;
+      // BUG-345: surface field-level validation errors (e.g. dateOfBirth
+      // "must be at least 18 years old") inline under each input. BE returns
+      // camelCase keys in `errors`; flatten arrays to the first message.
+      const errs = data?.errors;
+      if (errs && typeof errs === "object") {
+        const flat: Record<string, string> = {};
+        for (const [k, v] of Object.entries(errs)) {
+          const key = k.charAt(0).toLowerCase() + k.slice(1);
+          flat[key] = Array.isArray(v) ? v[0] : String(v);
+        }
+        setFieldErrors(flat);
+      }
       // 409/422 here almost always means the signing deadline passed between
       // the form mount and submit — the contract was voided server-side.
       // Tell the tenant exactly that instead of a generic failure.
       const isExpired = status === 409 || status === 410 || status === 422;
-      const apiMsg =
-        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.message ??
-        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.title;
       const msg = isExpired
         ? "The signing window closed while you were filling this in. This booking is cancelled and any payment will be refunded — you'll need a new booking to proceed."
-        : apiMsg ?? "Failed to sign agreement. Please try again.";
+        : errs && typeof errs === "object" && Object.keys(errs).length > 0
+          ? "Please correct the highlighted fields and try again."
+          : data?.message ?? data?.title ?? "Failed to sign agreement. Please try again.";
       setSubmitError(msg);
     } finally {
       setIsSubmitting(false);
@@ -275,14 +347,13 @@ export function GuestContractSignPage() {
         {/* View PDF button */}
         {contract.draftPdfUrl && (
           <div className="px-5 py-3 border-b border-border">
-            <a
-              href={contract.draftPdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openAuthPdf(contract.draftPdfUrl!).catch(() => toast.error("Couldn't open PDF"))}
               className="inline-flex items-center gap-2 text-sm font-semibold text-brand hover:underline"
             >
               <FileText size={14} />View contract (PDF)
-            </a>
+            </button>
             <p className="text-xs text-fg-muted mt-1">Review the full agreement before signing.</p>
           </div>
         )}
@@ -316,84 +387,8 @@ export function GuestContractSignPage() {
         </div>
       </div>
 
-      {/* ── Co-resident gate ── */}
+      {/* Signing form */}
       {!alreadySigned && (
-        <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
-          <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
-            <Users size={15} className="text-fg-muted" />
-            <h2 className="text-sm font-semibold text-fg">Will you be living alone?</h2>
-            {gateCleared && (
-              <CheckCircle2 size={14} className="text-success ml-auto" />
-            )}
-          </div>
-          <div className="p-5 space-y-3">
-            <p className="text-xs text-fg-muted leading-relaxed">
-              All people who will live at the property must be registered for TM-30 immigration reporting.
-              Add them under the Co-residents tab before signing.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSoloAnswer("alone")}
-                className={cn(
-                  "rounded-xl border px-4 py-3 text-sm font-medium transition-all text-center",
-                  soloAnswer === "alone"
-                    ? "border-brand bg-brand/8 text-brand"
-                    : "border-border text-fg-muted hover:border-fg-muted hover:text-fg",
-                )}
-              >
-                Yes, just me
-              </button>
-              <button
-                type="button"
-                onClick={() => setSoloAnswer("withOthers")}
-                className={cn(
-                  "rounded-xl border px-4 py-3 text-sm font-medium transition-all text-center",
-                  soloAnswer === "withOthers"
-                    ? "border-brand bg-brand/8 text-brand"
-                    : "border-border text-fg-muted hover:border-fg-muted hover:text-fg",
-                )}
-              >
-                No, with others
-              </button>
-            </div>
-
-            {/* Blocker — said "withOthers" but no co-residents added yet */}
-            {soloAnswer === "withOthers" && coResidents.length === 0 && (
-              <div className="rounded-xl bg-warning/10 border border-warning/20 p-4 flex items-start gap-3">
-                <AlertCircle size={15} className="text-warning shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0 space-y-2">
-                  <p className="text-sm font-semibold text-fg">Add your co-residents first</p>
-                  <p className="text-xs text-fg-muted leading-relaxed">
-                    Go to the <strong>Co-residents</strong> tab on your booking page, add everyone who will be
-                    living with you, then come back here to sign.
-                  </p>
-                  <Link
-                    to={`/me/guest/bookings/${id}?addResident=1`}
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline"
-                  >
-                    <Users size={13} />
-                    Add co-resident now →
-                  </Link>
-                </div>
-              </div>
-            )}
-
-            {/* Success — has co-residents */}
-            {soloAnswer === "withOthers" && coResidents.length > 0 && (
-              <div className="rounded-xl bg-success/8 border border-success/20 px-4 py-3 flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-success shrink-0" />
-                <p className="text-xs text-success font-medium">
-                  {coResidents.length} co-resident{coResidents.length > 1 ? "s" : ""} added — you're good to sign.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Signing form — only shown when pending tenant signature AND gate cleared */}
-      {!alreadySigned && gateCleared && (
         <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* ── Passport / identity data ── */}
@@ -403,18 +398,39 @@ export function GuestContractSignPage() {
             <h2 className="text-sm font-semibold text-fg">Your identity details</h2>
             <span className="ml-auto text-xs text-danger font-medium">Required to sign</span>
           </div>
+          {profileIncomplete && (
+            <div className="px-5 py-3 bg-warning/10 border-b border-warning/20 flex items-start gap-2.5">
+              <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
+              <p className="text-xs text-fg leading-relaxed">
+                Some basics aren't in your profile yet. Fill them in once and we'll pre-fill them on every contract.{" "}
+                <Link to="/profile" className="text-brand font-medium underline underline-offset-2 hover:opacity-80">
+                  Open profile
+                </Link>
+              </p>
+            </div>
+          )}
           <div className="p-5 space-y-4">
             <p className="text-xs text-fg-muted leading-relaxed">
               Required for TM-30 immigration reporting. Stored encrypted and shared only with your landlord.
             </p>
+            {/* UX-321: reassure that these aren't being asked from scratch —
+                they're carried over from the profile and just need a glance. */}
+            {prefilledFromProfile && (
+              <div className="flex items-center gap-2 text-xs text-brand bg-brand/5 border border-brand/15 rounded-lg px-3 py-2">
+                <CheckCircle2 size={13} className="shrink-0" />
+                <p>Pre-filled from your profile — edit if anything's changed.</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">First name <span className="text-danger">*</span></Label>
                 <Input value={passportFirstName} onChange={(e) => setPassportFirstName(e.target.value)} placeholder="As on passport" />
+                {fieldErrors.firstName && <p className="text-xs text-danger">{fieldErrors.firstName}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Last name <span className="text-danger">*</span></Label>
                 <Input value={passportLastName} onChange={(e) => setPassportLastName(e.target.value)} placeholder="As on passport" />
+                {fieldErrors.lastName && <p className="text-xs text-danger">{fieldErrors.lastName}</p>}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -424,17 +440,22 @@ export function GuestContractSignPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Date of birth <span className="text-danger">*</span></Label>
-                <DateInput value={passportDob} onChange={setPassportDob} maxYear={new Date().getFullYear()} />
+                <DatePicker value={passportDob} onChange={(v) => { setPassportDob(v); setFieldErrors((e) => ({ ...e, dateOfBirth: "" })); }} placeholder="Select date of birth" isDisabled={DOB_UNDER_18} startView="year" yearAnchor={DOB_ANCHOR} />
+                {fieldErrors.dateOfBirth && (
+                  <p className="text-xs text-danger">{fieldErrors.dateOfBirth}</p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Passport number <span className="text-danger">*</span></Label>
                 <Input value={passportNumber} onChange={(e) => setPassportNumber(e.target.value)} placeholder="e.g. 7123456789" className="font-mono" />
+                {fieldErrors.passportNumber && <p className="text-xs text-danger">{fieldErrors.passportNumber}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Passport expiry <span className="text-danger">*</span></Label>
-                <DateInput value={passportExpiry} onChange={setPassportExpiry} minYear={2000} maxYear={2060} />
+                <DatePicker value={passportExpiry} onChange={setPassportExpiry} placeholder="Select expiry date" isDisabled={EXPIRY_NOT_PAST} startView="year" />
+                {fieldErrors.passportExpiry && <p className="text-xs text-danger">{fieldErrors.passportExpiry}</p>}
               </div>
             </div>
             <div className="space-y-1.5">
@@ -442,30 +463,14 @@ export function GuestContractSignPage() {
               <Select value={passportVisaType} onValueChange={setPassportVisaType}>
                 <SelectTrigger><SelectValue placeholder="Select visa type…" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={VisaType.VisaExempt}>Visa Exempt (30 days)</SelectItem>
-                  <SelectItem value={VisaType.Tourist}>Tourist Visa (TR)</SelectItem>
-                  <SelectItem value={VisaType.NonImmigrantB}>Non-Immigrant B (Business)</SelectItem>
-                  <SelectItem value={VisaType.NonImmigrantO}>Non-Immigrant O (Family/Retirement)</SelectItem>
-                  <SelectItem value={VisaType.NonImmigrantOA}>Non-Immigrant O-A (Long Stay)</SelectItem>
-                  <SelectItem value={VisaType.Education}>Education Visa (ED)</SelectItem>
-                  <SelectItem value={VisaType.SpecialTourist}>Special Tourist Visa (STV)</SelectItem>
-                  <SelectItem value={VisaType.Other}>Other</SelectItem>
+                  {Object.entries(VISA_LABELS).map(([val, label]) => (
+                    <SelectItem key={val} value={val}>{label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">Entry date <span className="text-danger">*</span></Label>
-                <DateInput value={passportEntryDate} onChange={setPassportEntryDate} minYear={2015} maxYear={new Date().getFullYear()} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">Entry port <span className="text-danger">*</span></Label>
-                <Input value={passportEntryPort} onChange={(e) => setPassportEntryPort(e.target.value)} placeholder="e.g. Chiang Mai" />
-              </div>
-            </div>
-            <p className="text-[11px] text-fg-muted leading-relaxed">
-              Entry date &amp; port come from the immigration stamp in your passport — the date and airport/border crossing of your most recent Thai entry.
-            </p>
+            {/* UX-273: Entry date / Entry port live in TM-30 flow, not in the contract.
+                They're collected separately when filing TM-30 (and persist on profile). */}
 
             {/* Passport photo guide + upload */}
             <PassportPageGuide />

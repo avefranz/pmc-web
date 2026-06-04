@@ -161,6 +161,7 @@ export function HostRequestDetailPage() {
   const approve = useApproveRequest(id!);
   const reject  = useRejectRequest(id!);
 
+  const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const approveIdempotencyKey = useState(() => crypto.randomUUID())[0];
@@ -168,8 +169,15 @@ export function HostRequestDetailPage() {
   async function handleApprove() {
     try {
       await approve.mutateAsync(approveIdempotencyKey);
-      toast.success("Request approved");
-      navigate("/me/host/requests");
+      const moveIn = req?.moveInDate ? format(parseISO(req.moveInDate), "d MMM") : null;
+      const guest = req?.guestName ?? "Tenant";
+      toast.success(
+        moveIn
+          ? `✓ Approved! ${guest}'s reservation is confirmed · Move-in ${moveIn}`
+          : `✓ Approved! ${guest}'s reservation is confirmed`,
+      );
+      setShowApproveModal(false);
+      navigate("/me/host/bookings");
     } catch (err) {
       // Refetch so the UI reflects current state (another tab may have already
       // approved or rejected, or the request expired between page load and click).
@@ -179,6 +187,7 @@ export function HostRequestDetailPage() {
       } else {
         toast.error("Failed to approve request");
       }
+      setShowApproveModal(false);
     }
   }
 
@@ -310,6 +319,40 @@ export function HostRequestDetailPage() {
             </div>
           </div>
 
+          {/* UX-268: co-residents declared by the tenant up-front so the host
+              can size up occupancy / family-vs-singles before approving. */}
+          {(req.additionalResidents?.length ?? 0) > 0 && (
+            <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+                <span className="text-base">👥</span>
+                <p className="text-sm font-semibold text-fg">
+                  Who's moving in · {req.guestName.split(" ")[0] || "Tenant"} + {req.additionalResidents!.length}
+                </p>
+              </div>
+              <div className="divide-y divide-border">
+                {req.additionalResidents!.map((r, i) => {
+                  const age = r.dateOfBirth
+                    ? Math.max(0, Math.floor((Date.now() - new Date(r.dateOfBirth).getTime()) / 31557600000))
+                    : null;
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-5 py-3">
+                      <span className="text-xs font-semibold text-fg-muted w-6 shrink-0">#{i + 2}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-fg truncate">
+                          {r.firstName} {r.lastName}
+                        </p>
+                        {/* BUG-325: relationship removed — show age only. */}
+                        {age !== null && (
+                          <p className="text-xs text-fg-muted">{age}y</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Pets */}
           {hasPets && (
             <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
@@ -393,6 +436,21 @@ export function HostRequestDetailPage() {
                 <span className="font-medium text-fg">{formatThb(req.depositAmount ?? req.monthlyRate)}</span>
               </div>
             </div>
+            {/* BUG-263/274: pet deposit shown to the host BEFORE approving so
+                they know what gets billed (the tenant declared pets in the
+                request — the deposit is added to the initial payment). */}
+            {(req.petDeposit ?? 0) > 0 && hasPets && (
+              <div className="flex items-center gap-3 px-5 py-3.5 border-t border-border">
+                <span className="w-[14px] shrink-0">🐾</span>
+                <div className="flex-1 flex justify-between text-sm">
+                  <div>
+                    <span className="text-fg-muted">Pet deposit</span>
+                    <div className="text-[11px] text-fg-muted">refunded on check-out if no damage</div>
+                  </div>
+                  <span className="font-medium text-fg">{formatThb(req.petDeposit!)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -409,10 +467,9 @@ export function HostRequestDetailPage() {
               <Button
                 className="flex-1 bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-10"
                 disabled={busy}
-                onClick={handleApprove}
+                onClick={() => setShowApproveModal(true)}
               >
-                <CheckCircle size={14} className="mr-1.5" />
-                {approve.isPending ? "Approving…" : "Approve"}
+                <CheckCircle size={14} className="mr-1.5" />Approve
               </Button>
             </div>
           )}
@@ -424,6 +481,55 @@ export function HostRequestDetailPage() {
           )}
         </div>
       </div>
+
+      {/* ── Approve modal ── */}
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-bg-card rounded-2xl shadow-pop w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle size={20} className="text-success" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-fg">Approve this request?</h3>
+                <p className="text-sm text-fg-muted mt-1">
+                  You're approving <span className="font-medium text-fg">{req.guestName}</span>'s request for{" "}
+                  <span className="font-medium text-fg">
+                    {req.moveInDate ? format(parseISO(req.moveInDate), "d MMM yyyy") : "—"}
+                  </span>
+                  {" "}→{" "}
+                  <span className="font-medium text-fg">
+                    {req.moveOutDate ? format(parseISO(req.moveOutDate), "d MMM yyyy") : "—"}
+                  </span>
+                  . A rental contract will be generated and sent to the tenant.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={approve.isPending}
+                onClick={() => setShowApproveModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
+                disabled={approve.isPending}
+                onClick={handleApprove}
+              >
+                {approve.isPending ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-3 w-3 rounded-full border-2 border-white/60 border-t-transparent animate-spin" />
+                    Approving…
+                  </span>
+                ) : "Confirm approval"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Reject modal ── */}
       {showRejectModal && (

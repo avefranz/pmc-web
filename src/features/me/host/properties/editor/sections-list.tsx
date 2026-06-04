@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Check, ChevronRight, Sparkles, Rocket, CalendarDays, Infinity as InfinityIcon } from "lucide-react";
+import { toast } from "sonner";
+import { Check, ChevronRight, Sparkles, Rocket, CalendarDays, Infinity as InfinityIcon, History, X, Minus, Plus, TrendingUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils/cn";
-import { formatThb } from "@/lib/utils/format";
+import { formatThb, formatDate } from "@/lib/utils/format";
 import type { DraftPatch, SectionDef, SectionGroup } from "./types";
 import type { EditorApi } from "./use-editor";
 import { SECTION_GROUPS } from "./types";
@@ -35,11 +35,14 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
   const visibleSections = useMemo(
     () =>
       SECTIONS.filter((s) => {
+        // editOnly sections (e.g. Utility accounts — bind a meter to an
+        // existing asset) only make sense once the property exists.
+        if (s.editOnly && editor.mode !== "edit") return false;
         if (s.id === "contact" && !editor.needsContactSection) return false;
         if (s.id === "payment" && !editor.needsPaymentSection) return false;
         return true;
       }),
-    [editor.needsContactSection, editor.needsPaymentSection],
+    [editor.needsContactSection, editor.needsPaymentSection, editor.mode],
   );
 
   const firstUndoneRequired = visibleSections.find((s) => s.required && !s.isComplete(editor.draft));
@@ -55,6 +58,15 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
   const doneRequired = countableRequired.filter((s) => s.isComplete(editor.draft)).length;
   const progressPct = totalRequired === 0 ? 0 : Math.round((doneRequired / totalRequired) * 100);
   const allRequiredDone = totalRequired > 0 && doneRequired === totalRequired;
+  // BUG-297: surface the optional-section count so "N/10 required" stops
+  // contradicting the visibly-numbered 13 rows in the sidebar.
+  const optionalVisible = visibleSections.filter(
+    (s) => !s.required && !(s.editOnly && editor.mode === "create"),
+  ).length;
+  const sectionsTotalLabel =
+    optionalVisible > 0
+      ? `${totalRequired} required · ${optionalVisible} optional`
+      : `${totalRequired} required`;
 
   // First-time hero. Stays visible while the user is still working on the
   // very first section so picking a type / typing a value doesn't yank it
@@ -78,9 +90,15 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
 
   function findNextUnsaved(currentId: string): string | null {
     const idx = visibleSections.findIndex((s) => s.id === currentId);
-    const after = visibleSections.slice(idx + 1).find((s) => !s.isComplete(editor.draft));
+    // UX-259: once every required section is done, stop chasing the user
+    // through optional sections (Cancellation / Utilities / Amenities). Their
+    // CTA becomes "Save & finish ✨" and the sticky-bar hides — one primary
+    // action in viewport instead of two.
+    const isUnfinished = (s: SectionDef) =>
+      !s.isComplete(editor.draft) && !(allRequiredDone && !s.required);
+    const after = visibleSections.slice(idx + 1).find(isUnfinished);
     if (after) return after.id;
-    const anywhere = visibleSections.find((s) => s.id !== currentId && !s.isComplete(editor.draft));
+    const anywhere = visibleSections.find((s) => s.id !== currentId && isUnfinished(s));
     return anywhere?.id ?? null;
   }
 
@@ -98,13 +116,21 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
     const wasComplete = wasCompleteOnOpen.current[section.id] ?? section.isComplete(editor.draft);
     const nowComplete = section.isComplete(editor.draft);
     setSavingId(section.id);
+    let committed = false;
     try {
       const isProfile = section.id === "contact" || section.id === "payment";
       if (editor.mode === "edit" || isProfile) {
-        await editor.commitSection(section.id, editor.draft);
+        committed = await editor.commitSection(section.id, editor.draft);
       }
     } finally {
       setSavingId(null);
+    }
+    // BUG-261: surface a clear success toast in edit mode so the host knows
+    // the change went through — the section collapses immediately otherwise
+    // and the save looks identical to a no-op. commitSection already shows
+    // its own error toast on failure, so only fire on confirmed success.
+    if (committed && editor.mode === "edit") {
+      toast.success(`✓ ${section.label} saved`);
     }
 
     // Dismiss the hero once the user has committed something — this lets it
@@ -162,8 +188,22 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
     // before scrolling — otherwise the scroll target moves mid-animation and
     // the user ends up with the next section half off-screen.
     const scrollDelay = heroOpen && nowComplete && section.required ? 520 : 50;
-    if (next) focusSection(next, scrollDelay);
-    else setActiveId(null);
+    if (next) {
+      focusSection(next, scrollDelay);
+    } else if (
+      editor.mode === "create" &&
+      allRequiredDone &&
+      editor.missingForSave.length === 0 &&
+      !editor.isSaving
+    ) {
+      // UX-259: the section's CTA reads "Save & finish ✨" because
+      // findNextUnsaved returned null. Actually commit the property here so
+      // the user doesn't need to scroll up to the header or hunt for a
+      // separate Save button.
+      await editor.commitFirstSave();
+    } else {
+      setActiveId(null);
+    }
   }
 
   // ── Keyboard: ⌘/Ctrl + Enter saves & advances when a section is active. ──
@@ -194,19 +234,22 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
     return SECTIONS.find((s) => s.id === id)?.label ?? null;
   }
 
-  // Publish dialog state
+  // Publish dialog state.
+  // UX-260: replaced the fixed 1/2/3/6/12 dropdown with a 1–12 stepper +
+  // open-ended toggle (UX-350: >12 months must be Open-ended, not a fixed
+  // window), plus a live move-in window preview and social proof.
   const today = new Date().toISOString().split("T")[0];
   const [publishDialog, setPublishDialog] = useState(false);
   const [pubStartDate, setPubStartDate] = useState(today);
-  const [pubDurationMonths, setPubDurationMonths] = useState<string>("open");
+  const [pubOpenEnded, setPubOpenEnded] = useState(true);
+  const [pubMonths, setPubMonths] = useState(6);
   const [publishing, setPublishing] = useState(false);
 
   function computePubEndDate(): string | undefined {
-    if (pubDurationMonths === "open") return undefined;
-    const months = Number(pubDurationMonths);
-    if (!months || !pubStartDate) return undefined;
+    if (pubOpenEnded) return undefined;
+    if (!pubMonths || !pubStartDate) return undefined;
     const d = new Date(pubStartDate);
-    d.setMonth(d.getMonth() + months);
+    d.setMonth(d.getMonth() + pubMonths);
     return d.toISOString().split("T")[0];
   }
   // BE-14 fixed: use editor.isPublished (derived from API listing.status) instead of session flag
@@ -250,8 +293,20 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // UX-288: extra pb (pb-36) so the last section's CTA never lands
+  // underneath the fixed sticky save bar. pb-24 left < 16px of clearance
+  // once the bar's own pb-4 was accounted for.
   return (
-    <div className="flex-1 min-w-0 space-y-8 pb-24">
+    <div className="flex-1 min-w-0 space-y-8 pb-36">
+      {/* BUG-316: full-screen blocking overlay during any long operation
+          (first save / publish). Prevents double-submit and any other
+          interaction until the async flow settles — the whole canvas becomes
+          non-interactive and a progress affordance is shown. */}
+      <BusyOverlay
+        show={editor.isSaving || publishing}
+        label={publishing ? "Publishing your listing…" : "Saving your property…"}
+      />
+
       {/* Header banner */}
       <header className="rounded-2xl border border-border bg-bg-card p-6">
         <div className="flex items-start justify-between gap-4 mb-4">
@@ -270,6 +325,11 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
                   <span>of</span>
                   <span className="tabular-nums font-semibold text-fg">{totalRequired}</span>
                   <span>required steps</span>
+                  {optionalVisible > 0 && (
+                    <span className="text-fg-subtle">
+                      · {optionalVisible} optional
+                    </span>
+                  )}
                 </>
               )}
               {editor.mode === "edit" && editor.lastSavedAt && (
@@ -283,15 +343,19 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
           {editor.mode === "create" ? (
             <Button
               type="button"
-              disabled={editor.missingForSave.length > 0 || editor.isSaving}
+              disabled={editor.missingForPartialSave.length > 0 || editor.isSaving}
               onClick={() => editor.commitFirstSave()}
               className={cn(
                 "h-11 px-5 font-semibold shrink-0",
-                editor.missingForSave.length === 0 &&
+                allRequiredDone &&
                   "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white shadow-[0_8px_24px_rgba(99,102,241,0.35)]",
               )}
             >
-              {editor.isSaving ? "Saving…" : "Save property"}
+              {editor.isSaving
+                ? "Saving…"
+                : allRequiredDone
+                ? "Save property"
+                : "Save draft"}
             </Button>
           ) : (
             allRequiredDone && (
@@ -316,23 +380,77 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
             )
           )}
         </div>
-        <div className="h-1.5 rounded-full bg-border overflow-hidden">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              allRequiredDone
-                ? "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500"
-                : "bg-fg",
-            )}
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-        {editor.mode === "create" && editor.missingForSave.length > 0 && (
+        {/* UX-325: while the full-screen save/publish overlay (with its own
+            indeterminate bar) is up, hide this section-progress bar so the
+            host never sees two progress bars stacked at once. */}
+        {!(editor.isSaving || publishing) && (
+          <div className="h-1.5 rounded-full bg-border overflow-hidden">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-500",
+                allRequiredDone
+                  ? "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500"
+                  : "bg-fg",
+              )}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        )}
+        {editor.mode === "create" && editor.missingForPartialSave.length > 0 && (
           <p className="text-xs text-fg-muted mt-3">
-            Still needed: <strong className="text-fg">{editor.missingForSave.join(", ")}</strong>
+            <strong className="text-fg">Add {editor.missingForPartialSave.join(" + ")}</strong>{" "}
+            to enable Save — your other progress is already kept locally.
           </p>
         )}
+        {editor.mode === "create" &&
+          editor.missingForPartialSave.length === 0 &&
+          editor.missingForSave.length > 0 && (
+            <p className="text-xs text-fg-muted mt-3">
+              Still needed before publishing:{" "}
+              <strong className="text-fg">{editor.missingForSave.join(", ")}</strong>
+            </p>
+          )}
       </header>
+
+      {/* UX-341: "Save property" only creates a draft — publishing is a
+          separate step. New hosts assume they're done after Save and wonder
+          why no requests arrive. Show a persistent, unmissable banner once the
+          listing exists but isn't live yet, steering them to Publish (the
+          auto-publish dialog may have been dismissed). */}
+      {editor.mode === "edit" && editor.listingId && !editor.isPublished && (
+        <div className="rounded-2xl border border-indigo-300/60 bg-gradient-to-r from-indigo-500/[0.08] to-violet-500/[0.08] p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <Rocket size={20} className="text-indigo-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Your listing isn't live yet</p>
+            <p className="text-xs text-fg-muted mt-0.5">
+              {allRequiredDone
+                ? "Saved as a draft — tenants can't see it or send requests until you publish. Set your availability and go live."
+                : "Saved as a draft. Finish the required sections below, then publish so tenants can find it and send requests."}
+            </p>
+          </div>
+          {allRequiredDone && (
+            <Button
+              type="button"
+              onClick={() => setPublishDialog(true)}
+              className="h-10 px-4 font-semibold bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white shrink-0 shadow-[0_6px_18px_rgba(99,102,241,0.35)]"
+            >
+              Publish →
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* BUG-307: restored-draft banner. Lets the host know we kept their
+          work from a previous tab and offers a clean slate if they didn't
+          mean to come back to it. */}
+      {editor.mode === "create" && editor.restoredAt !== null && (
+        <RestoredDraftBanner
+          at={editor.restoredAt}
+          photoNames={editor.restoredPhotoNames}
+          onDiscard={editor.discardRestoredDraft}
+          onDismiss={editor.dismissRestoredBanner}
+        />
+      )}
 
       {/* First-time hero — collapses smoothly via CSS grid trick so dismissing
           doesn't punch a hole in the layout and disorient the user. */}
@@ -387,8 +505,15 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
 
       {/* Sticky bar — create mode: Save button; edit mode: Publish + saved timestamp.
           pointer-events-none on wrapper + pointer-events-auto on pill only so the
-          transparent area never blocks clicks on content below (esp. on mobile). */}
-      {showStickyBar && (
+          transparent area never blocks clicks on content below (esp. on mobile).
+          UX-259: hide on final-step to avoid the dual Save button situation
+          (the section already shows "Save & finish ✨" as its CTA).
+          UX-288 (QA Partial fix): hide the bar entirely while ANY section is
+          open (activeId !== null). When editing, the section has its own CTA;
+          the fixed bar was overlapping the section's lower content (e.g. the
+          red bank-details helper in Payment). With no section open, the bar
+          returns as the persistent Save/Publish action. */}
+      {showStickyBar && activeId === null && (
         <div className="fixed bottom-0 left-0 right-0 z-30 px-4 pb-4 pointer-events-none">
           <div className="max-w-6xl mx-auto flex items-center justify-end">
             {editor.mode === "create" ? (
@@ -403,16 +528,21 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
                 <span className="text-sm font-medium text-fg-muted">
                   {allRequiredDone ? (
                     <span className="text-fg font-semibold">Ready to save your property</span>
+                  ) : editor.missingForPartialSave.length > 0 ? (
+                    <>
+                      <span className="tabular-nums text-fg font-semibold">{doneRequired}/{totalRequired}</span>{" "}
+                      required ({sectionsTotalLabel}) · keep going
+                    </>
                   ) : (
                     <>
                       <span className="tabular-nums text-fg font-semibold">{doneRequired}/{totalRequired}</span>{" "}
-                      required steps · keep going
+                      required done · save now & finish later
                     </>
                   )}
                 </span>
                 <Button
                   type="button"
-                  disabled={!allRequiredDone || editor.isSaving}
+                  disabled={editor.missingForPartialSave.length > 0 || editor.isSaving}
                   onClick={() => editor.commitFirstSave()}
                   className={cn(
                     "h-9 px-4 font-semibold",
@@ -420,7 +550,11 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
                       "bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 text-white",
                   )}
                 >
-                  {editor.isSaving ? "Saving…" : "Save property"}
+                  {editor.isSaving
+                    ? "Saving…"
+                    : allRequiredDone
+                    ? "Save property"
+                    : "Save draft"}
                 </Button>
               </div>
             ) : (
@@ -479,38 +613,130 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
                 <CalendarDays size={13} className="text-fg-muted" />
                 Available from
               </label>
-              <Input
-                type="date"
+              {/* UX-348: design-system DatePicker instead of the native
+                  <input type=date> ("looked like it's from the 2000s"). */}
+              <DatePicker
                 value={pubStartDate}
-                min={today}
-                onChange={(e) => setPubStartDate(e.target.value)}
-                className="rounded-xl"
+                onChange={setPubStartDate}
+                isDisabled={(d) => d < new Date(today + "T00:00:00")}
+                placeholder="Pick a start date"
               />
             </div>
 
-            {/* Duration */}
-            <div className="space-y-1.5">
+            {/* Duration — UX-260: any 1–24 months via stepper + quick-picks,
+                or open-ended. */}
+            <div className="space-y-2">
               <label className="text-sm font-semibold text-fg flex items-center gap-1.5">
                 <InfinityIcon size={13} className="text-fg-muted" />
                 Listed for
               </label>
-              <Select value={pubDurationMonths} onValueChange={setPubDurationMonths}>
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1 month</SelectItem>
-                  <SelectItem value="2">2 months</SelectItem>
-                  <SelectItem value="3">3 months</SelectItem>
-                  <SelectItem value="6">6 months</SelectItem>
-                  <SelectItem value="12">12 months</SelectItem>
-                  <SelectItem value="open">Open-ended (no end date)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-fg-muted">
-                {pubDurationMonths === "open"
-                  ? "Your listing stays live until you take it down manually."
-                  : `Listing auto-expires ${Number(pubDurationMonths)} month${Number(pubDurationMonths) > 1 ? "s" : ""} after the start date.`}
+
+              {/* Open-ended toggle vs fixed window */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPubOpenEnded(true)}
+                  className={cn(
+                    "rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors text-left",
+                    pubOpenEnded
+                      ? "border-indigo-400 bg-indigo-50/60 dark:bg-indigo-500/10 text-fg ring-1 ring-indigo-400/40"
+                      : "border-border text-fg-muted hover:border-fg-subtle",
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <InfinityIcon size={14} /> Open-ended
+                  </span>
+                  <span className="block text-[11px] text-fg-subtle mt-0.5 font-normal">No end date</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPubOpenEnded(false)}
+                  className={cn(
+                    "rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors text-left",
+                    !pubOpenEnded
+                      ? "border-indigo-400 bg-indigo-50/60 dark:bg-indigo-500/10 text-fg ring-1 ring-indigo-400/40"
+                      : "border-border text-fg-muted hover:border-fg-subtle",
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <CalendarDays size={14} /> Fixed window
+                  </span>
+                  <span className="block text-[11px] text-fg-subtle mt-0.5 font-normal">Auto-expires</span>
+                </button>
+              </div>
+
+              {/* Month stepper + quick-picks — only when a fixed window is chosen */}
+              {!pubOpenEnded && (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2">
+                    <button
+                      type="button"
+                      aria-label="Fewer months"
+                      onClick={() => setPubMonths((m) => Math.max(1, m - 1))}
+                      disabled={pubMonths <= 1}
+                      className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-fg hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Minus size={15} />
+                    </button>
+                    <div className="text-center">
+                      <span className="text-lg font-bold text-fg tabular-nums">{pubMonths}</span>
+                      <span className="text-sm text-fg-muted ml-1">month{pubMonths > 1 ? "s" : ""}</span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="More months"
+                      // UX-350: cap fixed windows at 12 months — anything longer
+                      // should be Open-ended, not a 13/14/… month window.
+                      onClick={() => setPubMonths((m) => Math.min(12, m + 1))}
+                      disabled={pubMonths >= 12}
+                      className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-fg hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[3, 6, 9, 12].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPubMonths(m)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
+                          pubMonths === m
+                            ? "border-indigo-400 bg-indigo-500 text-white"
+                            : "border-border text-fg-muted hover:border-indigo-300",
+                        )}
+                      >
+                        {m}mo
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Live move-in window preview */}
+            <div className="rounded-xl bg-bg-subtle px-3.5 py-3 text-[13px] leading-relaxed">
+              <p className="text-fg">
+                Tenants can request move-in
+                {pubOpenEnded ? (
+                  <> any time from <strong className="font-semibold">{formatDate(pubStartDate)}</strong> onwards.</>
+                ) : (
+                  <>
+                    {" "}between <strong className="font-semibold">{formatDate(pubStartDate)}</strong> and{" "}
+                    <strong className="font-semibold">{formatDate(computePubEndDate() ?? pubStartDate)}</strong>{" "}
+                    <span className="text-fg-muted">({pubMonths}-month window)</span>.
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Social proof — UX-философия: anticipation + social proof */}
+            <div className="flex items-start gap-2 rounded-xl border border-emerald-300/40 bg-emerald-500/[0.07] px-3.5 py-2.5">
+              <TrendingUp size={15} className="text-emerald-500 shrink-0 mt-0.5" />
+              <p className="text-[12.5px] text-fg leading-snug">
+                Listings with <strong className="font-semibold">6+ months</strong> available get{" "}
+                <strong className="font-semibold text-emerald-600 dark:text-emerald-400">3× more</strong> requests.
               </p>
             </div>
           </div>
@@ -607,7 +833,7 @@ function SectionShell({
   // (e.g. Photos) can't be completed in create mode — don't block them.
   const blockedByRequired = section.required && !isDone && !(section.editOnly && editor.mode === "create");
   const continueLabel = blockedByRequired
-    ? "Fill required fields (marked *)"
+    ? section.blockedReason?.(editor.draft) ?? "Fill required fields (marked *)"
     : upNextLabel == null
     ? isDone && editor.mode === "edit"
       ? "Update & finish ✨"
@@ -686,7 +912,11 @@ function SectionShell({
       </button>
 
       {isActive && (
-        <div className="px-5 pb-5 pt-3 border-t border-border">
+        // UX-288: scroll-mb keeps the section's CTA above the sticky save
+        // bar when the host opens a section and the browser tries to
+        // scroll the article into view. Without it, scrollIntoView happily
+        // pinned the CTA right under the fixed footer.
+        <div className="px-5 pb-5 pt-3 border-t border-border" style={{ scrollMarginBottom: 120 }}>
           <div className="py-3">
             <section.Form
               draft={editor.draft}
@@ -698,6 +928,8 @@ function SectionShell({
               addPendingPhotos={editor.addPendingPhotos}
               removePendingPhotoAt={editor.removePendingPhotoAt}
               movePendingPhotoToCover={editor.movePendingPhotoToCover}
+              stagedPhotos={editor.stagedPhotos}
+              removeStagedPhotoAt={editor.removeStagedPhotoAt}
             />
           </div>
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border">
@@ -774,7 +1006,8 @@ function HeroCard({ sections }: { sections: SectionDef[] }) {
           A few quick steps — most hosts finish in under 6&nbsp;minutes.
         </h2>
         <p className="text-sm text-white/70 mt-2 max-w-xl">
-          Smart defaults are pre-filled. You can change anything, in any order — your data saves when you click "Save property".
+          Smart defaults are pre-filled. Your progress saves automatically as
+          you type — close the tab and pick up right where you left off.
         </p>
         <div className="flex flex-wrap gap-2 mt-5">
           {stops.map((s, i) => (
@@ -803,6 +1036,114 @@ function HeroCard({ sections }: { sections: SectionDef[] }) {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── BUG-316: blocking busy overlay ──────────────────────────────────────
+// Covers the whole viewport while a save/publish is in flight. Captures all
+// pointer + keyboard interaction (focus trap on the panel) so the host can't
+// double-submit or edit mid-flight. Uses an indeterminate progress bar — the
+// real work is a multi-phase API cascade with no single % to report, so an
+// animated bar communicates "working" honestly without faking a number.
+function BusyOverlay({ show, label }: { show: boolean; label: string }) {
+  // Lock body scroll while shown.
+  useEffect(() => {
+    if (!show) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [show]);
+
+  if (!show) return null;
+  return (
+    <div
+      // UX-349: near-opaque backdrop so the page's own "Saving…" button text
+      // doesn't bleed through and read as a second, competing indicator.
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-bg/95 backdrop-blur-md"
+      role="alertdialog"
+      aria-busy="true"
+      aria-label={label}
+      // Swallow every interaction that bubbles to the overlay.
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.preventDefault()}
+    >
+      {/* UX-349: a SINGLE motion indicator. This card previously showed both a
+          spinning Loader2 AND an indeterminate progress bar — two competing
+          "spinners" that read as a glitch. The spinner alone communicates
+          "working" clearly; the redundant bar is gone. */}
+      <div className="w-[300px] rounded-2xl border border-border bg-bg-card p-6 shadow-2xl text-center">
+        <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center">
+          <Loader2 size={22} className="text-white animate-spin" />
+        </div>
+        <p className="text-sm font-semibold text-fg">{label}</p>
+        <p className="text-xs text-fg-muted mt-1">This only takes a moment — please don't close the tab.</p>
+      </div>
+    </div>
+  );
+}
+
+// ── BUG-307: restored-draft banner ──────────────────────────────────────
+// Shown above the editor when the host returns to /me/host/properties/new
+// and we found their previous in-progress draft in localStorage. Pure
+// informational; the draft is already loaded into the form state.
+function RestoredDraftBanner({
+  at,
+  photoNames,
+  onDiscard,
+  onDismiss,
+}: {
+  at: number;
+  photoNames: string[];
+  onDiscard: () => void;
+  onDismiss: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - at) / 1000));
+  const ago =
+    secs < 60 ? "just now"
+    : secs < 3600 ? `${Math.floor(secs / 60)}m ago`
+    : secs < 86400 ? `${Math.floor(secs / 3600)}h ago`
+    : `${Math.floor(secs / 86400)}d ago`;
+  return (
+    <div className="rounded-2xl border border-indigo-300/60 bg-gradient-to-r from-indigo-50/80 to-violet-50/60 dark:from-indigo-500/10 dark:to-violet-500/10 p-4 flex items-start gap-3">
+      <div className="w-8 h-8 rounded-full bg-indigo-500/15 flex items-center justify-center shrink-0">
+        <History size={16} className="text-indigo-600 dark:text-indigo-300" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-fg">
+          Draft restored from {ago}
+        </p>
+        <p className="text-xs text-fg-muted mt-0.5">
+          We kept everything you typed last time.
+          {photoNames.length > 0 && (
+            <>
+              {" "}You'll need to re-attach {photoNames.length} photo
+              {photoNames.length === 1 ? "" : "s"} ({photoNames.slice(0, 3).join(", ")}
+              {photoNames.length > 3 ? "…" : ""}) — those don't survive a tab reload.
+            </>
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={onDiscard}
+          className="text-xs font-medium text-indigo-600 dark:text-indigo-300 hover:underline mt-1.5"
+        >
+          Start fresh instead
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 w-7 h-7 rounded-full hover:bg-bg-subtle flex items-center justify-center text-fg-muted"
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 }

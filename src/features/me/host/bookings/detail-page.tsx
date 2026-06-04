@@ -15,9 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SignatureCanvas } from "@/components/shared/signature-canvas";
+import { LandlordIdentityForm, LandlordIdentitySummary } from "@/components/shared/landlord-identity-form";
 import {
   useBooking,
   useBookingGuests,
+  useBookingTm30Many,
   useBookingInvoices,
   useBookingTm30,
   useBookingContract,
@@ -46,6 +48,7 @@ import { InvoiceStatus, BookingStatus, Tm30Status } from "@/lib/types/enums";
 import type { BookingGuestDto } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
+import { openAuthPdf } from "@/lib/utils/open-auth-pdf";
 
 // ─── Guest card ───────────────────────────────────────────────────────────────
 
@@ -54,10 +57,12 @@ import { cn } from "@/lib/utils/cn";
 function GuestCard({
   guest,
   bookingId,
+  checkInDate,
   onTm30Status,
 }: {
   guest: BookingGuestDto;
   bookingId: string;
+  checkInDate: string;
   onTm30Status?: (guestId: string, filed: boolean) => void;
 }) {
   const { data: tm30 } = useBookingTm30(bookingId, guest.id);
@@ -65,6 +70,8 @@ function GuestCard({
 
   const hasPassport = !!(guest.passportNumber || guest.nationality || guest.visaType);
   const tm30Filed = tm30?.status === Tm30Status.Filed;
+  // BUG-249: TM-30 can only be filed after check-in (Thai immigration rule: within 24h of arrival)
+  const checkInPassed = new Date(checkInDate) <= new Date();
 
   useEffect(() => {
     if (tm30 !== undefined && guest.passportNumber) {
@@ -99,6 +106,16 @@ function GuestCard({
         {!hasPassport && (
           <p className="text-xs text-fg-subtle mt-1 italic">Passport not yet submitted by tenant</p>
         )}
+        {/* BUG-269: visibly flag foreign guests without passport photos — TM-30 file submission
+            will be rejected by BE without them, so the host needs to nudge the tenant. */}
+        {hasPassport
+          && guest.nationality !== "TH"
+          && (guest.passportPhotoUrls?.length ?? 0) === 0 && (
+          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-danger bg-danger/8 border border-danger/20 rounded-md px-2 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+            Passport photo missing — TM-30 cannot be filed until tenant uploads
+          </div>
+        )}
       </div>
 
       {/* TM-30 row */}
@@ -117,13 +134,17 @@ function GuestCard({
         </div>
         <label className={cn(
           "flex items-center gap-1.5 cursor-pointer transition-colors",
-          tm30Filed
-            ? "text-xs text-fg-muted hover:text-fg"
-            : "text-xs font-semibold text-white bg-warning hover:bg-warning/90 rounded-lg px-2.5 py-1.5",
-          uploadTm30.isPending && "opacity-50 pointer-events-none",
-        )}>
+          !checkInPassed
+            ? "text-xs text-fg-subtle cursor-default"
+            : tm30Filed
+              ? "text-xs text-fg-muted hover:text-fg"
+              : "text-xs font-semibold text-white bg-warning hover:bg-warning/90 rounded-lg px-2.5 py-1.5",
+          (uploadTm30.isPending || !checkInPassed) && "opacity-50 pointer-events-none",
+        )}
+          title={!checkInPassed ? "Upload available after check-in" : undefined}
+        >
           <Upload size={13} />
-          {uploadTm30.isPending ? "Uploading…" : tm30Filed ? "Replace" : "📤 Upload TM-30 receipt"}
+          {uploadTm30.isPending ? "Uploading…" : !checkInPassed ? "After check-in" : tm30Filed ? "Replace" : "📤 Upload TM-30 receipt"}
           <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
@@ -144,6 +165,7 @@ function GuestCard({
 const INVOICE_TYPE_LABELS: Record<string, string> = {
   Rent: "Total rent",
   Deposit: "Security deposit",
+  PetDeposit: "Pet deposit", // BUG-274
   Utilities: "Utilities",
   Cleaning: "Cleaning fee",
   Damage: "Damage fee",
@@ -170,8 +192,8 @@ function TabsNav({
     { id: "utilities", label: "Utilities", icon: <Zap size={13} /> },
   ];
   return (
-    <div className="border-b border-border overflow-x-auto">
-      <div role="tablist" className="flex gap-1 min-w-max">
+    <div className="border-b border-border overflow-x-auto sm:overflow-visible [touch-action:pan-y]">
+      <div role="tablist" className="flex gap-1 min-w-max sm:min-w-0 sm:flex-wrap">
         {tabs.map((t) => {
           const on = active === t.id;
           return (
@@ -225,6 +247,12 @@ export function BookingDetailPage() {
 
   const { data: booking, isLoading } = useBooking(id!);
   const { data: guests } = useBookingGuests(id!);
+  // BUG-318: fetch every foreign guest's TM-30 status at the PAGE level so the
+  // Overview compliance card is correct on mount — previously the data only
+  // loaded once the Guests tab rendered its per-guest rows, so Overview flashed
+  // a false "0/1 filed · fine up to ฿2,000" until the host clicked Guests.
+  const foreignGuestIds = (guests ?? []).filter((g) => !!g.passportNumber).map((g) => g.id);
+  const tm30Queries = useBookingTm30Many(id!, foreignGuestIds);
   const { data: invoices } = useBookingInvoices(id!);
   const { data: contractData } = useBookingContract(id!);
   const { data: paymentData } = useBookingPayment(id!);
@@ -272,6 +300,9 @@ export function BookingDetailPage() {
   const [landlordAgreedTerms, setLandlordAgreedTerms] = useState(false);
   const [landlordAgreedEta, setLandlordAgreedEta] = useState(false);
   const [landlordAgreedAuth, setLandlordAgreedAuth] = useState(false);
+  // BUG-267: landlord identity must exist before signing. Surface the form when
+  // it's missing (or after the BE rejects with landlord_identity_missing).
+  const [showIdentityForm, setShowIdentityForm] = useState(false);
 
   const [contractUploading, setContractUploading] = useState(false);
   void contractUploading;
@@ -324,11 +355,19 @@ export function BookingDetailPage() {
       });
       toast.success("Agreement signed successfully");
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.message ??
-        (err as { response?: { data?: { message?: string; title?: string } } })?.response?.data?.title ??
-        "Failed to sign agreement. Please try again.";
-      setLandlordSignError(msg);
+      const data = (err as { response?: { data?: { message?: string; title?: string; detail?: string } } })?.response?.data;
+      const raw = data?.message ?? data?.title ?? data?.detail ?? "";
+      // BUG-267: the BE blocks signing with `landlord_identity_missing` until
+      // the landlord has filled their identity. Translate the raw code into a
+      // human message and reveal the identity form instead of showing the code.
+      if (/landlord_identity_missing/i.test(raw)) {
+        setShowIdentityForm(true);
+        setLandlordSignError(
+          "Add your identity details below before signing — they're printed on the rental contract.",
+        );
+      } else {
+        setLandlordSignError(raw || "Failed to sign agreement. Please try again.");
+      }
     }
   }
 
@@ -396,19 +435,30 @@ export function BookingDetailPage() {
   const bookingIsOver = booking.status === BookingStatus.Completed;
 
   const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
+  // BUG-318: merge the page-level batch results (load on mount) with whatever
+  // the Guests-tab rows have reported. Page-level is the primary source so the
+  // Overview card is correct without opening Guests; the row callbacks keep it
+  // live after an upload. `filedMap.get(id)` is true/false once resolved,
+  // undefined while still loading.
+  const tm30FiledMap = new Map<string, boolean>();
+  foreignGuestIds.forEach((gid, i) => {
+    const q = tm30Queries[i];
+    if (q?.data !== undefined) tm30FiledMap.set(gid, q.data?.status === Tm30Status.Filed);
+    else if (tm30StatusMap.has(gid)) tm30FiledMap.set(gid, tm30StatusMap.get(gid)!);
+  });
   // Wait for every foreign guest's TM-30 query to resolve before classifying
   // the booking as compliant / overdue. Without this, the UI flashes a scary
   // "TM-30 X days overdue" banner while per-guest queries are still in flight.
   const tm30Resolved =
     foreignGuests.length === 0 ||
-    foreignGuests.every((g) => tm30StatusMap.has(g.id));
+    foreignGuests.every((g) => tm30FiledMap.has(g.id));
   const tm30Summary = {
     total: foreignGuests.length,
-    filed: foreignGuests.filter((g) => tm30StatusMap.get(g.id) === true).length,
+    filed: foreignGuests.filter((g) => tm30FiledMap.get(g.id) === true).length,
     allFiled:
       tm30Resolved &&
       foreignGuests.length > 0 &&
-      foreignGuests.every((g) => tm30StatusMap.get(g.id) === true),
+      foreignGuests.every((g) => tm30FiledMap.get(g.id) === true),
     hasGuests: foreignGuests.length > 0,
     resolved: tm30Resolved,
   };
@@ -544,7 +594,7 @@ export function BookingDetailPage() {
           }
           sub={
             (contractData?.finalPdfUrl ?? contractData?.draftPdfUrl ?? booking.contractUrl)
-              ? <a href={contractData?.finalPdfUrl ?? contractData?.draftPdfUrl ?? booking.contractUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-fg transition-colors"><FileText size={11} />Download PDF</a>
+              ? <button type="button" onClick={() => openAuthPdf(contractData?.finalPdfUrl ?? contractData?.draftPdfUrl ?? booking.contractUrl!).catch(() => toast.error("Couldn't open PDF"))} className="inline-flex items-center gap-1 hover:text-fg transition-colors"><FileText size={11} />Download PDF</button>
               : undefined
           }
         />
@@ -553,24 +603,49 @@ export function BookingDetailPage() {
           value={
             !tm30Summary.hasGuests
               ? <span className="text-fg-muted">—</span>
-              : tm30Summary.allFiled
-                ? <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} className="text-success" />{tm30Summary.total} / {tm30Summary.total} filed</span>
-                : <span className="inline-flex items-center gap-1.5 text-warning"><AlertCircle size={14} />{tm30Summary.filed} / {tm30Summary.total} filed</span>
+              // BUG-318: neutral state while the batch query is still resolving
+              // — never flash the alarming "0/1 · fine up to ฿2,000".
+              : !tm30Summary.resolved
+                ? <span className="inline-flex items-center gap-1.5 text-fg-muted"><Clock size={14} />Checking…</span>
+                : tm30Summary.allFiled
+                  ? <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} className="text-success" />{tm30Summary.total} / {tm30Summary.total} filed</span>
+                  : <span className="inline-flex items-center gap-1.5 text-warning"><AlertCircle size={14} />{tm30Summary.filed} / {tm30Summary.total} filed</span>
           }
           sub={
             !tm30Summary.hasGuests
               ? "No foreign guests"
-              : tm30Summary.allFiled
-                ? "Compliant"
-                : `${unfiledCount} remaining · fine up to ฿${maxFine.toLocaleString()}`
+              : !tm30Summary.resolved
+                ? "Fetching filing status"
+                : tm30Summary.allFiled
+                  ? "Compliant"
+                  : `${unfiledCount} remaining · fine up to ฿${maxFine.toLocaleString()}`
           }
         />
       </div>
     </div>
   );
 
+  // UX-266: while per-guest TM-30 queries are still loading and the booking
+  // has foreign guests past check-in, reserve the alert slot with a skeleton
+  // so the TM-30-overdue banner doesn't pop in 500-1500ms after first paint
+  // and get glossed over by the host.
+  const tm30BannerPending =
+    !alert &&
+    !bookingDone &&
+    tm30Summary.hasGuests &&
+    !tm30Summary.resolved &&
+    daysSinceCheckIn >= 0;
+
   // Render alert banner based on resolved alert
-  const alertBanner = !alert ? null : (() => {
+  const alertBanner = !alert ? (tm30BannerPending ? (
+    <div className="rounded-2xl border border-border bg-bg-subtle/50 px-4 py-4 flex items-start gap-3 animate-pulse">
+      <div className="w-[18px] h-[18px] rounded-full bg-fg-subtle/30 shrink-0 mt-0.5" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 w-40 rounded bg-fg-subtle/30" />
+        <div className="h-3 w-72 max-w-full rounded bg-fg-subtle/20" />
+      </div>
+    </div>
+  ) : null) : (() => {
     if (alert.kind === "contract-voided") {
       return (
         <div className="bg-danger/10 border border-danger/20 rounded-2xl p-4 flex items-start gap-3">
@@ -1237,10 +1312,32 @@ export function BookingDetailPage() {
         </div>
       </div>
 
-      {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").length > 0 && (
+      {/* BUG-263: pet deposit shown as its own "deposit held" card (mirrors the
+          tenant view), not buried in Other invoices — so both sides see it in
+          the same place wherever a deposit appears. */}
+      {(() => {
+        const petDepositTotal = (invoices ?? [])
+          .filter((inv) => inv.type === "PetDeposit")
+          .reduce((sum, inv) => sum + (inv.amount ?? 0), 0);
+        if (petDepositTotal <= 0) return null;
+        return (
+          <div className="bg-bg-card rounded-xl shadow-card p-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-fg">Pet deposit</p>
+              <p className="text-xs text-fg-muted mt-0.5">Held in escrow · refunded on check-out if no damage</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm font-semibold text-fg">{formatThb(petDepositTotal)}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-muted">Held</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit" && inv.type !== "PetDeposit").length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-fg">Other invoices</h3>
-          {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").map((inv) => (
+          {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit" && inv.type !== "PetDeposit").map((inv) => (
             <div key={inv.id} className="bg-bg-card rounded-xl shadow-card p-4 flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
@@ -1330,7 +1427,10 @@ export function BookingDetailPage() {
   // Was previously split into Guests + TM-30 tabs; merged into one so the
   // landlord sees passport details and filing status side by side.
   const tm30MissingLegalAddress = !asset?.legalAddress;
-  const tm30NeedsAction = tm30Summary.hasGuests && tm30Summary.resolved && !tm30Summary.allFiled;
+  // UX-216: TM-30 urgency only triggers AFTER check-in (filing window opens on arrival day).
+  // Before check-in → neutral reminder. daysSinceCheckIn < 0 means not yet arrived.
+  const tm30NeedsAction = tm30Summary.hasGuests && tm30Summary.resolved && !tm30Summary.allFiled && daysSinceCheckIn >= 0;
+  const tm30PreCheckinReminder = tm30Summary.hasGuests && !tm30Summary.allFiled && daysSinceCheckIn < 0;
   const guestsPane = (
     <div className="space-y-5">
 
@@ -1349,6 +1449,30 @@ export function BookingDetailPage() {
             <p className="text-sm font-semibold text-fg">You're fully compliant — TM-30 filed for all guests</p>
             <p className="text-xs text-fg-muted mt-0.5">{tm30Summary.total} of {tm30Summary.total} filings on record. No action needed until a new guest arrives.</p>
           </div>
+        </div>
+      ) : tm30PreCheckinReminder ? (
+        // UX-216: neutral reminder before check-in — filing window hasn't opened yet
+        <div className="bg-bg-card border border-border rounded-2xl px-5 py-4 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-bg-subtle flex items-center justify-center shrink-0">
+            <FileCheck size={18} className="text-fg-muted" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-fg">TM-30 required within 24h of check-in</p>
+            <p className="text-xs text-fg-muted mt-0.5 leading-relaxed">
+              Check-in is on <b className="text-fg">{formatDate(booking.checkInDate)}</b> — the filing window opens on arrival day.
+              Prepare the template in advance so you can file immediately after the guest arrives.
+            </p>
+          </div>
+          <Button
+            disabled={tm30MissingLegalAddress || tm30Downloading || !(guests ?? []).some((g) => !!g.passportNumber)}
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadTm30Template}
+            className="rounded-xl shrink-0 gap-1.5 text-xs"
+          >
+            <Download size={12} />
+            {tm30Downloading ? "Downloading…" : "Prepare template"}
+          </Button>
         </div>
       ) : tm30NeedsAction ? (
         <div className="relative bg-danger/8 border-2 border-danger/40 rounded-2xl px-5 py-5 overflow-hidden">
@@ -1431,10 +1555,51 @@ export function BookingDetailPage() {
               The tenant has signed the agreement. Please review and add your signature to finalise.
             </p>
             {contractData.draftPdfUrl && (
-              <a href={contractData.draftPdfUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline">
+              <button
+                type="button"
+                onClick={() => openAuthPdf(contractData.draftPdfUrl!).catch(() => toast.error("Couldn't open PDF"))}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline"
+              >
                 <FileText size={14} />View draft agreement (PDF)
-              </a>
+              </button>
             )}
+
+            {/* BUG-267: landlord identity gate. The contract prints the
+                landlord's legal identity, and the BE blocks signing until it's
+                on file. Show the form (or a saved summary) right where the
+                landlord signs, instead of the raw landlord_identity_missing
+                error they used to hit with no way to fix it. */}
+            {!profile?.landlordIdentity || showIdentityForm ? (
+              <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={15} className="text-warning shrink-0 mt-0.5" />
+                  <p className="text-sm text-fg">
+                    <span className="font-semibold">Add your identity to sign.</span>{" "}
+                    These details are printed on the rental contract. You only enter them once.
+                  </p>
+                </div>
+                <LandlordIdentityForm
+                  existing={profile?.landlordIdentity ?? null}
+                  onSaved={() => setShowIdentityForm(false)}
+                  embedded
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Signing identity</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowIdentityForm(true)}
+                    className="text-xs text-brand hover:underline"
+                  >
+                    Edit
+                  </button>
+                </div>
+                <LandlordIdentitySummary identity={profile.landlordIdentity} />
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-fg">Full name</label>
               <Input placeholder="Your full legal name" value={landlordTypedName} onChange={(e) => setLandlordTypedName(e.target.value)} required />
@@ -1502,6 +1667,7 @@ export function BookingDetailPage() {
             <Button
               type="submit"
               disabled={
+                !profile?.landlordIdentity ||
                 !landlordTypedName.trim() ||
                 !landlordAgreedTerms ||
                 !landlordAgreedEta ||
@@ -1510,7 +1676,11 @@ export function BookingDetailPage() {
               }
               className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm font-semibold disabled:opacity-50"
             >
-              {landlordSignContract.isPending ? "Signing…" : "Sign agreement"}
+              {landlordSignContract.isPending
+                ? "Signing…"
+                : !profile?.landlordIdentity
+                  ? "Add your identity to sign"
+                  : "Sign agreement"}
             </Button>
           </form>
         </div>
@@ -1540,7 +1710,7 @@ export function BookingDetailPage() {
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} onTm30Status={handleTm30Status} />)}
+            {guests.map((g) => <GuestCard key={g.id} guest={g} bookingId={id!} checkInDate={booking.checkInDate} onTm30Status={handleTm30Status} />)}
           </div>
         </>
       )}

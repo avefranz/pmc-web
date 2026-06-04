@@ -54,14 +54,28 @@ function WishHeart({ id }: { id: string }) {
 
 // ─── Listing card ─────────────────────────────────────────────────────────────
 
+// BUG-302: heuristic for obvious dev/test fixtures that shouldn't appear on
+// the public marketplace. Falls back to "let it through" for any title that
+// doesn't fit the patterns — we'd rather show a real listing whose title
+// happens to start with a number than hide a paying host's property.
+function isObviousTestListing(title?: string | null): boolean {
+  if (!title) return false;
+  const t = title.trim().toLowerCase();
+  if (!t) return false;
+  if (/^(test|тест|qa)[\s\-_:]/.test(t)) return true;
+  if (/^(test|тест|qa)$/.test(t)) return true;
+  if (/^test\s*property/.test(t)) return true;
+  if (/^test\s*studio/.test(t)) return true;
+  if (/^#/.test(t)) return true;
+  return false;
+}
+
 function ListingCard({
   listing,
-  idx,
   durationMonths,
   style,
 }: {
   listing: MarketplaceListingPreviewDto;
-  idx: number;
   durationMonths?: number;
   style?: React.CSSProperties;
 }) {
@@ -103,6 +117,16 @@ function ListingCard({
 
   const photo = listing.coverImageUrl;
 
+  // UX-303: show "New" only for the first 14 days after publishing — BE now
+  // surfaces publishedAt on the preview DTO, so the badge carries signal again
+  // instead of appearing on every card.
+  const isNew = (() => {
+    if (!listing.publishedAt) return false;
+    const t = new Date(listing.publishedAt).getTime();
+    if (Number.isNaN(t)) return false;
+    return Date.now() - t < 14 * 24 * 3600 * 1000;
+  })();
+
   return (
     <Link to={`/listings/${listing.id}`} className="group block" style={style}>
 
@@ -111,7 +135,7 @@ function ListingCard({
           misleads tenants about what they're booking. */}
       <div className="relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle">
         <ListingImage
-          src={photo}
+          src={photo ?? undefined}
           alt={listing.title}
           className="w-full h-full object-cover"
         />
@@ -131,10 +155,16 @@ function ListingCard({
         {/* Line 1: regular weight, dark gray — NOT bold */}
         {/* UX-52: title attribute shows full text on hover when truncated */}
         <p className="text-[12px] font-semibold text-fg leading-snug line-clamp-1" title={cardTitle}>
+          {isNew && (
+            <span className="inline-flex items-center align-middle mr-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 bg-emerald-500/12 rounded-full px-1.5 py-0.5">
+              New
+            </span>
+          )}
           {cardTitle}
         </p>
 
-        {/* Line 2: slightly smaller, muted gray */}
+        {/* Line 2: slightly smaller, muted gray. UX-303: "New" now gated on
+            publishedAt (< 14 days) above — BE surfaces it on the preview DTO. */}
         <p className="text-[11px] text-fg-muted leading-snug mt-0.5">
           {hasDiscount ? (
             <>
@@ -144,7 +174,6 @@ function ListingCard({
           ) : (
             <>{priceLabel}</>
           )}
-          {" · ★ New"}
         </p>
       </div>
     </Link>
@@ -621,46 +650,71 @@ export function ListingsPage() {
       )}
 
       {/* ─── Grid ─── */}
-      {isLoading && page === 1 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
-          {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
-      ) : !allItems.length ? (
-        <div className="flex flex-col items-center justify-center py-32 text-center">
-          <p className="text-6xl mb-5">🏠</p>
-          <p className="text-xl font-semibold text-fg mb-2">No places found</p>
-          <p className="text-sm text-fg-muted mb-5">Try adjusting your filters or move-in date</p>
-          {hasFilters && (
-            <Button variant="outline" onClick={clearFilters} className="rounded-full">
-              Clear filters
-            </Button>
-          )}
-        </div>
-      ) : (
-        <>
-          <style>{`
-            @keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-            ${SHIMMER_CSS}
-          `}</style>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
-            {allItems.map((listing, idx) => (
-              <ListingCard
-                key={listing.id}
-                listing={listing}
-                idx={idx}
-                durationMonths={durationMonths}
-                style={{ animation: "cardIn 0.3s ease both", animationDelay: `${Math.min(idx, 11) * 35}ms` }}
-              />
-            ))}
-            {isFetching && page > 1 && Array.from({ length: PAGE_SIZE }).map((_, i) => (
-              <ShimmerCard key={`shim-${i}`} />
-            ))}
-          </div>
+      {/* BUG-302: filter out obvious test fixtures from prod build so an
+          anonymous visitor never sees "Test property #1" / "Test Studio Nimman"
+          on the marketplace. In dev we keep them visible behind a banner so
+          we don't accidentally hide real-looking demo data during QA. The
+          right long-term fix is a BE `isDemo` flag — captured as a BE-TODO
+          in the tracker history. */}
+      {(() => {
+        const visibleItems = import.meta.env.PROD
+          ? allItems.filter((l) => !isObviousTestListing(l.title))
+          : allItems;
+        const hiddenCount = allItems.length - visibleItems.length;
+        return (
+          <>
+            {!import.meta.env.PROD && allItems.some((l) => isObviousTestListing(l.title)) && (
+              <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-2.5 text-xs text-fg">
+                <strong>Dev mode:</strong> {allItems.filter((l) => isObviousTestListing(l.title)).length} demo listing
+                {allItems.filter((l) => isObviousTestListing(l.title)).length === 1 ? "" : "s"} visible — hidden in production.
+              </div>
+            )}
+            {isLoading && page === 1 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
+                {Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)}
+              </div>
+            ) : !visibleItems.length ? (
+              <div className="flex flex-col items-center justify-center py-32 text-center">
+                <p className="text-6xl mb-5">🏠</p>
+                <p className="text-xl font-semibold text-fg mb-2">No places found</p>
+                <p className="text-sm text-fg-muted mb-5">
+                  {hiddenCount > 0
+                    ? `${hiddenCount} demo listing${hiddenCount === 1 ? "" : "s"} hidden — try a different filter.`
+                    : "Try adjusting your filters or move-in date"}
+                </p>
+                {hasFilters && (
+                  <Button variant="outline" onClick={clearFilters} className="rounded-full">
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                <style>{`
+                  @keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+                  ${SHIMMER_CSS}
+                `}</style>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-7">
+                  {visibleItems.map((listing, idx) => (
+                    <ListingCard
+                      key={listing.id}
+                      listing={listing}
+                      durationMonths={durationMonths}
+                      style={{ animation: "cardIn 0.3s ease both", animationDelay: `${Math.min(idx, 11) * 35}ms` }}
+                    />
+                  ))}
+                  {isFetching && page > 1 && Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                    <ShimmerCard key={`shim-${i}`} />
+                  ))}
+                </div>
 
-          {/* Infinite scroll sentinel — sits below visible cards */}
-          {hasMore && !isFetching && <ScrollSentinel onVisible={() => setPage((p) => p + 1)} />}
-        </>
-      )}
+                {/* Infinite scroll sentinel — sits below visible cards */}
+                {hasMore && !isFetching && <ScrollSentinel onVisible={() => setPage((p) => p + 1)} />}
+              </>
+            )}
+          </>
+        );
+      })()}
 
     </div>
   );

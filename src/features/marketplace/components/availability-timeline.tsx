@@ -12,9 +12,11 @@ function getMonthStatus(
   const nextMonth = addMonths(monthStart, 1);
 
   const availFrom = parseISO(availability.availableFrom);
-  const availUntil = availability.availableUntil
-    ? parseISO(availability.availableUntil)
-    : null;
+  // BUG-327: honour a fixed window. BE sends the end as `availableTo`; older
+  // payloads use the `availableUntil` alias. Without this fallback the timeline
+  // painted all 13 months as available even on a 6-month fixed listing.
+  const availEndStr = availability.availableUntil ?? availability.availableTo;
+  const availUntil = availEndStr ? parseISO(availEndStr) : null;
 
   // Before listing start date
   if (isBefore(monthStart, availFrom) && !isEqual(monthStart, startOfMonth(availFrom))) {

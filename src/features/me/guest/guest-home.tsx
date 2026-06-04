@@ -1,6 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { Link } from "react-router-dom";
-import { Search, Home } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyBookings } from "@/lib/hooks/use-bookings";

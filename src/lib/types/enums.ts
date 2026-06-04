@@ -92,6 +92,8 @@ export enum InvoiceStatus {
 export enum InvoiceType {
   Rent = "Rent",
   Deposit = "Deposit",
+  /** BUG-274/263: pet damage refundable deposit, billed separately when pets > 0. */
+  PetDeposit = "PetDeposit",
   Utilities = "Utilities",
   Cleaning = "Cleaning",
   Damage = "Damage",
@@ -145,4 +147,19 @@ export enum CalendarStatus {
 export enum Tm30Status {
   Pending = "Pending",
   Filed = "Filed",
+}
+
+// BUG-265: in-app notification kinds emitted by the backend
+// (NotificationService). Used to pick an icon/accent in the bell panel.
+// Unknown values fall back to the `General` styling so a new BE type never
+// crashes the FE — keep the switch in notification-bell.tsx exhaustive-safe.
+export enum NotificationType {
+  BookingRequestReceived = "BookingRequestReceived",
+  BookingRequestApproved = "BookingRequestApproved",
+  BookingRequestRejected = "BookingRequestRejected",
+  ReservationCreated = "ReservationCreated",
+  PaymentReceived = "PaymentReceived",
+  ContractSigned = "ContractSigned",
+  Tm30Filed = "Tm30Filed",
+  General = "General",
 }

@@ -1,6 +1,19 @@
 import { apiClient } from "./client";
 import type { AmenityDefinition, ReferencesAll } from "../types";
 
+// City reference as returned by GET /api/references/cities. The backend
+// includes geo coords + region so the address section can centre its map /
+// bias Nominatim search on the chosen city.
+export interface ReferenceCity {
+  id: number;
+  code: string;
+  name: { en: string; ru?: string; th?: string };
+  latitude?: number;
+  longitude?: number;
+  regionId?: number;
+  region?: string | null;
+}
+
 // Unwrap ApiResponse<T> envelope if present
 function unwrap<T>(raw: unknown): T {
   if (raw && typeof raw === "object" && !Array.isArray(raw) && "data" in (raw as object)) {
@@ -108,9 +121,9 @@ export const referencesApi = {
   },
 
   /** All cities available for property creation — not filtered by active listings (BUG-04). */
-  getCities: async (): Promise<{ id: number; code: string; name: { en: string; ru?: string; th?: string } }[]> => {
+  getCities: async (): Promise<ReferenceCity[]> => {
     const raw = await apiClient.get<unknown>("/api/references/cities").then((r) => r.data);
-    return asArray<{ id: number; code: string; name: { en: string; ru?: string; th?: string } }>(unwrap<unknown>(raw));
+    return asArray<ReferenceCity>(unwrap<unknown>(raw));
   },
 
   getAmenities: async (): Promise<AmenityDefinition[]> => {

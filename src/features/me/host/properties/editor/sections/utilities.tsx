@@ -1,6 +1,7 @@
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field } from "../ui";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils/cn";
 
 const UTILITY_FIELDS = [
   { key: "utilityElectricity", label: "Electricity" },
@@ -11,12 +12,44 @@ const UTILITY_FIELDS = [
 ] as const;
 
 function UtilitiesDialog({ draft, patch }: SectionDialogProps) {
+  const anyChecked = UTILITY_FIELDS.some((u) => draft[u.key]);
+  const noneIncludedConfirmed = draft.utilitiesTouched && !anyChecked;
+
   return (
     <Field
       label="Utilities included in rent"
       hint="Anything checked here is covered. Unchecked = tenant pays separately."
     >
-      <div className="grid grid-cols-2 gap-2.5">
+      <label
+        className={cn(
+          "flex items-center gap-2.5 p-3 rounded-xl border-2 bg-bg cursor-pointer mb-2.5 transition-colors",
+          noneIncludedConfirmed
+            ? "border-fg bg-fg/5"
+            : "border-border hover:border-fg-subtle",
+        )}
+      >
+        <Checkbox
+          checked={noneIncludedConfirmed}
+          onCheckedChange={(c) => {
+            if (c) {
+              patch({
+                utilityElectricity: false,
+                utilityWater: false,
+                utilityInternet: false,
+                utilityAircon: false,
+                utilityGarbage: false,
+                utilitiesTouched: true,
+              });
+            } else {
+              patch({ utilitiesTouched: false });
+            }
+          }}
+        />
+        <span className="text-sm font-medium text-fg">
+          Nothing included — tenant pays for everything separately
+        </span>
+      </label>
+      <div className={cn("grid grid-cols-2 gap-2.5 transition-opacity", noneIncludedConfirmed && "opacity-50 pointer-events-none")}>
         {UTILITY_FIELDS.map((u) => {
           const checked = draft[u.key];
           return (

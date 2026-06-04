@@ -220,16 +220,80 @@ function Section({ title, sub, children, className }: {
 
 // ─── Property map ─────────────────────────────────────────────────────────────
 
-function PropertyMap({ lat, lon, cityName }: { lat: number; lon: number; cityName?: string }) {
-  const d = 0.008;
-  const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
+// BUG-304: The OSM `<iframe>` embed was unreliable — `onLoad` fires even when
+// the embedded page is blank/blocked (cross-origin, so we can't inspect it),
+// which left a broken map covering the fallback (QA re-verify 2026-05-30). We
+// now render a **static map `<img>`** (Wikimedia tile, same source the
+// neighbourhood card uses) whose `onError` *reliably* fires on a failed load,
+// and fall back to a styled tile + "Open in Google Maps" link. No iframe.
+function staticMapUrl(lat: number, lon: number, zoom = 14, w = 1200, h = 360): string {
+  return `https://maps.wikimedia.org/img/osm-intl,${zoom},${lat},${lon},${w}x${h}.png`;
+}
+
+function PropertyMap({ lat, lon, cityName }: { lat?: number; lon?: number; cityName?: string }) {
+  const hasCoords =
+    typeof lat === "number" && typeof lon === "number" &&
+    !Number.isNaN(lat) && !Number.isNaN(lon) && (lat !== 0 || lon !== 0);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const showImg = hasCoords && !imgFailed;
+  const mapsHref = hasCoords
+    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
+    : cityName
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cityName + ", Thailand")}`
+    : null;
+
   return (
-    <iframe
-      title={`Location in ${cityName ?? "Thailand"}`}
-      src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`}
-      className="w-full h-full border-0"
-      loading="lazy"
-    />
+    <div className="relative w-full h-full">
+      {/* Fallback tile — always painted underneath so a failed map never shows
+          a broken-image icon. Covered by the static map img once it loads. */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-violet-50 to-indigo-100 dark:from-indigo-500/15 dark:via-violet-500/10 dark:to-indigo-500/15"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 20% 30%, rgba(99,102,241,0.18) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(168,85,247,0.14) 0%, transparent 50%)",
+        }}
+      >
+        <div className="w-12 h-12 rounded-full bg-white/70 dark:bg-bg-card/70 backdrop-blur flex items-center justify-center shadow-sm mb-3">
+          <MapPinIcon size={22} className="text-indigo-500" />
+        </div>
+        {cityName && <p className="text-sm font-semibold text-fg">{cityName}</p>}
+        <p className="text-xs text-fg-muted mt-0.5 max-w-[280px] text-center px-4">
+          Approximate location — exact address shared after booking
+        </p>
+        {mapsHref && (
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-300 hover:underline"
+          >
+            <ExternalLink size={11} /> Open in Google Maps
+          </a>
+        )}
+      </div>
+
+      {showImg && (
+        // Static tile. A successful load covers the fallback; onError reliably
+        // reveals it again (unlike an iframe's misleading onLoad). The whole
+        // tile links to Google Maps so the marker is still actionable.
+        <a
+          href={mapsHref ?? undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute inset-0 block"
+          aria-label={`Open ${cityName ?? "location"} in Google Maps`}
+        >
+          <img
+            src={staticMapUrl(lat!, lon!)}
+            alt={`Map of ${cityName ?? "the area"}`}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+          />
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -345,7 +409,18 @@ export function ListingDetailPage() {
   );
 
   const bookingPanel = isOwnListing ? ownListingPanel : availability ? (
-    <BookingWidget listing={{ id: listing.id, monthlyRate, discountTiers, depositAmount: listing.depositAmount }} availability={availability} onRequestBook={handleRequestBook} />
+    <BookingWidget
+      listing={{
+        id: listing.id,
+        monthlyRate,
+        discountTiers,
+        depositAmount: listing.depositAmount,
+        petDeposit: listing.petDeposit,
+        petsAllowed: listing.petsAllowed,
+      }}
+      availability={availability}
+      onRequestBook={handleRequestBook}
+    />
   ) : (
     <BookingPanelFallback listing={listing} onRequestBook={handleRequestBook} />
   );
@@ -355,6 +430,7 @@ export function ListingDetailPage() {
     listing.utilityElectricity && { label: "Electricity" },
     listing.utilityWater      && { label: "Water" },
     listing.utilityInternet   && { label: "Internet" },
+    listing.utilityAircon     && { label: "Air conditioning" },
     listing.utilityGarbage    && { label: "Garbage" },
   ].filter(Boolean) as { label: string }[];
 
@@ -362,6 +438,7 @@ export function ListingDetailPage() {
     !listing.utilityElectricity && "Electricity",
     !listing.utilityWater       && "Water",
     !listing.utilityInternet    && "Internet",
+    !listing.utilityAircon      && "Air conditioning",
     !listing.utilityGarbage     && "Garbage",
   ].filter(Boolean) as string[];
 
@@ -487,7 +564,11 @@ export function ListingDetailPage() {
               {listing.floor != null && (
                 <span className="flex items-center gap-2 font-medium">
                   <Building2 size={15} className="text-fg-muted" />
-                  Floor {listing.floor}{listing.totalFloors ? `/${listing.totalFloors}` : ""}
+                  {/* UX-353: floor 0 is the ground floor — mirror the editor's
+                      "Ground (G)" label instead of a confusing "Floor 0". */}
+                  {listing.floor === 0
+                    ? `Ground floor${listing.totalFloors ? `/${listing.totalFloors}` : ""}`
+                    : `Floor ${listing.floor}${listing.totalFloors ? `/${listing.totalFloors}` : ""}`}
                 </span>
               )}
               {(listing.parkingSpaces && listing.parkingSpaces > 0) ? (
@@ -855,10 +936,11 @@ export function ListingDetailPage() {
           moveInDate={bookingModal.moveIn}
           durationMonths={bookingModal.months}
           monthlyRate={monthlyRate}
-          depositAmount={listing.depositAmount}
+          depositAmount={listing.depositAmount ?? undefined}
           discountTiers={discountTiers}
           petsAllowed={listing.petsAllowed}
           petDeposit={listing.petDeposit}
+          maxOccupancy={listing.maxOccupancy}
           onClose={() => setBookingModal(null)}
         />
       )}

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { bookingsApi } from "../api/bookings.api";
 import type { CreateBookingRequest, AddGuestRequest, UpsertPassportRequest } from "../types";
 import type { BookingStatus } from "../types/enums";
@@ -110,6 +110,17 @@ export const useBookingTm30 = (bookingId: string, guestId: string | null) =>
     staleTime: 30_000,
   });
 
+/** Aggregate TM-30 fetch for many guests at once — safe inside variable-length arrays. */
+export const useBookingTm30Many = (bookingId: string, guestIds: string[]) =>
+  useQueries({
+    queries: guestIds.map((guestId) => ({
+      queryKey: keys.tm30(bookingId, guestId),
+      queryFn: () => bookingsApi.getTm30(bookingId, guestId),
+      enabled: !!bookingId && !!guestId,
+      staleTime: 30_000,
+    })),
+  });
+
 
 export const useCreateBooking = () => {
   const qc = useQueryClient();
@@ -127,6 +138,19 @@ export const useUpdateBookingStatus = (id: string) => {
   return useMutation({
     mutationFn: (status: BookingStatus) => bookingsApi.updateStatus(id, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.detail(id) }),
+  });
+};
+
+/** UX-278: tenant self-check-in mutation. Invalidates booking detail + my-bookings list. */
+export const useCheckIn = (id: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => bookingsApi.checkIn(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.detail(id) });
+      qc.invalidateQueries({ queryKey: keys.my() });
+      qc.invalidateQueries({ queryKey: keys.all });
+    },
   });
 };
 

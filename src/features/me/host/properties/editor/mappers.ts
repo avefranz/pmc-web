@@ -9,6 +9,12 @@ export function draftFromAsset(asset: AssetDto | undefined, listing: ListingDto 
   return {
     ...EMPTY_DRAFT,
     assetTypeId: asset.assetTypeId ?? null,
+    // ListingDto doesn't surface propertyCategoryId today — read it
+    // defensively via a cast so we don't lose the choice if BE adds it
+    // later. Null in edit mode falls back to the references[0] default at
+    // commit time, same as before — but the host's earlier pick survives.
+    propertyCategoryId:
+      (listing as unknown as { propertyCategoryId?: number } | undefined)?.propertyCategoryId ?? null,
     bedrooms: asset.bedrooms ?? null,
     bathrooms: asset.bathrooms ?? 1,
     beds: asset.beds ?? 1,
@@ -30,6 +36,15 @@ export function draftFromAsset(asset: AssetDto | undefined, listing: ListingDto 
     latitude: asset.exactLatitude ?? null,
     longitude: asset.exactLongitude ?? null,
     legalAddress: asset.legalAddress ?? "",
+    street: asset.street ?? "",
+    soi: asset.soi ?? "",
+    subdistrict: asset.subdistrict ?? "",
+    district: asset.district ?? "",
+    province: asset.province ?? "",
+    // If the asset already has a legalAddress saved, assume the host curated
+    // it — don't let the autogenerator stomp on it when they re-open the
+    // section.
+    legalAddressTouched: !!asset.legalAddress,
     googleMapsUrl: asset.googleMapsUrl ?? "",
 
     title: listing?.title ?? asset.internalName ?? "",
@@ -109,6 +124,13 @@ export function toUpdateLocationRequest(d: PropertyDraft, assetId: string): Upda
     longitude: d.longitude,
     legalAddress: d.legalAddress || undefined,
     googleMapsUrl: d.googleMapsUrl || undefined,
+    // UX-254: send the structured Thai address fields so they round-trip
+    // through edit mode and the BE has them for searchability / TM-30 etc.
+    street: d.street || null,
+    soi: d.soi || null,
+    subdistrict: d.subdistrict || null,
+    district: d.district || null,
+    province: d.province || null,
   };
 }
 

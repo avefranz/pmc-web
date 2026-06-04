@@ -245,15 +245,15 @@ Sarah-аккаунт зарегистрирован заново, marketplace �
 | UX-82 first dropdown item зелёный preselect | ❌ NOT FIXED — Chiang Mai первый item всё ещё с зелёным фоном при открытии City dropdown |
 | UX-84 spinner defaults | ❌ NOT FIXED — Bedrooms=0, Bathrooms=1, Max guests=2 без visual distinction |
 | UX-101 contract identity дублирует passport | ❌ NOT FIXED — на втором booking contract Sarah'а passport/nationality снова пустые; данные между sessions не сохраняются |
-| BUG-110 auth errors не показываются | ❌ NOT FIXED — login/register UI тихо ресетятся при 401/400 |
-| BUG-116 UI guard /me/host/finance для tenant | ❌ NOT FIXED — UI рендерит Finance с ฿0 для tenant Sarah (хотя BE возвращает 403) |
+| BUG-110 auth errors не показываются | ✅ FIXED — `login.tsx` и `register.tsx` оба содержат `serverError` state, catch-блок читает `response.data.detail`, рендерит красным под формой |
+| BUG-116 UI guard /me/host/finance для tenant | ✅ FIXED — `AuthGuard` получил `require="landlord"`; `/me/host` (кроме properties editor) обёрнут `<AuthGuard require="landlord">` → tenant-only user редиректится на `/me/guest/bookings` |
 
 - [ ] **UX-117. Photos upload медленный + cover не сразу отображается в Live Preview.**
   - Где: editor → Photos → Add upload.
   - Что: загрузка нескольких фото занимает заметно много времени без visible progress bar или spinner. Также первое (cover) фото иногда не отображается в Live Preview сразу после upload — нужен reload или save секции, чтобы Live Preview обновился.
   - Как должно: добавить per-photo progress bar (или общий) во время upload; обновлять Live Preview cover immediately после первого successful upload (optimistic UI).
 
-- [ ] **UX-118. Delete property: modal не упоминает active reservations до submit, error toast "Couldn't delete" без BE detail.**
+- [x] **UX-118. Delete property: modal не упоминает active reservations до submit, error toast "Couldn't delete" без BE detail.**
   - Где: `/me/host/properties/{id}` → Delete property modal + post-submit toast.
   - Что: BE-27 правильно блокирует с 400 "Cannot delete property with 1 active reservation(s). Cancel or complete all bookings before deleting." Но UI:
     1. Modal "Delete this property?" не делает pre-flight check `/api/assets/{id}/can-delete` или подобный — пользователь сначала жмёт Delete, потом узнаёт о блокировке.
@@ -271,12 +271,12 @@ Sarah-аккаунт зарегистрирован заново, marketplace �
   - Что: на listing с `petsAllowed=false` под подзаголовком "Travelling with pets?" есть две кнопки **No pets** и **I have pets**. Кнопка "I have pets" **визуально активна** (выглядит как clickable), но клик ничего не делает: visual selection не появляется, Continue остаётся disabled, никакой error message/tooltip не показывается. Pet-holder выбирает "I have pets" → ничего не происходит → застрял.
   - Как должно: либо disable "I have pets" с tooltip "Pets are not allowed at this property — book another listing"; либо при клике показать popup "Pets are not allowed. Reach out to the host to discuss exceptions." Сейчас — silent ignore, наихудший UX вариант.
 
-- [ ] **BUG-110. Login и Register не отображают server errors на UI — silent reset формы.**
+- [x] **BUG-110. Login и Register не отображают server errors на UI — silent reset формы.**
   - Где: `/login` и `/register`.
   - Что: BE корректно возвращает 401 "Invalid email or password." и 400 "Email already exists" — но фронт не отображает эти errors ни как inline error под кнопкой, ни как toast. Форма просто тихо ресетится. Тестировал на: wrong password, unknown email, duplicate register, weak password. В пустом submit — 400 validation errors с полями возвращается, тоже не показывается. Связано с BUG-103 (autofill сбрасывает поля до submit), но даже когда API вызывается с правильными данными — UI не показывает ошибку.
   - Как должно: inline error message под формой "Wrong email or password" / "Email already in use" / "Password too weak"; для validation 400 с `errors` объектом — показывать field-level errors под соответствующими input'ами.
 
-- [ ] **BUG-111. Sarah (tenant only, `isLandlord:false`) получает 200 от host endpoints + UI Finance Dashboard открывается.**
+- [x] **BUG-111. Sarah (tenant only, `isLandlord:false`) получает 200 от host endpoints + UI Finance Dashboard открывается.**
   - Где: `/api/me/host/booking-requests`, `/api/finance/overview`, `/api/finance/summary`, `/me/host/finance` UI.
   - Что: tenant с `isLandlord:false, isTenant:true` capabilities делает GET на host endpoints — все 3 endpoint возвращают 200 (с пустыми data, но не 403). На UI navigate `/me/host/finance` показывает Finance Dashboard с ฿0 везде, без redirect или access-denied screen. Sarah буквально видит host control panel.
   - Как должно: BE — добавить authorization-фильтр `[Authorize(Roles="Landlord")]` или check `IsLandlord` на host endpoints, возвращать 403. Фронт — AuthGuard на `/me/host/*` route должен проверять `isLandlord` capability и redirect tenant'а на `/me/guest/*` или показывать "You need to list a property first" page.
@@ -557,6 +557,56 @@ Sarah login → /me/guest/applications → Approved-заявка → "View your 
   - Как должно: либо marketplace явно дисклоузит «Pre-check-in cancellation = 1 month penalty», либо политика реально позволяет грейс **до** move-in. Сейчас тенант видит «leave any time» при выборе жилья и «฿35,000 penalty» при попытке отменить — это нарушенное обещание.
   - Почему важно: тенант принимает решение о бронировании на основании marketplace promise. Несоответствие на этапе отмены — прямой репутационный риск + потенциальный спор о возврате.
 
+## Round 11 — Real payment + co-resident gate 2026-05-26
+
+- [ ] **✅ Co-resident gate visualy + functionally solid (BUG-135 regression fixed).**
+  - Где: Mike Park's booking detail (Payment pending state) `/me/guest/bookings/e49444b2-...`.
+  - Что отлично:
+    - Big orange banner «Sign your rental agreement · Both signatures are required... If unsigned by the deadline, this booking will be automatically cancelled. · Expires in 1d 8h» countdown
+    - «Who will be living in the unit?» — 2 radio cards «Just me / Me + others»
+    - **Just me selected** → CTA `Sign agreement →` green active
+    - **Me + others selected** → inline warning «Add at least one co-resident before signing — all occupants must be registered.» + «+ Add co-resident» link + yellow CTA `Add co-resident to continue` (blocked state)
+  - User's regression полностью restored.
+
+- [ ] **UX-250 minor. After picking «Me + others» — «Just me» card UI остаётся highlighted (stale visual state).**
+  - Где: same screen.
+  - Что: оба options имеют активный border одновременно — visually confusing. Функционально только последний selected учитывается (warning показывается под Me + others).
+  - Как должно: только одна card highlighted в один момент.
+
+- [ ] **✅ Payment pending копия очень понятная.**
+  - Header: `Payment pending` orange badge явный.
+  - 4 cards: Check-in date / Next payment ฿X (Before signing deadline) / Co-residents / Deposit.
+  - Banner: «Sign your rental agreement» с deadline countdown.
+  - Внизу: «Complete the steps to confirm your booking · Sign the agreement and pay the initial amount — your booking activates as soon as both are done.»
+  - Tabs: «Stay / Payments 0/2 / Property / Co-residents 1»
+
+## Round 9 — Adversarial sweep 2026-05-26
+
+> Прогон по новому СЛОЮ 4 — adversarial input на каждое поле. Цель: ловить то, что я раньше пропустил из-за screenshot-bias.
+
+### ✅ Frontend fixes verified
+
+- **Additional rules .trim() preserves spaces** — `"abc "` → stays `"abc "`. `"  multiple  spaces  "` сохраняется без crunch. ✓
+- **Save property disabled visual** — `opacity: 0.5, cursor: default` на disabled state. BUG-188 confirmed fix. ✓
+- **Pet picker на non-pet-friendly listing**: «I have pets» → Continue **disabled** + inline warning «This listing does not accept pets. Please select "No pets" to continue, or search for a pet-friendly property.» ✓ user's bug fixed.
+- **Co-resident gate before Sign CTA**: `soloAnswer` state + `gateCleared = alone || (withOthers && coResidents.length > 0)` + `Sign disabled={!gateCleared}` ✓ user's regression restored.
+
+### 🚨 New finds
+
+- [x] **BUG-242 caught real-time. Build error: `coResidents` redeclared at line 326 + line 437 (later 426) in `detail-page.tsx`**.
+  - Vite HMR overlay surfaced when navigating booking detail. Tenant booking detail page crashes for этого commit.
+  - Frontend fixed in-session — duplicate gone after re-grep.
+
+- [ ] **BUG-243. Area input в Property type & size: HTML5 `min=1 max=5000` не enforce на input event.**
+  - Где: Property wizard → Property type & size → Area (m²).
+  - Что: `setNative(-50)` сохраняет в DOM `-50`. `setNative(99999999)` сохраняет 99999999. HTML5 min/max validate на form-submit, не на blur. UI не показывает ошибки.
+  - Как должно: на blur — clamp в `[min, max]` или показать inline error «Area must be between 1 and 5000 m²». Иначе backend получит plus huge or negative.
+
+- [ ] **UX-244 (edge). Co-resident gate enforced на Sign-button в detail-page, но не в самой `contract-sign-page.tsx`.**
+  - Где: deep-link `/me/guest/bookings/:id/contract`.
+  - Что: gate проверяется только перед click «Sign». Если тенант идёт по прямой ссылке — обходит вопрос «будете жить один?».
+  - Как должно: добавить `gateCleared` check внутри `contract-sign-page.tsx` тоже — redirect назад на booking detail если не cleared.
+
 ## ⚠️ QA-окружение: notes
 
 - **Тикеты сейчас в системе быть не должны** (по слову владельца, 2026-05-24). Если в UI вижу `Tickets · 0`, пустой Issues tab, или отсутствие global tickets list — **не баг**, ожидаемое состояние. BUG-142 / UX-143 / UX-144 остаются валидны как описание паттернов tickets-flow, но воспроизводить их сейчас нельзя — никаких реальных тикетов в DB.
@@ -825,17 +875,17 @@ Sarah login → /me/guest/applications → Approved-заявка → "View your 
   - Что: список заявок — только круглая иконка (часы / галка), title, dates, status badge. Никаких cover-фото. На marketplace тенант смотрит шикарные фото и горит желанием, а здесь — серая table-like разметка. Эмоциональный провал.
   - Как должно: cover-фото 80x80, рядом с title — host name (Marina · joined 2026), price `฿35,000/mo`, status pill, dates. То же мини-summary, что на marketplace card. Тенант чувствует, что заявка — реальная сделка про конкретное жильё, а не строка в БД.
 
-- [ ] **UX-146. Application Approved: копия и UI «as if just approved» вместо актуального состояния.**
+- [x] **UX-146. ✅ FIXED —  Application Approved: копия и UI «as if just approved» вместо актуального состояния.**
   - Где: `/me/guest/applications/4194325e...` (Approved Sarah's app для уже подписанного и оплаченного контракта).
   - Что: banner `Approved · Great news — your reservation request has been approved! The host will be in touch shortly.` Но Sarah уже подписала, заплатила ฿210k, до check-in 22 дня. Эта копия для свежего approve, не для confirmed booking.
   - Как должно: показать timeline `Applied · Approved · Signed · Paid · Active in 22d` с текущим положением. Или просто «View your stay →» вместо повтора marketing-копии.
 
-- [ ] **UX-147. Application Pending — `Auto-expires in 2d 23h` без объяснения и без CTA.**
+- [x] **UX-147. ✅ FIXED —  Application Pending — `Auto-expires in 2d 23h` без объяснения и без CTA.**
   - Где: `/me/guest/applications/35348176...` (Pending app на Verify4).
   - Что: банер `Awaiting response · Your request has been sent. The host will typically respond within 24 hours.` + `Auto-expires in 2d 23h`. Конфликт ожиданий: 24h response vs 3d expiry. Что произойдёт при expire? Деньги вернутся (Sarah ничего не платила — но это не понятно ей)? Можно ли отменить? Изменить даты? Послать nudge хосту?
   - Как должно: единая копия — `Marina has up to 3 days to respond. If she doesn't, your application expires and you can apply again.` + кнопки `[Withdraw application] [Message host] [Edit dates]`.
 
-- [ ] **UX-148. Pending application: `Refundable deposit ฿60,000 held securely by Siamo` — но Sarah ничего не платила.**
+- [x] **UX-148. ✅ FIXED —  Pending application: `Refundable deposit ฿60,000 held securely by Siamo` — но Sarah ничего не платила.**
   - Где: тот же Pending application detail.
   - Что: правая колонка `Reservation details` показывает `Refundable deposit ฿60,000 · held securely by Siamo`. Sarah видит и думает «я уже отдала ฿60k?!». На самом деле депозит держится Siamo только после approve+pay.
   - Как должно: `Refundable deposit ฿60,000 · payable on approval, then held by Siamo`. Или явно `0 paid yet`.
@@ -850,7 +900,7 @@ Sarah login → /me/guest/applications → Approved-заявка → "View your 
   - Что: левый верхний угол всегда показывает Hosting / Renting toggle. На контекстных страницах (Profile, Documents, Notifications) — переключение режима бессмысленно, добавляет шум.
   - Как должно: скрывать mode-toggle на `/me/profile/*`. Показывать только в actor-specific (My stays, Applications, Properties, Requests).
 
-- [ ] **UX-151. Account menu (Profile / Sign out) не закрывается при navigation.**
+- [x] **UX-151. ✅ FIXED —  Account menu (Profile / Sign out) не закрывается при navigation.**
   - Где: правый верхний угол меню «≡».
   - Что: открываешь меню → клик `Profile` → перешёл на /me/profile → меню всё ещё открыто поверх страницы. Закрывается только клик в пустоту.
   - Как должно: `onClick` на пункт меню → `setOpen(false)` сразу же.
@@ -914,7 +964,7 @@ Sarah login → /me/guest/applications → Approved-заявка → "View your 
   - Как должно: либо `*` на nationality/gender/visa и блокировка Submit, либо явный warning «Without nationality your host can't file TM-30».
   - Почему важно: тенант создаёт co-resident, видит TM-30 row `Pending`, считает что всё в порядке. На check-in день host не может зарегистрировать — viva-violation, штраф 1600 ฿ хосту + проблемы с визой тенанту.
 
-- [ ] **UX-130. Remove co-resident: одиночный клик без confirmation, без undo.**
+- [x] **UX-130. ✅ FIXED —  Remove co-resident: одиночный клик без confirmation, без undo.**
   - Где: Co-residents tab → trash-иконка справа на карточке non-main resident.
   - Что: клик → toast `Removed` → резидент исчез. Никакого подтверждения «Точно удалить Alex Tester?», нет undo в toast.
   - Как должно: либо `confirm` модалка («Delete Alex Tester from booking? They'll be removed from TM-30 filings too»), либо toast с Undo-кнопкой (~5с).
@@ -959,3 +1009,5 @@ Sarah login → /me/guest/applications → Approved-заявка → "View your 
   - Что: Sarah заплатила ฿210,000 за 6 месяцев вперёд (`Rent paid · ฿210,000 of ฿210,000`). Modal говорит только: `Early exit penalty ฿35,000 · 1 month rent · applied upon host confirmation`. Не сказано: вернётся ли неиспользованный rent (например, ฿175k = 5 неотбытых месяцев)? Удержит ли всё ฿210k host?
   - Как должно: breakdown в modal: `Refund: Pre-paid rent ฿210,000 − Penalty ฿35,000 = ฿175,000 returned · Deposit ฿70,000 returned in full`.
   - Почему важно: тенант не нажмёт Submit, не зная финансового исхода. Сейчас CTA «Submit request» — кот в мешке.
+
+> **Round 12 (2026-05-26) вынесен в [BUG_TRACKER.md](BUG_TRACKER.md)** — единый файл для FE/BE/QA. Сюда новые находки этого round'а НЕ добавлять.

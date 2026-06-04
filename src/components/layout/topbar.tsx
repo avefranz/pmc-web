@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { MapPin } from "lucide-react";
 import { UserMenu } from "./user-menu";
+import { NotificationBell } from "./notification-bell";
 import { SiamoLogo } from "./siamo-logo";
 import { TopbarShell } from "./topbar-shell";
 import { LanguageSwitcher } from "./language-switcher";
@@ -78,7 +79,7 @@ function RoleToggle() {
         icon="🏡"
         label="Hosting"
         meta={ownedAssets > 0 ? String(ownedAssets) : undefined}
-        emptyHint={currentRole === "host" && ownedAssets === 0 ? "+ List" : undefined}
+        emptyHint={currentRole === "host" && ownedAssets === 0 ? "+ New property" : undefined}
         onClick={() => navigate("/me/host/properties")}
       />
       <div className="w-px bg-border" />
@@ -206,6 +207,7 @@ export function TopBar() {
           </Link>
           <ThemeToggle />
           <LanguageSwitcher />
+          <NotificationBell />
           <UserMenu />
         </>
       }

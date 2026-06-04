@@ -56,7 +56,7 @@ const STATUS_CONFIG: Record<
     bg: "bg-warning/10",
     ring: "ring-warning/30",
     label: "Awaiting response",
-    description: "Your request has been sent. The host will typically respond within 24 hours.",
+    description: "The host has up to 3 days to respond. If they don't reply in time, your application expires and you can apply again — no payment has been taken.",
   },
   Approved: {
     icon: CheckCircle,
@@ -64,7 +64,7 @@ const STATUS_CONFIG: Record<
     bg: "bg-success/10",
     ring: "ring-success/30",
     label: "Approved",
-    description: "Great news — your reservation request has been approved! The host will be in touch shortly.",
+    description: "Your application was approved. Sign the rental agreement and complete the initial payment to confirm your stay.",
   },
   Rejected: {
     icon: XCircle,
@@ -255,16 +255,24 @@ export function GuestApplicationDetailPage() {
                 <span className="font-medium text-fg">{formatThb(app.monthlyRate)} per month</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
-              <span className="w-[15px] shrink-0" />
-              <div className="flex-1 flex justify-between text-sm">
-                <div>
-                  <span className="text-fg-muted">Refundable deposit</span>
-                  <div className="text-[11px] text-fg-muted mt-0.5">held securely by Siamo</div>
+            {app.depositAmount != null && (
+              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
+                <span className="w-[15px] shrink-0" />
+                <div className="flex-1 flex justify-between text-sm">
+                  <div>
+                    <span className="text-fg-muted">Refundable deposit</span>
+                    <div className="text-[11px] text-fg-muted mt-0.5">
+                      {app.status === "Approved"
+                        ? "payable on signing · then held by Siamo"
+                        : app.status === "Pending"
+                          ? "payable on approval · then held by Siamo"
+                          : "held securely by Siamo"}
+                    </div>
+                  </div>
+                  <span className="font-medium text-fg">{formatThb(app.depositAmount)}</span>
                 </div>
-                <span className="font-medium text-fg">{formatThb(app.depositAmount)}</span>
               </div>
-            </div>
+            )}
             {totalPets({ cats: app.petCatsCount, dogs: app.petDogsCount, other: app.petOtherCount }) > 0 && (
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
                 <span className="w-[15px] shrink-0 text-sm">🐾</span>
@@ -276,13 +284,31 @@ export function GuestApplicationDetailPage() {
                 </div>
               </div>
             )}
+            {/* BUG-368: pet deposit shown alongside the refundable deposit when the
+                application carries pets — symmetric with the booking widget,
+                "Request sent" screen and host request detail. */}
+            {(app.petDeposit ?? 0) > 0 &&
+              totalPets({ cats: app.petCatsCount, dogs: app.petDogsCount, other: app.petOtherCount }) > 0 && (
+              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
+                <span className="w-[15px] shrink-0" />
+                <div className="flex-1 flex justify-between text-sm">
+                  <div>
+                    <span className="text-fg-muted">Pet deposit</span>
+                    <div className="text-[11px] text-fg-muted mt-0.5">
+                      refunded on check-out if no damage
+                    </div>
+                  </div>
+                  <span className="font-medium text-fg">{formatThb(app.petDeposit!)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* CTAs based on status */}
           {app.status === "Approved" && (
             <Button asChild className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm">
               <Link to="/me/guest/bookings">
-                <BedDouble size={15} className="mr-2" />View your stays
+                <BedDouble size={15} className="mr-2" />Open my booking →
               </Link>
             </Button>
           )}

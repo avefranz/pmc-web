@@ -17,6 +17,7 @@ import type {
   UtilityType,
   InviteType,
   AssetOccupancyStatus,
+  NotificationType,
 } from "./enums";
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -65,6 +66,28 @@ export interface UserProfileDto {
   // Landlord contact channels
   contactChannels?: ContactChannel[];
   lineHandle?: string | null;
+  // BUG-267: landlord identity snapshot used when generating the rental
+  // contract. Set once via PATCH /api/me/profile/landlord-identity.
+  landlordIdentity?: LandlordIdentityDto | null;
+}
+
+// BUG-267: identity the landlord must provide before they can sign a contract.
+export type LandlordIdType = "passport" | "thai_id";
+
+export interface LandlordIdentityDto {
+  legalFullName: string;
+  idType: LandlordIdType;
+  idNumber: string;
+  idExpiryDate?: string | null;
+  residentialAddress: string;
+}
+
+export interface UpdateLandlordIdentityRequest {
+  legalFullName: string;
+  idType: LandlordIdType;
+  idNumber: string;
+  idExpiryDate?: string;
+  residentialAddress: string;
 }
 
 export interface UpdateProfileRequest {
@@ -92,7 +115,7 @@ export interface UpdateProfileRequest {
 // ─── Payment ──────────────────────────────────────────────────────────────────
 
 export type PaymentRecordStatus = "Pending" | "Paid";
-export type PaymentRecordType = "Deposit" | "MonthlyRent" | "EarlyExitPenalty";
+export type PaymentRecordType = "Deposit" | "MonthlyRent" | "EarlyExitPenalty" | "PetDeposit";
 
 export interface PaymentRecordDto {
   id: string;
@@ -249,6 +272,12 @@ export interface AssetDto {
   unitNumber?: string | null;
   legalAddress?: string | null;
   googleMapsUrl?: string | null;
+  // UX-254: structured Thai address fields (filled by reverse-geocode).
+  street?: string | null;
+  soi?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  province?: string | null;
   // Physical characteristics
   floor?: number | null;
   totalFloors?: number | null;
@@ -260,6 +289,10 @@ export interface AssetDto {
   parkingIncluded?: boolean;
   // Lease terms
   minLeaseMonths?: number | null;
+  // Current booking context (BE-34)
+  currentBookingStatus?: string | null;
+  currentTenantCheckInDate?: string | null;
+  currentTenantCheckOutDate?: string | null;
 }
 
 export interface AssetMemberDto {
@@ -395,6 +428,12 @@ export interface BookingDto {
   cancellationNoticeDays?: number;
   /** Number of months rent charged as early-exit penalty (UX-114). */
   cancellationPenaltyMonths?: number;
+  /** BUG-275: true while the tenant still needs to provide passport data (no contract signed yet). */
+  passportRequired?: boolean;
+  /** BUG-276: monthly rent (privacy-safe per-month figure for tenant view). */
+  monthlyRent?: number;
+  /** BUG-276: contract duration in months. */
+  durationMonths?: number;
 }
 
 export interface Tm30FilingDto {
@@ -420,6 +459,8 @@ export interface BookingGuestDto {
   visaType?: VisaType;
   entryDate?: string;
   entryPort?: string;
+  /** BUG-269: passport photo URLs (main page + visa stamp). Empty = TM-30 cannot be filed. */
+  passportPhotoUrls?: string[];
 }
 
 // ─── Tickets ──────────────────────────────────────────────────────────────────
@@ -703,6 +744,14 @@ export interface UpdateLocationRequest {
   timezone?: string;
   legalAddress?: string;
   googleMapsUrl?: string;
+  // UX-254: structured Thai address fields. Migration
+  // 20260526150000_AddStructuredAddressFields added these to AssetLocation —
+  // FE now sends them so reverse-geocode results survive a refresh.
+  street?: string | null;
+  soi?: string | null;
+  subdistrict?: string | null;
+  district?: string | null;
+  province?: string | null;
 }
 
 export interface CreateListingRequest {
@@ -731,6 +780,10 @@ export interface CreateListingRequest {
   petDeposit?: number;
   cancellationNoticeDays?: number;
   cancellationPenaltyMonths?: number;
+  /** UX-312: photos staged via POST /api/listings/media/staging before save.
+   * Order = display order (index 0 = cover). BE links them as ListingMedia on
+   * create and consumes the staged rows — no second upload needed. */
+  stagedMediaIds?: string[];
 }
 
 export interface GenerateInviteRequest {
@@ -831,4 +884,28 @@ export interface ContractDto {
 export function contractSigningDeadline(c: Pick<ContractDto, "signingDeadline" | "createdAt">): string {
   if (c.signingDeadline) return c.signingDeadline;
   return new Date(new Date(c.createdAt).getTime() + 72 * 3600_000).toISOString();
+}
+
+// ─── Notifications (BUG-265) ────────────────────────────────────────────────
+// In-app notification feed item. Backend: GET /api/me/notifications →
+// { items: NotificationDto[], unreadCount: number } (wrapped in the standard
+// { data, success, ... } envelope). `type` is a NotificationType but typed as
+// string so an unrecognised BE value degrades gracefully instead of breaking
+// deserialization.
+export interface NotificationDto {
+  id: string;
+  type: NotificationType | string;
+  title: string;
+  body: string;
+  /** In-app route to open when the notification is clicked, e.g. /me/host/bookings/{id}. */
+  link?: string;
+  bookingId?: string;
+  listingId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationFeedDto {
+  items: NotificationDto[];
+  unreadCount: number;
 }

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { format, parseISO, addMonths } from "date-fns";
-import { X, CheckCircle2, Zap, ArrowLeft, Eye, EyeOff, ExternalLink, Camera } from "lucide-react";
+import { X, CheckCircle2, Zap, ArrowLeft, Eye, EyeOff, ExternalLink, Camera, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { DateInput } from "@/components/ui/date-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { formatThb } from "@/lib/utils/format";
 import { useSubmitBookingRequest } from "@/lib/hooks/use-marketplace";
 import { useUpdateProfile } from "@/lib/hooks/use-profile";
@@ -22,18 +22,8 @@ import { PasswordHints, passwordValid } from "@/components/shared/password-hints
 import { PetsSelector, EMPTY_PETS, petSummary as _petSummary, totalPets, type PetCounts } from "@/components/shared/pets-selector";
 import { cn } from "@/lib/utils/cn";
 import { VisaType } from "@/lib/types/enums";
-import type { DiscountTier, BookingRequestResult } from "@/lib/types/marketplace";
-
-const VISA_LABELS: Record<VisaType, string> = {
-  [VisaType.VisaExempt]: "Visa Exempt",
-  [VisaType.Tourist]: "Tourist Visa",
-  [VisaType.NonImmigrantB]: "Non-Immigrant B",
-  [VisaType.NonImmigrantO]: "Non-Immigrant O",
-  [VisaType.NonImmigrantOA]: "Non-Immigrant OA",
-  [VisaType.Education]: "Education Visa",
-  [VisaType.SpecialTourist]: "Special Tourist",
-  [VisaType.Other]: "Other",
-};
+import { VISA_LABELS } from "@/lib/utils/visa-labels";
+import type { DiscountTier, BookingRequestResult, AdditionalResidentInput } from "@/lib/types/marketplace";
 
 // ─── Pet photo upload ─────────────────────────────────────────────────────────
 
@@ -172,8 +162,24 @@ interface Props {
   discountTiers: DiscountTier[];
   petsAllowed?: boolean;
   petDeposit?: number;
+  /** UX-268: hard ceiling so the form can warn before submit (BE also enforces). */
+  maxOccupancy?: number;
   onClose: () => void;
 }
+
+// UX-268: blank co-resident row used when host adds a new entry.
+// BUG-325: no `relationship` — it isn't relevant to the lease / TM-30.
+const EMPTY_RESIDENT: AdditionalResidentInput = {
+  firstName: "",
+  lastName: "",
+  dateOfBirth: "",
+};
+
+// BUG-325: DOB can't be in the future.
+const DOB_NOT_FUTURE = (d: Date) => d > new Date();
+// UX-342: open DOB year-grid on plausible birth years (1990s) instead of the
+// current decade, so the user doesn't have to page back ~3 decades.
+const DOB_ANCHOR = new Date(1995, 0, 1);
 
 type Step = "form" | "auth" | "passport" | "success";
 type AuthMode = "register" | "login";
@@ -188,6 +194,7 @@ export function BookingRequestModal({
   discountTiers,
   petsAllowed,
   petDeposit,
+  maxOccupancy,
   onClose,
 }: Props) {
   const submit = useSubmitBookingRequest();
@@ -202,14 +209,25 @@ export function BookingRequestModal({
     staleTime: 60_000,
   });
 
-  // Form fields
-  const [name, setName] = useState("");
+  // Form fields — UX-328: collect First/Last separately so they map cleanly
+  // onto the profile (firstName/lastName) and the register payload, instead of
+  // the old single "Full name" we had to split on whitespace.
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  // BUG-329: set when register succeeded but the booking-request failed, so we
+  // can tell the (now signed-in) user their account exists and they only need
+  // to fix the request + retry — not register again.
+  const [postRegisterError, setPostRegisterError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [pets, setPets] = useState<PetCounts>(EMPTY_PETS);
   const [petPhotos, setPetPhotos] = useState<PetPhotoMap>(EMPTY_PHOTOS);
   const [petsExplicit, setPetsExplicit] = useState<boolean | null>(null); // null = not answered
+  // UX-268: who else will live in the unit? Collected up-front so the host
+  // sees the count before they approve.
+  const [othersExplicit, setOthersExplicit] = useState<boolean | null>(null);
+  const [residents, setResidents] = useState<AdditionalResidentInput[]>([]);
   const [triedSubmit, setTriedSubmit] = useState(false);
 
   // Multi-step state
@@ -227,9 +245,12 @@ export function BookingRequestModal({
   const [pPassportNumber, setPPassportNumber] = useState("");
   const [pPassportExpiry, setPPassportExpiry] = useState("");
   const [pVisaType, setPVisaType] = useState<VisaType | "">("");
-  const [pLastEntryDate, setPLastEntryDate] = useState("");
-  const [pLastEntryPort, setPLastEntryPort] = useState("");
   const [passportSaving, setPassportSaving] = useState(false);
+  // BUG-366: the identity ("Your details") step had NO inline validation — a
+  // missing/invalid field just silently disabled the CTA (whose text even lied
+  // "Fill all fields" when every field WAS filled but, e.g., the passport had
+  // expired). Surface per-field errors after a submit attempt instead.
+  const [passportTried, setPassportTried] = useState(false);
 
   useEffect(() => {
     if (step === "passport" && profile) {
@@ -237,10 +258,42 @@ export function BookingRequestModal({
       setPPassportNumber(profile.passportNumber ?? "");
       setPPassportExpiry(profile.passportExpiry ?? "");
       setPVisaType((profile.visaType as VisaType) ?? "");
-      setPLastEntryDate(profile.lastEntryDate ?? "");
-      setPLastEntryPort(profile.lastEntryPort ?? "");
+      // BE-ENTRY: last entry date / port no longer collected.
     }
   }, [step, profile]);
+
+  // UX-268: someone-else-lives-here flow.
+  const hasOthers = othersExplicit === true;
+  const othersAnswered = othersExplicit !== null;
+  const residentsValid = !hasOthers
+    ? true
+    : residents.length > 0 &&
+      residents.every((r) =>
+        r.firstName.trim().length > 0 &&
+        r.lastName.trim().length > 0 &&
+        r.dateOfBirth.length > 0,
+      );
+  const overOccupancy =
+    typeof maxOccupancy === "number" && residents.length + 1 > maxOccupancy;
+  // UX-351: once tenant (1) + residents fills maxOccupancy, stop spawning more
+  // empty person forms. Without this the user could add 9 forms on a maxOcc=6
+  // listing and then has to delete them by hand (submit was already blocked).
+  const residentsAtCapacity =
+    typeof maxOccupancy === "number" && residents.length + 1 >= maxOccupancy;
+
+  function addResident() {
+    setResidents((rs) => {
+      // UX-351: never exceed maxOccupancy (tenant counts as 1).
+      if (typeof maxOccupancy === "number" && rs.length + 1 >= maxOccupancy) return rs;
+      return [...rs, { ...EMPTY_RESIDENT }];
+    });
+  }
+  function patchResident(idx: number, patch: Partial<AdditionalResidentInput>) {
+    setResidents((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+  function removeResident(idx: number) {
+    setResidents((rs) => rs.filter((_, i) => i !== idx));
+  }
 
   // hasPets = user explicitly said "yes" (regardless of counts — counts may still be 0)
   const hasPets = petsExplicit === true;
@@ -252,6 +305,18 @@ export function BookingRequestModal({
   );
   const petsAnswered = petsExplicit !== null;
 
+  // UX-328 / BUG-328: cold-path field validity. Name split into First/Last,
+  // phone now mandatory with a light format check (host needs a reachable
+  // contact). Authenticated users skip these — the backend takes them from the
+  // profile.
+  const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+  const phoneDigits = phone.replace(/[^\d]/g, "");
+  const phoneValid = phoneDigits.length >= 7 && /^[+\d][\d\s()-]*$/.test(phone.trim());
+  // BUG-366: light email format check so a typo'd address surfaces inline
+  // rather than silently blocking the (anonymous) Continue button.
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const coldFieldsValid = !!firstName.trim() && !!lastName.trim() && emailValid && phoneValid;
+
   const rate = effectiveRate(monthlyRate, durationMonths, discountTiers);
   const moveOut = format(addMonths(parseISO(moveInDate), durationMonths), "MMMM d, yyyy");
   const moveInFormatted = format(parseISO(moveInDate), "MMMM d, yyyy");
@@ -261,13 +326,21 @@ export function BookingRequestModal({
       listingId,
       moveInDate,
       durationMonths,
-      guestName: name.trim() || undefined,
+      guestName: fullName || undefined,
       guestEmail: email.trim() || undefined,
       guestPhone: phone.trim() || undefined,
       message: message.trim() || undefined,
       petCatsCount:  (petsExplicit && pets.cats)  || undefined,
       petDogsCount:  (petsExplicit && pets.dogs)  || undefined,
       petOtherCount: (petsExplicit && pets.other) || undefined,
+      // UX-268: pass the host the co-resident snapshot up-front.
+      additionalResidents: hasOthers && residents.length > 0
+        ? residents.map((r) => ({
+            firstName:    r.firstName.trim(),
+            lastName:     r.lastName.trim(),
+            dateOfBirth:  r.dateOfBirth,
+          }))
+        : undefined,
     });
 
     // Upload pet photos if any — fire and forget (don't block success flow)
@@ -291,7 +364,12 @@ export function BookingRequestModal({
     e.preventDefault();
     setTriedSubmit(true);
 
-    if (!petsAnswered || !petPhotosReady) return;
+    // BUG-366: the Continue button is no longer silently disabled for these
+    // conditions — it stays clickable so the inline errors below render. Bail
+    // here (after surfacing them) so an invalid form never submits.
+    if (petsExplicit === true && petsAllowed === false) return;
+    if (!petsAnswered || !petCountFilled || !petPhotosReady) return;
+    if (!othersAnswered || !residentsValid || overOccupancy) return;
 
     // Authenticated users don't need to fill name/email (backend takes from profile)
     if (token) {
@@ -313,8 +391,8 @@ export function BookingRequestModal({
       return;
     }
 
-    // Not authenticated — need name+email first, then auth
-    if (!name.trim() || !email.trim()) return;
+    // Not authenticated — need name + email + phone first, then auth
+    if (!coldFieldsValid) return;
     setStep("auth");
   }
 
@@ -331,8 +409,7 @@ export function BookingRequestModal({
     try {
       let result: { token: string };
       if (authMode === "register") {
-        const firstName = name.trim().split(" ")[0];
-        result = await authApi.register(email.trim(), password, firstName);
+        result = await authApi.register(email.trim(), password, firstName.trim() || undefined, lastName.trim() || undefined);
       } else {
         result = await authApi.login(email.trim(), password);
       }
@@ -343,12 +420,20 @@ export function BookingRequestModal({
 
       // Auto-submit the booking request
       try {
+        setPostRegisterError(null);
         await doSubmitBooking();
       } catch (err: unknown) {
+        // BUG-329: register already succeeded, so the user IS signed in now.
+        // Don't drop them with a bare "Failed" toast that reads like nothing
+        // happened — surface that the account exists and they only need to fix
+        // the request and retry (the Continue button now takes the authed path,
+        // no second registration). Without this the user thinks they're an
+        // "orphan account" and the request is lost.
         const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
         const msg = res?.errors
           ? Object.values(res.errors).flat().join(" · ")
           : res?.message ?? "Failed to send request. Please try again.";
+        setPostRegisterError(msg);
         toast.error(msg);
         setStep("form");
       }
@@ -404,19 +489,47 @@ export function BookingRequestModal({
     if (!pPassportNumber.trim()) return false;
     if (!pPassportExpiry) return false;
     if (!pVisaType) return false;
-    if (!pLastEntryDate) return false;
-    if (!pLastEntryPort.trim()) return false;
+    // BE-ENTRY: last entry date / port no longer collected.
     return true;
   }
+
+  // BUG-366: per-field error messages for the identity step. "Filled but
+  // invalid" errors (bad passport format, expired/near-expiry passport) show as
+  // soon as the field has a value; "required but empty" errors show only after
+  // a submit attempt (passportTried) so the form doesn't shout before the user
+  // has had a chance to fill it.
+  const isThaiNat = pNationality === "TH";
+  const passportNumberError =
+    !isThaiNat && pPassportNumber.trim() && !/^[A-Z0-9]{6,}$/.test(pPassportNumber.trim().toUpperCase())
+      ? "Passport number should be at least 6 letters/digits (e.g. AB123456)."
+      : passportTried && !isThaiNat && !pPassportNumber.trim()
+        ? "Passport number is required."
+        : null;
+  const passportExpiryError = (() => {
+    if (isThaiNat) return null;
+    if (!pPassportExpiry) return passportTried ? "Passport expiry is required." : null;
+    const expiry = new Date(pPassportExpiry);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (expiry.getTime() < today.getTime()) {
+      return "Passport has already expired — Thai immigration won't accept it for TM30.";
+    }
+    const sixMonthsFromNow = new Date(); sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
+    if (expiry.getTime() < sixMonthsFromNow.getTime()) {
+      return "Passport expires within 6 months — Thai immigration may refuse. Consider renewing first.";
+    }
+    return null;
+  })();
+  const nationalityError = passportTried && !pNationality ? "Select your nationality." : null;
+  const visaTypeError = passportTried && !isThaiNat && !pVisaType ? "Select your visa type." : null;
 
   async function handlePassportSubmit(e: React.FormEvent) {
     e.preventDefault();
     const isThai = pNationality === "TH";
-    const validationError = validatePassport();
-    if (validationError) {
-      toast.error(validationError);
-      return;
-    }
+    // BUG-366: reveal any required-but-empty errors, then bail if the step
+    // isn't ready. The per-field inline messages now explain what's wrong
+    // (expired passport, missing visa, etc.) instead of a silently-dead CTA.
+    setPassportTried(true);
+    if (!passportStepReady()) return;
     setPassportSaving(true);
     try {
       await updateProfile.mutateAsync({
@@ -424,8 +537,6 @@ export function BookingRequestModal({
         passportNumber: (!isThai && pPassportNumber) ? pPassportNumber : undefined,
         passportExpiry: (!isThai && pPassportExpiry) ? pPassportExpiry : undefined,
         visaType: (!isThai && pVisaType) ? (pVisaType as VisaType) : undefined,
-        lastEntryDate: (!isThai && pLastEntryDate) ? pLastEntryDate : undefined,
-        lastEntryPort: (!isThai && pLastEntryPort) ? pLastEntryPort : undefined,
       });
     } catch {
       toast.error("Failed to save details. Proceeding with booking.");
@@ -541,6 +652,18 @@ export function BookingRequestModal({
                 </div>
                 <span className="font-semibold text-fg">{formatThb(depositAmount ?? rate)}</span>
               </div>
+              {/* BUG-263: when the request includes a pet, the pet deposit must
+                  appear on the confirmation too — it was previously omitted, so
+                  the tenant left "Request sent!" unaware of the extra deposit. */}
+              {hasPets && (petDeposit ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <div>
+                    <span className="text-fg-muted">Pet deposit</span>
+                    <div className="text-[11px] text-fg-muted">refunded on check-out if no damage</div>
+                  </div>
+                  <span className="font-semibold text-fg">{formatThb(petDeposit!)}</span>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Button asChild className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white">
@@ -576,17 +699,49 @@ export function BookingRequestModal({
             {/* Scrollable form fields */}
             <div className="overflow-y-auto overscroll-contain flex-1">
               <div className="px-6 py-5 space-y-4">
+                {/* BUG-329: account exists, only the request failed — tell the
+                    now signed-in user so they don't think it was all lost. */}
+                {postRegisterError && (
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+                    <p className="font-medium text-fg">Your account is ready — you're signed in ✓</p>
+                    <p className="text-xs text-fg-muted mt-0.5">
+                      We couldn't send the request: {postRegisterError} Adjust the
+                      details below and tap Continue to try again — no need to
+                      register again.
+                    </p>
+                  </div>
+                )}
                 {!token && (
                   <>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm font-medium text-fg">Full name *</Label>
-                      <Input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Your full name"
-                        required
-                        autoFocus
-                      />
+                    {/* UX-328: First / Last name instead of one "Full name". */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium text-fg">First name *</Label>
+                        <Input
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
+                          placeholder="Sarah"
+                          required
+                          autoFocus
+                        />
+                        {/* BUG-366: inline required errors so the (anonymous)
+                            Continue button never sits silently disabled. */}
+                        {triedSubmit && !firstName.trim() && (
+                          <p className="text-xs text-danger">First name is required.</p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium text-fg">Last name *</Label>
+                        <Input
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
+                          placeholder="Chen"
+                          required
+                        />
+                        {triedSubmit && !lastName.trim() && (
+                          <p className="text-xs text-danger">Last name is required.</p>
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium text-fg">Email *</Label>
@@ -597,15 +752,31 @@ export function BookingRequestModal({
                         placeholder="you@example.com"
                         required
                       />
+                      {triedSubmit && !email.trim() && (
+                        <p className="text-xs text-danger">Email is required.</p>
+                      )}
+                      {triedSubmit && email.trim() && !emailValid && (
+                        <p className="text-xs text-danger">Enter a valid email address.</p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium text-fg">Phone</Label>
+                      <Label className="text-sm font-medium text-fg">Phone *</Label>
                       <Input
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="+66 81 234 5678"
+                        required
                       />
+                      {/* BUG-328: phone is mandatory — the host needs a way to
+                          reach the tenant. Show the format hint only once the
+                          user has typed something invalid. */}
+                      {triedSubmit && phone.trim() && !phoneValid && (
+                        <p className="text-xs text-danger">Enter a valid phone number (at least 7 digits).</p>
+                      )}
+                      {triedSubmit && !phone.trim() && (
+                        <p className="text-xs text-danger">Phone number is required.</p>
+                      )}
                     </div>
                   </>
                 )}
@@ -618,6 +789,180 @@ export function BookingRequestModal({
                     className="min-h-[80px] resize-none"
                     autoFocus={!!token}
                   />
+                </div>
+
+                {/* UX-268: composition — host must know who lives in the unit
+                    before approving the request, not after move-in. */}
+                <div className={cn(
+                  "rounded-2xl border overflow-hidden",
+                  triedSubmit && (!othersAnswered || !residentsValid || overOccupancy) ? "border-danger" : "border-border"
+                )}>
+                  <div className="px-4 py-3 bg-bg-subtle flex items-start gap-3">
+                    <span className="text-xl mt-0.5">👥</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-fg">Will anyone else live with you?</p>
+                      <p className="text-xs text-fg-muted mt-0.5">
+                        {typeof maxOccupancy === "number"
+                          ? `Max occupancy is ${maxOccupancy}. Names + dates of birth — passports can come after the host approves.`
+                          : "Names + dates of birth — passports can come after the host approves."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex border-t border-border divide-x divide-border">
+                    <button
+                      type="button"
+                      onClick={() => { setOthersExplicit(false); setResidents([]); }}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-medium transition-colors",
+                        othersExplicit === false
+                          ? "bg-brand text-white"
+                          : "text-fg-muted hover:bg-bg-subtle",
+                      )}
+                    >
+                      Just me
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOthersExplicit(true);
+                        if (residents.length === 0) addResident();
+                      }}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-medium transition-colors",
+                        othersExplicit === true
+                          ? "bg-brand text-white"
+                          : "text-fg-muted hover:bg-bg-subtle",
+                      )}
+                    >
+                      Me + others
+                    </button>
+                  </div>
+
+                  {/* UX-329: redesigned occupancy block. Anchors on a visible
+                      "You + others" roster — the tenant is shown as the first
+                      occupant card, co-residents follow as person cards with an
+                      initials avatar, and a spot counter makes capacity legible.
+                      Data contract unchanged (residents = First/Last + DOB). */}
+                  {hasOthers && (
+                    <div className="px-4 py-4 space-y-3 border-t border-border">
+                      {/* Spot counter — who's accounted for vs. the listing cap */}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-fg">
+                          Who's moving in
+                        </p>
+                        <span className="text-[11px] font-semibold text-fg-muted tabular-nums">
+                          {typeof maxOccupancy === "number"
+                            ? `${residents.length + 1} of ${maxOccupancy} ${maxOccupancy === 1 ? "spot" : "spots"}`
+                            : `${residents.length + 1} ${residents.length + 1 === 1 ? "person" : "people"}`}
+                        </span>
+                      </div>
+
+                      {/* You — the primary tenant, always first, read-only */}
+                      <div className="flex items-center gap-3 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white">
+                          You
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-fg leading-tight">You</p>
+                          <p className="text-[11px] text-fg-muted">Primary tenant — signs the lease</p>
+                        </div>
+                      </div>
+
+                      {residents.map((r, i) => {
+                        const ri =
+                          ((r.firstName?.[0] ?? "") + (r.lastName?.[0] ?? "")).toUpperCase() ||
+                          String(i + 2);
+                        const fullName = `${r.firstName} ${r.lastName}`.trim();
+                        return (
+                          <div key={i} className="rounded-xl border border-border bg-bg-subtle/40 p-3 space-y-2.5">
+                            <div className="flex items-center gap-3">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-[11px] font-bold text-fg-muted">
+                                {ri}
+                              </span>
+                              <p className="flex-1 min-w-0 truncate text-sm font-medium text-fg">
+                                {fullName || `Guest ${i + 2}`}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => removeResident(i)}
+                                aria-label={`Remove guest ${i + 2}`}
+                                className="shrink-0 rounded-md p-1 text-fg-muted hover:bg-danger/10 hover:text-danger transition-colors"
+                              >
+                                <X size={15} />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                value={r.firstName}
+                                onChange={(e) => patchResident(i, { firstName: e.target.value })}
+                                placeholder="First name"
+                                aria-label={`First name #${i + 2}`}
+                                className={cn(triedSubmit && !r.firstName.trim() && "border-danger")}
+                              />
+                              <Input
+                                value={r.lastName}
+                                onChange={(e) => patchResident(i, { lastName: e.target.value })}
+                                placeholder="Last name"
+                                aria-label={`Last name #${i + 2}`}
+                                className={cn(triedSubmit && !r.lastName.trim() && "border-danger")}
+                              />
+                            </div>
+                            {/* BUG-325: Relationship dropdown removed — not
+                                relevant to the lease / TM-30. UX-322: DOB uses the
+                                custom DatePicker (year-first) for parity with the
+                                contract form, not a native date input. */}
+                            <div className="space-y-1">
+                              <Label className="text-xs text-fg-muted">Date of birth</Label>
+                              <DatePicker
+                                value={r.dateOfBirth}
+                                onChange={(v) => patchResident(i, { dateOfBirth: v })}
+                                placeholder="Select date of birth"
+                                isDisabled={DOB_NOT_FUTURE}
+                                startView="year"
+                                yearAnchor={DOB_ANCHOR}
+                                contentClassName="z-[200]"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={addResident}
+                        disabled={residentsAtCapacity}
+                        title={residentsAtCapacity ? "Maximum reached" : undefined}
+                        className="w-full rounded-xl border border-dashed border-border py-2 text-xs font-medium text-fg-muted hover:border-brand hover:text-brand transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-fg-muted"
+                      >
+                        {residentsAtCapacity
+                          ? `Maximum reached — this listing fits ${maxOccupancy} people`
+                          : "+ Add another person"}
+                      </button>
+                      {/* Reassurance — lowers the data-entry burden up front */}
+                      <p className="flex items-center gap-1.5 text-[11px] text-fg-muted">
+                        <Shield size={12} className="shrink-0" />
+                        Just names + dates of birth for now. Passports can be added after the host approves.
+                      </p>
+                    </div>
+                  )}
+
+                  {triedSubmit && !othersAnswered && (
+                    <div className="px-4 py-2 bg-danger/5 border-t border-danger/20">
+                      <p className="text-xs text-danger">Please tell the host who'll be living in the unit.</p>
+                    </div>
+                  )}
+                  {triedSubmit && hasOthers && !residentsValid && (
+                    <div className="px-4 py-2 bg-danger/5 border-t border-danger/20">
+                      <p className="text-xs text-danger">Each person needs a first name, last name, and date of birth.</p>
+                    </div>
+                  )}
+                  {overOccupancy && (
+                    <div className="px-4 py-2 bg-danger/5 border-t border-danger/20">
+                      <p className="text-xs text-danger">
+                        Over capacity — this listing fits {maxOccupancy} people (you + {(maxOccupancy ?? 1) - 1} others).
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pets — explicit yes/no required */}
@@ -712,10 +1057,15 @@ export function BookingRequestModal({
 
             {/* Footer — always visible */}
             <div className="px-6 py-4 border-t border-border shrink-0">
+              {/* BUG-366: keep the button enabled even when the form is
+                  incomplete — clicking runs handleFormSubmit, which sets
+                  triedSubmit and renders the inline errors above (so the user
+                  sees WHAT is blocking them instead of a dead button at the
+                  bottom of a long modal). Only disabled while sending. */}
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={(!token && (!name.trim() || !email.trim())) || submit.isPending || !petsAnswered || !petCountFilled || (hasPets && !petPhotosReady) || (petsExplicit === true && petsAllowed === false)}
+                disabled={submit.isPending}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>
@@ -740,6 +1090,7 @@ export function BookingRequestModal({
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium text-fg">Nationality</Label>
                   <NationalityInput value={pNationality} onChange={setPNationality} placeholder="Select nationality…" />
+                  {nationalityError && <p className="text-xs text-danger">{nationalityError}</p>}
                 </div>
 
                 {pNationality !== "TH" && (
@@ -751,11 +1102,17 @@ export function BookingRequestModal({
                         onChange={(e) => setPPassportNumber(e.target.value.toUpperCase())}
                         placeholder="AB123456"
                       />
+                      {passportNumberError && <p className="text-xs text-danger">{passportNumberError}</p>}
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-sm font-medium text-fg">Passport expiry</Label>
-                      <DateInput value={pPassportExpiry} onChange={setPPassportExpiry} minYear={2000} maxYear={2060} />
+                      {/* UX-322: custom DatePicker everywhere; year-first so the
+                          expiry year is immediately selectable. */}
+                      <DatePicker value={pPassportExpiry} onChange={setPPassportExpiry} placeholder="Select expiry date" startView="year" contentClassName="z-[200]" />
+                      {/* BUG-366: expired / near-expiry passport now flags inline
+                          instead of silently keeping the CTA disabled. */}
+                      {passportExpiryError && <p className="text-xs text-danger">{passportExpiryError}</p>}
                     </div>
 
                     <div className="space-y-1.5">
@@ -772,40 +1129,30 @@ export function BookingRequestModal({
                           ))}
                         </SelectContent>
                       </Select>
+                      {visaTypeError && <p className="text-xs text-danger">{visaTypeError}</p>}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-sm font-medium text-fg">Last entry date</Label>
-                        <DateInput value={pLastEntryDate} onChange={setPLastEntryDate} minYear={2015} maxYear={new Date().getFullYear()} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-sm font-medium text-fg">Entry port</Label>
-                        <Input
-                          value={pLastEntryPort}
-                          onChange={(e) => setPLastEntryPort(e.target.value)}
-                          placeholder="e.g. Chiang Mai"
-                        />
-                      </div>
-                    </div>
+                    {/* BE-ENTRY: "Last entry date" / "Entry port" removed —
+                        they were never used downstream (and previously broke
+                        signing as hidden required fields, BUG-320). */}
                   </>
                 )}
               </div>
             </div>
 
             <div className="px-6 py-4 border-t border-border shrink-0 space-y-2">
+              {/* BUG-366: the button stays clickable even when fields are
+                  incomplete/invalid — clicking surfaces the per-field errors
+                  above (setPassportTried) rather than sitting dead with a
+                  misleading "Fill all fields" label while everything IS filled
+                  (e.g. an expired passport). Only disabled while a request is
+                  actually in flight. */}
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={!passportStepReady() || passportSaving || submit.isPending}
+                disabled={passportSaving || submit.isPending}
               >
-                {(passportSaving || submit.isPending)
-                  ? "Please wait…"
-                  : passportStepReady()
-                    ? "Save & send request"
-                    : pNationality && pNationality !== "TH"
-                      ? "Fill all fields (or Skip)"
-                      : "Pick nationality"}
+                {(passportSaving || submit.isPending) ? "Please wait…" : "Save & send request"}
               </Button>
               <Button
                 type="button"

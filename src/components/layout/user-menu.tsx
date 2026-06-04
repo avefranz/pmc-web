@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Building2, CreditCard, Inbox, Menu, User } from "lucide-react";
 import {
@@ -20,6 +21,7 @@ export function UserMenu() {
   const { data: caps } = useCapabilities();
   const { data: me } = useMe();
   const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
 
   const name = me?.firstName ?? me?.lineName ?? me?.email ?? "Account";
 
@@ -35,13 +37,19 @@ export function UserMenu() {
   }
 
   function handleSignOut() {
+    setOpen(false);
     clearAuth();
     qc.clear();
     navigate("/login", { replace: true });
   }
 
+  function go(path: string) {
+    setOpen(false);
+    navigate(path);
+  }
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           className="flex items-center gap-2 rounded-pill border border-border pl-2.5 pr-1 py-1 hover:shadow-card transition-shadow bg-bg-card"
@@ -58,26 +66,26 @@ export function UserMenu() {
           {me?.email ?? me?.lineName ?? "Account"}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate("/me/profile")} className="gap-2">
+        <DropdownMenuItem onClick={() => go("/me/profile")} className="gap-2">
           <User size={13} className="text-fg-muted" />Profile
         </DropdownMenuItem>
         {(caps?.isLandlord || caps?.isManager) && (
-          <DropdownMenuItem onClick={() => navigate("/me/host/properties")} className="gap-2">
+          <DropdownMenuItem onClick={() => go("/me/host/properties")} className="gap-2">
             <Building2 size={13} className="text-fg-muted" />My properties
           </DropdownMenuItem>
         )}
         {(caps?.isLandlord || caps?.isManager) && (
-          <DropdownMenuItem onClick={() => navigate("/me/host/requests")} className="gap-2">
+          <DropdownMenuItem onClick={() => go("/me/host/requests")} className="gap-2">
             <Inbox size={13} className="text-fg-muted" />Booking requests
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={() => navigate("/me/guest/bookings")} className="gap-2">
+        <DropdownMenuItem onClick={() => go("/me/guest/bookings")} className="gap-2">
           <CreditCard size={13} className="text-fg-muted" />My stays
         </DropdownMenuItem>
         {caps?.isAdmin && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/admin")}>
+            <DropdownMenuItem onClick={() => go("/admin")}>
               Admin panel
             </DropdownMenuItem>
           </>

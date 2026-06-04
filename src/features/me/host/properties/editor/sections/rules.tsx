@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils/cn";
 import type { SectionDef, SectionDialogProps } from "../types";
 import { Field, Row } from "../ui";
 
+// UX-298: "No pets" lived here AND in the dedicated Pets section, which
+// could disagree (Pets section = "Allowed", House rules = "No pets"). The
+// Pets section is the single source of truth — removed the duplicate
+// preset to eliminate conflicting settings.
 const RULE_PRESETS = [
   "No smoking indoors",
   "Quiet hours after 22:00",
@@ -13,10 +17,15 @@ const RULE_PRESETS = [
   "No parties or events",
   "No extra guests without prior notice",
   "Keep common areas clean",
-  "No pets",
-  "TM-30 registration required",
   "No cooking with strong odours",
 ];
+
+// UX-346: "TM-30 registration required" removed from house-rule presets — it's
+// a legal filing Siamo handles automatically, not a rule the host sets, so it
+// confused hosts who saw it among real rules.
+// UX-299: one-liner explanations for any jargon presets, surfaced as a native
+// browser tooltip — keeps the chip layout flat without a tooltip primitive.
+const RULE_TOOLTIPS: Record<string, string> = {};
 
 function RulesDialog({ draft, patch }: SectionDialogProps) {
   const activeLines = draft.houseRules
@@ -74,6 +83,7 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
                 key={rule}
                 type="button"
                 onClick={() => togglePreset(rule)}
+                title={RULE_TOOLTIPS[rule]}
                 className={cn(
                   "px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150",
                   active
@@ -82,6 +92,14 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
                 )}
               >
                 {rule}
+                {RULE_TOOLTIPS[rule] && (
+                  <span
+                    className="ml-1 text-fg-subtle"
+                    aria-hidden="true"
+                  >
+                    ⓘ
+                  </span>
+                )}
               </button>
             );
           })}
@@ -101,18 +119,30 @@ function RulesDialog({ draft, patch }: SectionDialogProps) {
       <Row cols={2}>
         <Field label="WiFi network name" optional>
           <Input
+            name="wifi-network-label"
             value={draft.wifiName}
             onChange={(e) => patch({ wifiName: e.target.value })}
             placeholder="MyWiFi"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
           />
         </Field>
-        <Field label="WiFi password" optional>
+        {/* BUG-313: this is a WiFi key the host SHARES with tenants, not a
+            login credential. A type="password" field makes Chrome/1Password/
+            LastPass offer to "save password", which confuses hosts. Render it
+            as a plain text field (visible is actually helpful here) and opt out
+            of every password-manager heuristic. */}
+        <Field label="WiFi password" optional hint="Shown to tenants after booking — not a login.">
           <Input
-            type="password"
+            type="text"
+            name="wifi-key-share"
             value={draft.wifiPassword}
             onChange={(e) => patch({ wifiPassword: e.target.value })}
-            placeholder="Enter password"
-            autoComplete="new-password"
+            placeholder="e.g. sunset1234"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
           />
         </Field>
       </Row>

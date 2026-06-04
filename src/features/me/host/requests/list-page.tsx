@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { Inbox, Home, ArrowRight } from "lucide-react";
+import { Inbox, Home, ArrowRight, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -137,6 +138,7 @@ function SectionHeader({ label, count, accent }: { label: string; count: number;
 export function HostRequestsPage() {
   const { data: requests, isLoading } = useHostRequests();
   const { data: me } = useMe();
+  const [approvedExpanded, setApprovedExpanded] = useState(false);
 
   if (isLoading) {
     return (
@@ -193,8 +195,24 @@ export function HostRequestsPage() {
 
         {approved.length > 0 && (
           <section>
-            <SectionHeader label="Approved" count={approved.length} accent="text-success" />
-            <div className="space-y-2">{approved.map((r) => <RequestCard key={r.id} req={r} />)}</div>
+            {/* UX-161: collapsed by default — approved requests are already bookings, live in Reservations */}
+            <button
+              type="button"
+              onClick={() => setApprovedExpanded((v) => !v)}
+              className="flex items-center gap-2 mb-2 group"
+            >
+              {approvedExpanded
+                ? <ChevronDown size={13} className="text-fg-subtle" />
+                : <ChevronRightIcon size={13} className="text-fg-subtle" />}
+              <p className="text-[11px] font-bold uppercase tracking-widest text-success">Approved</p>
+              <span className="text-[10px] text-fg-subtle">{approved.length}</span>
+              <span className="text-[10px] text-fg-subtle ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                · view in Reservations
+              </span>
+            </button>
+            {approvedExpanded && (
+              <div className="space-y-2">{approved.map((r) => <RequestCard key={r.id} req={r} />)}</div>
+            )}
           </section>
         )}
 

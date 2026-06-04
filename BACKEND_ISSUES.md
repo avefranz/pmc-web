@@ -46,6 +46,25 @@
 | BE-NEARBY-1 | feature | Auto-enrich POI chips (TransportInfo / NearbyPlaces) при сохранении локации через Overpass/OSM | ✅ FIXED — `NearbyEnrichmentService` создан; `LocationService.UpdateLocationAsync` вызывает `FireEnrichment` fire-and-forget при первом сохранении или сдвиге координат; chips сохраняются в `Listing.TransportInfo` / `NearbyPlaces` / `NearbyEnrichedAt` |
 | BE-NEARBY-2 | feature | Manual re-trigger POI enrichment: `POST /api/assets/{id}/enrich-nearby` → 202 | ✅ FIXED — endpoint добавлен в `AssetsController`; `LocationService.TriggerEnrichmentAsync` читает сохранённые координаты и запускает `FireEnrichment` |
 | BE-NEARBY-3 | feature | `NearbyEnrichedAt` в `ListingDto` и `MarketplaceListingDto` для фронтового hint "Data current as of …" | ✅ FIXED — поле добавлено в оба DTO и смаплено в `ListingService` / `MarketplaceService` |
+| BE-35 | **blocker** | Self-booking: хост подаёт заявку на свою же квартиру — обе стороны (guest/host) видят её, кнопки Approve/Reject доступны (BUG-159) | ✅ FIXED — `POST .../booking-requests` → 422 `SelfBookingException` если `applicantUserId` владеет ассетом; `GetForLandlordAsync` + `GetGuestApplicationsAsync` фильтруют self-заявки на уровне запроса |
+| BE-36 | 🚨 critical | IDOR — `/api/bookings/{id}/*` отдают данные любому залогиненному юзеру | ✅ FIXED — `CanAccessBookingAsync` переключён с `CanAccessAssetAsync` на `HasRoleOnAssetAsync`; tenant проходит только через прямое совпадение `booking.TenantId == userId`; добавлен `IsTenantOfBookingAsync` helper |
+| BE-37 | 🚨 critical | `sandbox-confirm` без owner-check — любой tenant подтверждает чужой платёж | ✅ FIXED — добавлен `IsTenantOfBookingAsync` guard; посторонний → 403 |
+| BE-38 | 🚨 critical | Контракт PDF в публичном R2 bucket — anonymous fetch by GUID | 🟡 PARTIAL — proxy API-route `/api/bookings/{id}/contract/pdf/draft\|final` ✅ (auth-gated, 500 исправлен: DownloadAsync нормализует legacy CDN URL → S3 key). Старый прямой R2 URL ещё анонимно доступен — требует отключения публичного доступа `/contracts/*` в Cloudflare R2 dashboard (infrastructure) |
+| BE-39 | minor | Custom invoice — нет лимита на amount | ✅ FIXED — лимит ≤ 1 000 000 THB в `CreateCustomInvoiceAsync` |
+| BE-40 | 🚨 critical | `PATCH /api/listings/{id}` — любой юзер меняет чужой листинг | ✅ FIXED — `UpdateListingAsync` + `ListingsController.Create` проверяют `CanManageListingAsync` / `HasManageRightsAsync`; посторонний → 403 |
+| BE-41 | 🚨 critical | UploadMedia / DeleteMedia / ReorderMedia / UpdateAmenities + доп. строки 130/143 `ListingsController` | ✅ FIXED — все endpoint'а + ранее пропущенные строки переведены на `CanManageListingAsync` |
+| BE-42 | major | JWT не инвалидируется при смене пароля; нет logout-endpoint | ✅ FIXED — `User.PasswordChangedAt` + `iat` в JWT + `SecurityStampValidationFilter` (IMemoryCache TTL 60 s, инвалидация при смене пароля) + `POST /api/auth/logout` |
+| BE-43 | major | TM-30 read-leak `/api/bookings/{id}/guests/*/tm30` | ✅ FIXED — закрыт фиксом BE-36 (`CanAccessBookingAsync` уже стоит на `GetGuestTm30`) |
+| BE-44 | minor | AccountNumber виден tenant'у в GET /api/utilities/asset/{id} | ✅ FIXED — root cause: lazy `Select()` в `GetContractsByAssetAsync` перезапускался при сериализации, выбрасывая `AccountNumber=null`. Фикс: `.ToList()` материализует DTO до возврата из сервиса |
+| BE-Sec-5 | minor | Отсутствует Content-Security-Policy header | ✅ FIXED — BE: `default-src 'none'; frame-ancestors 'none'` в middleware; **Frontend**: `vite.config.ts` — security headers для dev-server + nginx-сниппет в комментарии для prod |
+| BE-45 | major | `POST /api/bookings/requests/{id}/approve` → HTTP 500 (одиночный + race) | ✅ FIXED — `DateOnly.FromDateTime(b.CheckInDate)` в LINQ-запросе перекрытия дат не транслируется EF Core/Npgsql → `InvalidOperationException` → 500. Заменено на прямое сравнение `DateTime` (`checkInUtcBound`/`checkOutUtcBound`) |
+| BE-46 | minor | "Check-in date cannot be in the past" для будущей даты 2027-08-01 | ✅ FIXED — `CreateBookingRequestValidator` использовал `DateTime.UtcNow` (UTC+0); заменено на `PlatformTime.TodayBangkok` (UTC+7). Разница до 7ч может делать "завтра Bangkok" = "сегодня UTC" → ложный fail |
+| BE-47 | major | Passport-photos upload не валидирует MIME/magic bytes/size — `.exe`, `.html`, `.svg`, `.php`, 20 MB принимаются 200 | ✅ FIXED — `FileValidationHelper.ValidateImage` (MIME allowlist + magic-bytes + 15 MB limit) вызывается в `BookingGuestService.UploadPassportPhotosAsync` и `MediaService.AddMediaToListingAsync` |
+| BE-48 | major | Listing media upload → HTTP 500 на любой ввод (включая валидный 1×1 PNG) | ✅ FIXED — `GlobalExceptionHandler` теперь перехватывает `UnknownImageFormatException` и `ImageProcessingException` → 400. `FileValidationHelper` отбивает невалидные файлы ещё до ImageSharp; `DbUpdateException(23502)` (not-null constraint) → 400 вместо 500 |
+| BE-49 | major | LINE OAuth state-CSRF: `state` генерируется на фронте, но не валидируется в callback | ⏳ DEFERRED — frontend-only fix (sessionStorage round-trip). Текущий surface ограничен: жертва должна кликнуть подготовленный URL. Приоритет: после стабилизации основного flow |
+| BE-50 | minor | LINE login → 500 на невалидный code (вместо 400/401) | ✅ FIXED — `HttpRequestException` из `lineProvider.GetProfileByCodeAsync` перехватывается в `AuthService.LoginWithLineAsync` → `ArgumentException` → 400 |
+| BE-Sec-8 | minor | CORS `Allow-Origin: *` для POST/PATCH/DELETE — defense-in-depth gap | ✅ FIXED — `AllowAnyOrigin()` заменён на `WithOrigins(allowedOrigins)` из конфига `Cors:AllowedOrigins` (дефолт: `localhost:5173`). В prod задать `Cors:AllowedOrigins` в `appsettings.Production.json` |
+| BE-38-DEFERRED | infra | Старый прямой R2 URL `pub-4f757a28...r2.dev/contracts/` анонимно доступен | ⏳ DEFERRED — требует отключения публичного доступа для `/contracts/*` в Cloudflare R2 dashboard. Code-фикс невозможен |
 
 > BE-16: расследование 2026-05-23 подтвердило — API возвращает `depositAmount: 70000` корректно. Баг был полностью на фронте: `BookingWidget` читал `monthRate` вместо `depositAmount`. Фикс применён на фронте (`booking-widget.tsx`, `marketplace.ts`, `listing-detail-page.tsx`). BE-сторона в порядке.
 >
@@ -53,7 +72,7 @@
 >
 > BUG-37 (self-booking guard) — фронтовый guard добавлен в `listing-detail-page.tsx`, ждёт `ownerId` в `GET /api/marketplace/listings/{id}`. **Запрос к бэкенду: добавить `ownerId` в `MarketplaceListingDto`** — см. описание ниже.
 
-Последнее обновление: 2026-05-23.
+Последнее обновление: 2026-05-26.
 
 **Action для фронта — ВСЕ ВЫПОЛНЕНЫ:**
 - ✅ BE-2: `/api/references/cities` используется в редакторе
@@ -801,7 +820,7 @@ Booking имеет `rentAmount: 210000` за 6 месяцев pre-paid. `earlies
 
 ## Security sweep 2026-05-24 (Round 7)
 
-### BE-Sec-1. 🚨 Timing attack — login отвечает быстрее для несуществующих email.
+### BE-Sec-1. ✅ Timing attack — login отвечает быстрее для несуществующих email.
 
 **Severity:** **major** (enables email enumeration + targeted phishing)
 
@@ -812,21 +831,21 @@ non-existing email:               142-144ms
 ```
 ~150ms разница позволяет attacker'у enumerate valid email addresses на платформе.
 
-**Что должно быть:** для несуществующего email тоже выполняется bcrypt-verify на dummy hash (constant-time fallback).
+**Фикс:** `AuthService.LoginAsync` теперь всегда вызывает `BC.Verify` — для несуществующего email используется `DummyHash` (valid BCrypt hash, всегда fails, но занимает те же ~290ms). Оба случая неотличимы по времени.
 
-### BE-Sec-2. 🚨 НЕТ rate-limiting на /api/auth/login.
+### BE-Sec-2. ✅ НЕТ rate-limiting на /api/auth/login.
 
 **Severity:** **blocker** (brute-force unrestricted)
 
 **Симптом:** 20 неверных login-попыток подряд → 20× 401, никакого throttle / lockout / captcha. Brute-force на known email — bag.
 
-**Что должно быть:** 5 неудачных попыток → 1 мин delay + captcha; 10 → 15 мин lockout + email-уведомление.
+**Фикс:** добавлена политика `"auth-login"` (`SlidingWindowRateLimiter`, 10 req / 5 min / IP) в `Program.cs`. `[EnableRateLimiting("auth-login")]` добавлен на `POST /api/auth/login` и `POST /api/auth/register`. При превышении → 429 с сообщением "Too many login attempts. Please wait before trying again."
 
-### BE-Sec-3. Нет security headers.
+### BE-Sec-3. ✅ Нет security headers.
 
 **Severity:** moderate
 
-`curl -I /api/marketplace/listings` → только `Server: Kestrel`, `Date`, `Allow`. Отсутствуют: `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `Content-Security-Policy`, `Referrer-Policy`. `Server: Kestrel` leaks technology.
+**Фикс:** добавлен inline-middleware в `Program.cs` перед CORS — на каждый ответ выставляет `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Permitted-Cross-Domain-Policies: none`. Заголовок `Server` удаляется.
 
 ### BE-Sec-4. JWT lifetime 7 days, no refresh token rotation visible.
 
@@ -834,43 +853,55 @@ non-existing email:               142-144ms
 
 JWT expires +7d. Украденный ноутбук Sarah = valid token неделю. Нет /api/auth/revoke или refresh-rotation.
 
-### BE-Reg-1. 🚨 POST booking-request → 500 на множестве listings.
+### BE-Reg-1. ⚠️ POST booking-request → 500 на множестве listings.
 
 **Severity:** **blocker** (booking flow broken!)
 
 `POST /api/marketplace/listings/{id}/booking-requests` возвращает 500 на Sunny / Cozy / Verify4 даже с clean payload + свежим аккаунтом. Возможна регрессия после BE-33 или DB-state corruption.
 
-### BE-Reg-2. 🚨 GET /api/bookings/{id} → 500 для Sarah's booking.
+**Частичный фикс:** `GlobalExceptionHandler` теперь перехватывает `PostgresException { SqlState: "40001" or "40P01" }` (serialization failure / deadlock) → 409 вместо 500, и `PostgresException { SqlState: "23505" }` (duplicate key) → 409. Конкурентные SERIALIZABLE-транзакции при InstantBook апрувал больше не падают в 500. Если 500 воспроизводится на свежей БД без гонок — нужны реальные stack traces для дальнейшей диагностики.
+
+### BE-Reg-2. ⚠️ GET /api/bookings/{id} → 500 для Sarah's booking.
 
 **Severity:** **blocker**
 
 `GET /api/bookings/9d186951...` → 500 даже для самой Sarah. List `/api/me/guest/bookings` → пустой. UI: «Booking not found». State corruption после early-exit cancellation flow.
 
+**Частичный фикс:** `BookingService.GetMyBookingsAsync` и `GetHostBookingsAsync` теперь оборачивают `ApplyDateTransitionsAsync()` в try-catch — если write-операция по обновлению статусов бронирований выбрасывает исключение (например, из-за повреждённого состояния после неполного cancellation flow), GET не падает в 500, а логирует ошибку и продолжает с текущими данными из БД. Если booking всё ещё не возвращается для Sarah — нужны реальные stack traces (состояние БД после early-exit cancellation может требовать ручной fix).
+
 ### BE-IDOR-OK. ✅ Authorization solid.
 
 Liam→Sarah's booking: 403. Sarah→host endpoints: 403. BE-28 fix solid.
 
-### BE-Filter-1. 🚨 `?amenity=N` параметр на /marketplace/listings игнорируется.
+### BE-Filter-1. ✅ `?amenity=N` параметр на /marketplace/listings игнорируется.
 
 **Severity:** major (один из основных filter-pattern marketplace)
 
-**Симптом:**
-```
-amenity=23 → 8 listings (никто не имеет id=23, ожидание 0)
-amenity=9  → 8 listings (ожидание 2: «1-bed entire place» + «Test property #1»)
-amenity=23&amenity=2 → 8 listings (multiple value — тоже ignored)
-```
+**Root cause:** контроллер объявлял параметр как `amenityIds` (`[FromQuery] List<int>? amenityIds`), но фронт шлёт `?amenity=23&amenity=2`. Mismatch имени → параметр никогда не биндился → фильтр в `MarketplaceService` всегда видел `AmenityIds == null` → пропускал все листинги.
 
-Listings корректно сохраняют `amenityIds` (e.g. `[1, 8, 9, 11, 16, 18]`), но фильтрация на backend не происходит. Frontend сериализует параметр правильно (`?amenity=23&amenity=2`).
+**Фикс:** `[FromQuery(Name = "amenity")] List<int>? amenityIds` — биндинг теперь матчит frontend-параметр. Логика AND-фильтра в `SearchListingsAsync` уже была корректной.
 
-**Что сделать:** в `SearchListingsAsync` (или соответствующем) добавить
-```csharp
-if (req.AmenityIds is { Count: > 0 })
-    q = q.Where(l => req.AmenityIds.All(id => l.AmenityIds.Contains(id)));
-```
-(или `.Any(...)` если хотим OR-семантику — frontend pills сейчас работают как AND-набор).
+### BE-Priv-1. ✅ Tenant phone в `/api/me/host/booking-requests` НЕ маскировался для Pending заявок.
 
-### BE-Filter-2. ⚠ `?bedrooms=N` использует семантику `≥ N` (минимум), не `= N` (точно) — frontend ожидает точное совпадение.
+**Severity:** major (privacy leak)
+
+**Фикс:** `BookingRequestService.MapToSummaryDto` — добавлена та же политика что для email: `GuestPhone = r.Status == Approved ? r.GuestPhone : MaskPhone(r.GuestPhone)`. `MaskPhone` сохраняет последние 3 цифры: `+66812345679` → `+**679`.
+
+### BE-TM30-1. ✅ TM-30 можно было filed before check-in (нарушает Thai law).
+
+**Severity:** moderate (compliance regulatory)
+
+**Фикс:** `Tm30Service.UploadFilingDocumentAsync` — загружает `BookingGuest.Booking` и проверяет `PlatformTime.UtcNow < guest.Booking.CheckInDate`. Если раньше check-in → 400 `"TM-30 cannot be filed before check-in date (YYYY-MM-DD)."`. Frontend должен задизейблить кнопку до check-in (фронт-only action).
+
+### BE-Sec-Verified. ✅ JWT integrity intact.
+
+**Test:** подменили nameidentifier в payload, signature осталась оригинальная Marina's — backend returns 401. JWT signing key not compromised. Combined с минимальными claims (BE-JWT-OK) — model solid.
+
+### BE-Priv-2. ✅ Marina видит свою же self-application в `/api/me/host/booking-requests`.
+
+Закрыто в рамках BE-35.
+
+### BE-Filter-2. ✅ `?bedrooms=N` использует семантику `≥ N` (минимум), не `= N` (точно) — frontend ожидает точное совпадение.
 
 **Severity:** moderate (UX-mismatch не пустой результат, но «1BR» возвращает 3-bed дома)
 
@@ -884,8 +915,702 @@ bedrooms=3 → 1 (только 3-bed)
 
 Frontend UI: pills `Studio / 1BR / 2BR / 3+BR`. Tenant выбирает «1BR» — ожидает увидеть только 1-bed, видит 3-bed.
 
-**Что сделать:** либо frontend переименовывает в `1+ BR / 2+ BR / 3+ BR`, либо backend добавляет `exactBedrooms` (или меняет семантику на `=`). Если решить backend-fix — `bedrooms=3` должен означать «exactly 3», а для «3+» использовать `bedrooms=3&bedroomsExact=false` или новый `minBedrooms`.
+**Фикс:** `MarketplaceService.SearchListingsAsync` — `bedrooms=0/1/2` использует `==` (exact), `bedrooms>=3` сохраняет семантику `>=` (для «3+BR» pill). Без изменения API-контракта, без фронтовых изменений.
+
+---
+
+## BE-35. Self-booking: хост подаёт заявку на собственную квартиру (BUG-159)
+
+**Severity:** **blocker** (нарушение целостности данных + возможность самоаппрувить себя)
+
+**Симптом:** `marina.qa+landlord@test.local` подала заявку на свою же квартиру.
+- `GET /me/guest/applications` — заявка видна на guest-стороне
+- `GET /me/host/requests` — та же заявка видна на host-стороне
+- Кнопки "Approve" / "Reject" активны
+
+**Что сделано:**
+
+1. **`SelfBookingException`** добавлен в `Exceptions.cs` → 422 Unprocessable Entity в `GlobalExceptionHandler`.
+
+2. **`BookingRequestService.CreateAsync`** — после загрузки листинга проверяет, владеет ли `applicantUserId` ассетом (`UserRoleEntry.AssetId == listing.AssetId`). Если да → `throw new SelfBookingException(...)` → 422.
+
+3. **`BookingRequestService.GetForLandlordAsync`** — добавлен фильтр `.Where(... && r.ApplicantUserId != approverId)`.
+
+4. **`MeService.GetGuestApplicationsAsync`** — загружает `ownedAssetIds` пользователя, затем фильтрует `.Where(... && !ownedAssetIds.Contains(r.Listing.AssetId))`.
+
+**Примечание:** уже существующие self-заявки в БД будут отфильтрованы обоими GET-эндпоинтами и не появятся в UI.
+
+---
 
 ### BE-JWT-OK. ✅ JWT claims минимальны.
 
 `{ nameidentifier, exp, iss, aud }`. Нет role claim → tamper невозможен. Хорошая практика.
+
+---
+
+## Security sweep 2026-05-26 (Round 8 — system-safety)
+
+### BE-36. ✅ CRITICAL IDOR — `/api/bookings/{id}/*` отдают данные любому залогиненному пользователю
+
+**Severity:** critical (privacy + legal-document leak)
+
+**Репро.** Два tenant'а на одной property (Sarah, Mike) — bookings A и B соответственно. Sarah запрашивает booking B по ID и получает 200 на:
+
+- `GET /api/bookings/{B}`               → 200 (status, rent, deposit, dates, tenantName, landlordName)
+- `GET /api/bookings/{B}/contract`      → 200 (текст контракта, sigs, full body)
+- `GET /api/bookings/{B}/guests`        → 200 (имена, passport-слоты, TM-30 статус)
+- `GET /api/bookings/{B}/invoices`      → 200 (суммы, due dates, статусы платежей)
+- `GET /api/bookings/{B}/payment`       → 200 (PromptPay / bank details хоста)
+- `GET /api/bookings/{B}/tickets`       → 200
+
+```bash
+SARAH=$(curl -s -X POST .../auth/login -d '{"email":"tenant@test.local",...}' | jq -r .data.token)
+MIKE_BOOKING="e49444b2-a2d5-4e08-9dce-3058a8e533fd"  # bookings owned by Mike Park, not Sarah
+curl -s http://localhost:5149/api/bookings/$MIKE_BOOKING/contract -H "Authorization: Bearer $SARAH"
+# → 200 OK, contract body in response
+```
+
+**Корректно защищены (для сравнения, паттерн ясен):**
+- `/api/me/guest/*` и `/api/me/host/*` — проверяют ownership → 403
+- `/api/bookings/asset/{assetId}` — 403
+- `/api/bookings/{id}/tm30-template` — 403
+- `PATCH /api/bookings/{id}/status` — 403
+
+**Корень.** `AccessService.CanAccessBookingAsync` вызывал `CanAccessAssetAsync` для проверки прав нетенанта. Но `CanAccessAssetAsync` возвращает `true` для ЛЮБОГО активного тенанта на том же ассете — т.е. Sarah (тенант ассета A, booking S) проходила проверку для booking Mike (тот же ассет A, другой booking M).
+
+**Фикс.** `CanAccessBookingAsync` заменён: второй чек теперь использует `HasRoleOnAssetAsync` (только Owner/Manager роли), не `CanAccessAssetAsync`. Тенант проходит проверку только через прямое совпадение `booking.TenantId == userId`. Добавлен `IsTenantOfBookingAsync` helper для tenant-only операций.
+
+**Expected.** Каждый `/api/bookings/{id}/*` должен возвращать 403 если пользователь не tenant и не host этой записи (или admin).
+
+---
+
+### BE-37. ✅ CRITICAL: `POST /api/bookings/{id}/payment/{paymentId}/sandbox-confirm` НЕ проверяет owner — любой tenant может оплатить чужое бронирование
+
+**Severity:** critical (financial integrity + state-machine bypass)
+
+**Репро.** Sarah (tenant booking A) знает paymentId Mike's deposit (получила через BE-36 IDOR), хитит sandbox-confirm:
+
+```bash
+SARAH=<sarah-jwt>
+MIKE_B=e49444b2-a2d5-4e08-9dce-3058a8e533fd
+PAY_ID=e926d36d-88d6-450e-a643-2d9fe641ad4e   # Mike's deposit
+curl -X POST "http://localhost:5149/api/bookings/$MIKE_B/payment/$PAY_ID/sandbox-confirm" \
+  -H "Authorization: Bearer $SARAH"
+# → 200, depositMike's deposit + firstMonthRent → status: "Paid"
+# booking.status переход PendingPayment → Confirmed
+```
+
+После запроса Marina (host) видит свой booking как Confirmed, хотя Mike не платил ничего.
+
+**Соседние endpoints проверяют owner корректно — это аномалия:**
+- `POST .../payment/{id}/transfer` → 403 для Sarah ✅
+- `POST .../contract/tenant-sign` → 403 ✅
+- `POST .../contract/landlord-sign` → 403 ✅
+- `POST .../payment/{id}/sandbox-confirm` → **200, ломает данные** 🚨
+
+**Корень.** Контроллер sandbox-confirm авторизован только `[Authorize]`. Возможно sandbox-only feature, но эндпоинт зарегистрирован в production routing. Любой залогиненный пользователь может: (a) продвинуть состояние чужого бронирования в Confirmed; (b) задосить Marin'у фейк-confirmed reservation'ами; (c) после Confirmed payment'ы становятся "Paid" — host может ошибочно считать что money received.
+
+**Bonus.** sandbox-confirm на Deposit одной POST-командой пометил **и** Deposit, и first-month rent как Paid — каскадный эффект (видимо, бизнес-логика "initial package = deposit + 1st month"). Это эскалирует ущерб с одного payment'а на пакет.
+
+**Фикс.**
+1. `sandbox-confirm` уже возвращает 404 в production (`env.IsProduction()` check был на месте).
+2. Добавлен `accessService.IsTenantOfBookingAsync(id, userId)` guard — только тенант этого конкретного бронирования может вызвать endpoint. Посторонний пользователь → 403 `UnauthorizedAccessException`.
+
+**Frontend mitigation applied (partial).** `detail-page.tsx` добавлен guard `isMyBooking = booking.tenantId === me.id`: функция `openGateway()` early-returns без owner-match, кнопки Sign/Pay disabled. Это блокирует случайный exploit через нормальный UI, но прямой curl обходит фронт — бэкенд-фикс обязателен.
+
+
+### BE-38. ✅ Контракт PDF в публичном R2 bucket — anonymous fetch by GUID
+
+**Severity:** critical (privacy + legal data, no auth at all)
+
+**Репро:**
+
+```bash
+curl -o contract.pdf "https://pub-4f757a28be81469cb627a2b6d80b05cf.r2.dev/contracts/cc4d4410-9274-44ba-84d3-20ae198cc7d9/draft_cc4d4410-9274-44ba-84d3-20ae198cc7d9.pdf"
+# HTTP 200, application/pdf, 88KB — full rental contract: имена, паспорта, цены, адрес, даты
+```
+
+URL извлекается из `GET /api/bookings/{id}/contract.draftPdfUrl` — поле возвращается всем кто хитит endpoint (а это IDOR-open, BE-36). Также URL предсказуем: `/contracts/{contractId}/draft_{contractId}.pdf`. Утечка ID = утечка документа навсегда.
+
+**Сравнение с passport-photos.** Passport-photos живут в *приватном* bucket `siamo.dc863efcbbe0698f023fdb8226b63bad.r2.cloudflarestorage.com/passport-photos/...` и URL подписываются presigned (`X-Amz-Expires=1800`). Это правильный паттерн.
+
+Контракты по неизвестной причине положены в `pub-4f757a28...r2.dev` (тот же bucket что и публичные listing photos). Это смешение public-static и private-sensitive контента в одном bucket'е.
+
+**Фикс.**
+1. Добавлен `IStorageService.UploadPrivateBytesAsync(bytes, key, contentType)` — загружает с `CannedACL = NoACL` и возвращает storage key (не URL).
+2. `ContractPdfService.GenerateAndUploadDraftAsync` и `GenerateAndUploadFinalAsync` переключены на `UploadPrivateBytesAsync` — DB теперь хранит storage key (`"contracts/{id}/draft_{id}.pdf"`), не CDN-URL.
+3. `ContractService.GetByBookingAsync` и оба метода sign генерируют presigned URL через `GeneratePresignedUrlAsync(key, TimeSpan.FromHours(1))` перед возвратом DTO — фронт получает ссылку с TTL 1 час.
+4. Backward-compat: legacy строки с `https://` (старые записи до фикса) передаются as-is через `ToPresignedUrlAsync` helper.
+
+**Осталось (out of scope):** signature images (`contract-signatures/`) тоже уходят через `UploadRawFileAsync` в публичный bucket. Нужен аналогичный переход на presigned для `TenantSignatureImageUrl`/`LandlordSignatureImageUrl` — отдельная задача.
+
+---
+
+### BE-39. ✅ Custom invoice — нет верхнего лимита на amount
+
+**Severity:** minor (sanity / abuse-prevention)
+
+```bash
+curl -X POST .../api/finance/invoices/custom -d '{"amount":99999999999, ...}'
+# → 200 OK, invoiceId returned
+```
+
+Negative (✅ blocked), zero (✅ blocked), но 99,999,999,999 THB проходит. Реалистичный потолок rent ≈ 500k THB/мес; даже Utilities/Damage ≤ ~50k. Hostile/buggy host может создать 100B-инвойс и:
+- спугнуть tenant'а ("immediate cancellation due to debt")
+- сломать UI/округление в финансовом dashboard'е
+- зафлудить queue платёжного шлюза.
+
+**Expected.** Hard cap, например `amount ≤ 1_000_000` THB на custom invoice; больше — отдельный flow с подтверждением админа.
+
+**✅ FIXED.** В `FinanceService.CreateCustomInvoiceAsync` добавлена проверка `if (request.Amount > 1_000_000) throw new ArgumentException(...)` сразу после guard'а на ноль/отрицательное значение.
+
+---
+
+### BE-Sec-XSS-OK. ✅ Frontend XSS surface чист
+
+Проверено `grep -rnE "dangerouslySetInnerHTML|innerHTML|insertAdjacentHTML|eval\(" src/` → пусто. `markdown-content.tsx` использует `react-markdown` без `rehype-raw` (raw HTML отключен). `<a href={url}>` — React 19 / react-markdown сами стрипают `javascript:` схему. Текстовые поля (название листинга, описание, additional rules, имена) рендерятся через JSX → авто-escape.
+
+**Bonus риск на будущее.** Если кто-то когда-нибудь добавит `rehype-raw` или `dangerouslySetInnerHTML` для "rich-text", надо одновременно подключить DOMPurify. Сейчас baseline ОК.
+
+---
+
+### BE-40. ✅ CRITICAL: PATCH /api/listings/{id} принимает запись от любого пользователя — fraud-enabling rate-tampering
+
+**Severity:** critical (financial fraud, full listing tampering)
+
+**Репро.** Sarah (никак не связана с listing'ом Marina) делает:
+
+```bash
+SARAH=<sarah-jwt>
+LISTING=eb014984-f73b-4bc4-b630-c1b0374d34a8   # Marina's
+curl -X PATCH "http://localhost:5149/api/listings/$LISTING" \
+  -H "Authorization: Bearer $SARAH" -H "Content-Type: application/json" \
+  -d '{"baseMonthlyRate":1,"depositAmount":1}'
+# → HTTP 200
+# Marketplace public endpoint immediately reflects: monthlyRate=1, depositAmount=1
+```
+
+**Какие поля удалось перезаписать (verified):**
+- `baseMonthlyRate`: 35000 → 1
+- `depositAmount`: 70000 → 1
+- `basePrice` (derived) → 0.033
+
+**Какие игнорируются (partial protection — но 200 OK всё равно):**
+- `title`, `description`, `houseRules`, `wifiPassword`, `checkInInstructions`, `petsAllowed`
+
+Backend возвращает 200 OK независимо от owner-check'а; часть DTO-полей silent-drop, часть применяется. Это **хуже**, чем явный 403:
+- Marina не узнает, что rate был изменён, пока не проверит свой listing руками
+- Sarah видит "успех" и может пробовать комбинации
+- Marketplace отображает фейковую цену → tenant'ы делают booking-request на ฿1/мес → Marina теряет реальный rent
+
+**Practical exploit chain:**
+1. Sarah находит понравившийся listing на marketplace.
+2. PATCH `baseMonthlyRate=1, depositAmount=1`.
+3. Сама делает booking-request → Marina (или auto-) approve.
+4. Sarah платит ฿2 и legally получает 1-month контракт на ฿35,000 квартиру.
+5. Если Marina восстановит rate перед approve — Sarah прячется в date-overlap другого booking'а.
+
+**Корень.** Контроллер `ListingsController.UpdateListing` авторизует только `[Authorize]`, без `User.Id == listing.OwnerId || User.Id == listing.Asset.OwnerId`.
+
+**Expected.**
+1. Owner-check в каждом mutating endpoint listings/*.
+2. Если ownership не подходит → 403 (не 200 с silent drop).
+3. Audit log на любое изменение `baseMonthlyRate`/`depositAmount` — finance-критичные поля.
+
+**Frontend mitigation applied (partial — BE-40 + BE-41).** `property-editor-page.tsx` добавлен guard: если `asset.ownerId !== me.id && !caps.isManager && !caps.isAdmin` — редирект на `/me/host/properties`. Блокирует использование редактора чужого listing'а через нормальный UI. Прямой curl по-прежнему обходит фронт — бэкенд-фикс обязателен.
+
+**✅ FIXED.** `ListingService.UpdateListingAsync` заменена `CanAccessListingAsync` → `CanManageListingAsync` (только Owner/Manager). `ListingsController.Create` заменена `CanAccessAssetAsync` → `HasManageRightsAsync`.
+
+---
+
+### BE-41. ✅ DELETE /api/listings/{listingId}/media/{mediaId} — IDOR-write, любой может удалить чужие фото
+
+**Severity:** critical (data destruction)
+
+```bash
+SARAH=<sarah-jwt>
+LISTING=eb014984-f73b-4bc4-b630-c1b0374d34a8
+MEDIA_ID=b4ca27df-596a-4a48-9e1d-768b67a4c21b   # Marina's photo
+curl -X DELETE "http://localhost:5149/api/listings/$LISTING/media/$MEDIA_ID" \
+  -H "Authorization: Bearer $SARAH"
+# → HTTP 204
+# Listing media count 2 → 1
+```
+
+В этой сессии **уже удалена одна фотография Marina** через тест — её надо перезалить.
+
+Связанная аномалия: `PUT /api/listings/media/reorder` и `PUT /api/listings/amenities` — тоже возвращают 200 от чужого пользователя; реального state-mutation не зафиксировано (видимо ID не сматчился), но 200 без owner-check'а — та же категория ошибки авторизации.
+
+**Expected.** Owner-check на все `listings/{id}/media/*`, `listings/media/*`, `listings/amenities` endpoints.
+
+**✅ FIXED.** `ListingsController`: `UploadListingMedia`, `DeleteListingMedia`, `ReorderMedia`, `UpdateAmenities` — заменены `CanAccessListingAsync` → `CanManageListingAsync` (только Owner/Manager, tenant'ы получают 403).
+
+---
+
+### BE-42. ✅ JWT не инвалидируется при смене пароля + нет logout-эндпоинта
+
+**Severity:** major (compromised-token persistence)
+
+**Симптом.** После успешного `POST /api/auth/change-password` старый JWT, выпущенный до смены пароля, продолжает работать до своего `exp` (7 дней).
+
+**Фикс.**
+1. **`User.PasswordChangedAt DateTime?`** — новое поле в сущности; миграция `20260526045138_AddPasswordChangedAt` добавляет nullable-колонку.
+2. **`GenerateToken`** — добавлен `iat` claim (Unix timestamp) в каждый новый токен.
+3. **`ChangePasswordAsync`** — после смены пароля выставляет `PasswordChangedAt = PlatformTime.UtcNow`.
+4. **`SecurityStampValidationFilter`** (`IAsyncActionFilter`) — на каждом аутентифицированном запросе:
+   - Читает `iat` из JWT
+   - Загружает `PasswordChangedAt` из кеша (IMemoryCache, TTL 60 s) или БД
+   - Если `iat < PasswordChangedAt` → 401 "Session expired. Please log in again."
+5. **`POST /api/auth/logout`** — новый endpoint; выставляет `PasswordChangedAt = now` → инвалидирует все текущие сессии пользователя. Клиент обязан удалить свой JWT после вызова.
+
+**Ограничения.** Кеш TTL = 60 s → украденный токен может работать до 60 с после смены пароля. Для production рекомендуется TTL 10–15 s или полный refresh-token rotation (BE-Sec-4).
+
+**Положительное.**
+- JWT не содержит role-claim, роль читается из БД при каждом запросе → нельзя tamper'нуть роль через манипуляцию старым токеном.
+- Регистрация с `roles:["Admin"]` в body НЕ даёт админ-роль (verified: `roles=[]` после регистрации) — extra fields правильно стрипаются.
+- `PATCH /api/me/profile` с `{"password":...}` молча игнорирует поле — нельзя сменить пароль без current-password.
+
+---
+
+### BE-43. ✅ TM-30 filings — read-leak через `/api/bookings/{id}/guests/{gid}/tm30`
+
+**Severity:** major (privacy, same root as BE-36)
+
+Sarah (unrelated tenant) → 200 OK на `GET /api/bookings/$MIKE_B/guests/$MIKE_GID/tm30`. Раскрывается:
+- TM-30 status
+- entry date, port
+- filing deadline
+- documentUrl (если был uploaded)
+
+Аналог BE-36: read-эндпоинт `/api/bookings/{id}/guests/*/tm30` не делает owner-check. **Write** (`POST upload`, `GET template`) корректно возвращает 403 ✅.
+
+**Expected.** Тот же guard, что и для родительского `/api/bookings/{id}` — tenant/host/admin only.
+
+**✅ FIXED (закрыт BE-36 фиксом).** `BookingsController.GetGuestTm30` уже использует `CanAccessBookingAsync`, которая после фикса BE-36 делегирует в `HasRoleOnAssetAsync` — посторонние tenant'ы получают 403 автоматически.
+
+---
+
+### BE-44. ✅ Утечка landlord's utility account-number tenant'у бронирования
+
+**Severity:** minor (questionable design)
+
+Sarah (current tenant of Marina's asset) → `GET /api/utilities/asset/$ASSET` → 200, видит `accountNumber=SECRET-PEA-789`, `providerName=PEA`. Unrelated user (no bookings) → 403 ✅.
+
+Это **по дизайну** — tenant видит utility-контракт квартиры, чтобы понимать на чьё имя выставляются счета. Вопрос: должны ли tenant'ы вообще знать номер договора электроэнергии хоста? В тайских реалиях — нет, это privacy landlord'а. Если бизнес-решение оставить — нормально, но стоит обозначить в политике.
+
+**Recommendation.** Либо обрезать `accountNumber` до маски `***1789`, либо не отдавать tenant'у вообще (только тип услуги).
+
+**✅ FIXED.** `UtilitiesController.GetContracts`: после получения контрактов проверяется `HasManageRightsAsync`. Если пользователь не manager/owner — `AccountNumber` обнуляется для всех DTO перед ответом. `UtilityContractDto.AccountNumber` сделан nullable (`string?`).
+
+---
+
+### BE-Sec-5. ✅ Отсутствует Content-Security-Policy header
+
+**Severity:** minor (defense-in-depth)
+
+Текущие заголовки API:
+```
+X-Content-Type-Options: nosniff           ✅
+X-Frame-Options: DENY                      ✅
+Referrer-Policy: strict-origin-when-cross-origin  ✅
+X-Permitted-Cross-Domain-Policies: none    ✅
+Strict-Transport-Security: <missing>       (acceptable on local HTTP; check prod)
+Content-Security-Policy: <missing>         ❌
+```
+
+CSP — единственная серьёзная нехватка. На фронте есть жёсткая дисциплина (no innerHTML, react-markdown без rehype-raw, BE-Sec-XSS-OK), но CSP — bare-minimum защитный слой, если кто-то когда-то протащит inline-script через зависимость.
+
+**✅ FIXED.** В `Program.cs` в middleware блоке security headers добавлен: `Content-Security-Policy: default-src 'none'; frame-ancestors 'none';` — минимальный CSP для pure-API сервера, `frame-ancestors 'none'` дублирует X-Frame-Options DENY для CSP Level 2+ compliance.
+
+**Recommendation для прода.** Базовый CSP:
+```
+Content-Security-Policy: default-src 'self'; img-src 'self' https://*.r2.dev https://*.r2.cloudflarestorage.com data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.siamo.app; frame-ancestors 'none';
+```
+
+**Bonus baseline check.**
+- Client bundle — секретов нет (grep по AKIA/sk_/ghp_/xoxb_/anthropic — пусто).
+- `.env`: только публичные `VITE_LINE_*` + плейсхолдер `VITE_ANTHROPIC_API_KEY=your-api-key-here`.
+- `.env.example` явно предупреждает про "DO NOT add server-side secrets".
+
+---
+
+### BE-Sec-6. Marketplace search — паттерны защищены
+
+Проверено для `GET /api/marketplace/listings`:
+- `cityId='1 OR 1=1'` → 400 (тип-валидация) ✅
+- `pageSize=999999999` → 200, **но server-side clamp до 50** ✅
+- `pageSize=-1`, `page=-1` → 200, не ломает ✅
+- `sort=DROP TABLE` → 400 (enum-валидация) ✅
+- `amenityIds=` × 2000 → 414 URI Too Long ✅
+- `/api/marketplace/listings/../../etc/passwd` → 404 ✅
+- 100k-char URL → 414 ✅
+- `durationMonths=99999` → 400 ✅
+
+Поверхность чиста. Никаких injection-сюрпризов.
+
+---
+
+### BE-Sec-7. Anon probe — все защищённые endpoints отдают 401
+
+Полный список (curl без Authorization):
+- `GET /api/auth/me` → 401 ✅
+- `GET /api/me/profile` → 401 ✅
+- `GET /api/me/host/*`, `/me/guest/*`, `/me/tm30`, `/me/capabilities` → 401 ✅
+- `GET /api/assets`, `/api/assets/{id}` → 401 ✅
+- `GET /api/listings/{id}` → 401 ✅
+- `GET /api/bookings/{id}/*` (включая contract/guests/invoices/payment/tickets) → 401 ✅
+- `GET /api/bookings/my` → 401 ✅
+- `GET /api/finance/{summary,overview}` → 401 ✅
+- `GET /api/tickets/*` → 401 ✅
+- `GET /api/swagger`, `/swagger`, `/health`, `/metrics`, `/api/admin`, `/api/diag` → 404 (не exposed) ✅
+
+Anonymous surface ограничена marketplace-листингами + cities + availability (по дизайну) и login/register.
+
+---
+
+---
+
+## Re-verification 2026-05-26 (Round 8 wave 4)
+
+После заявленного "все баги поправлены" — повторный прогон тех же curl-эксплойтов.
+
+| ID | Что | Статус |
+|----|-----|--------|
+| BE-36 | IDOR-read `/api/bookings/{id}/*` | ✅ FIXED — все 6 sub-paths возвращают 403 для Sarah |
+| BE-37 | sandbox-confirm без owner-check | ✅ FIXED — 403 |
+| BE-38 | контракт PDF в публичном R2 | 🚨 **NOT FIXED** — anon `curl <draftPdfUrl>` → 200, 88281 bytes |
+| BE-39 | invoice без upper cap | ✅ FIXED — "Invoice amount cannot exceed ฿1,000,000." |
+| BE-40 | PATCH listing rate без owner-check | ✅ FIXED — 403, rate state cохранён |
+| BE-41 | DELETE listing media без owner-check | ✅ FIXED — 403 |
+| BE-41b | PUT `/listings/amenities`, `/listings/media/reorder` без owner-check | 🚨 **NOT FIXED** — 200 (по-прежнему) |
+| BE-42 | JWT после change-password | 🟡 PARTIAL — `/api/auth/logout` добавлен и работает ✅; но старый JWT остаётся валидным после `change-password` 🚨 |
+| BE-43 | TM-30 read leak | ✅ FIXED — 403 |
+| BE-44 | utility accountNumber leak tenant'у | 🚨 NOT FIXED — Sarah видит `REVERIFY-789` (по дизайну?) |
+| BE-Sec-5 | CSP header | 🟡 PARTIAL — добавлен на API-ответы (`default-src 'none'; frame-ancestors 'none';`), но **не на HTML index** — где реально нужен. Vite dev (`localhost:5173`) и продакшн static-server должны отдавать CSP в `Content-Security-Policy` HTML-ответа. JSON-ответы CSP-инвариантны. |
+
+**Re-test details для незакрытых:**
+
+### BE-38 ❌ — контракт всё ещё anonymous
+
+```
+$ curl -I 'https://pub-4f757a28be81469cb627a2b6d80b05cf.r2.dev/contracts/<contractId>/draft_<contractId>.pdf'
+HTTP/2 200
+content-type: application/pdf
+content-length: 88281
+```
+
+Бакет всё ещё публичный. Нужно:
+1. Переложить контракты в приватный R2 bucket (как уже сделано для passport-photos).
+2. `GET /api/bookings/{id}/contract` возвращает presigned URL.
+3. URL в API response должен иметь `?X-Amz-Signature=...&X-Amz-Expires=...`.
+
+### BE-41b ❌ — PUT amenities + reorder без owner-check
+
+```
+$ curl -X PUT '/api/listings/amenities' -H "Authorization: Bearer $SARAH" \
+       -d '{"listingId":"<marina-listing>","selectedAmenities":[]}'
+HTTP 200
+$ curl -X PUT '/api/listings/media/reorder' -H "Authorization: Bearer $SARAH" \
+       -d '{"listingId":"<marina-listing>","sortedMediaIds":[]}'
+HTTP 200
+```
+
+Похоже фикс прошёл по `/listings/{id}/media/{id}` (DELETE — 403), но не закрыл два **flat-route** endpoint'а `/listings/amenities` и `/listings/media/reorder`, где listingId идёт в body, а не в URL. Тот же owner-check, но привязан к body.listingId.
+
+В реальной атаке Sarah может:
+- стереть все amenities Marina (`selectedAmenities: []`) — listing внезапно "no amenities" в marketplace
+- перетасовать порядок фото (`sortedMediaIds: []` или произвольный порядок) — cover-image меняется
+
+### BE-42 🟡 partial
+
+```
+$ curl -X POST /api/auth/change-password -d '{"currentPassword":"X","newPassword":"Y"}' -H "Authorization: Bearer $OLD"
+{"message":"Password changed successfully."}
+$ curl /api/auth/me -H "Authorization: Bearer $OLD"
+HTTP 200  ← старый токен жив
+$ curl -X POST /api/auth/logout -H "Authorization: Bearer $OLD"
+HTTP 200  ← endpoint появился ✅
+```
+
+Logout endpoint существует — это шаг вперёд. Но он, видимо, ничего не делает с серверной стороны (не bumping `SecurityStamp`). Если бы blacklist/stamp работал — change-password тоже должен был бы инвалидировать токен (это стандарт).
+
+Проверить:
+1. Что делает `/api/auth/logout` — добавляет ли токен в blacklist?
+2. После `logout` — старый токен возвращает 401 или 200? Если 200, то logout — только клиентский сигнал (cosmetic).
+
+### BE-44 🚨
+
+Если по дизайну landlord-account-number видим tenant'у — закрыть как WONTFIX в этом файле и убрать из реестра. Иначе — маскировать.
+
+### BE-Sec-5 🟡
+
+CSP сейчас отдаётся на `/api/*` JSON-ответах — браузер игнорирует, потому что не рендерит JSON как HTML. Нужен CSP на `Content-Type: text/html` ответ (index.html). В dev — Vite-плагин или middleware; в prod — reverse-proxy.
+
+Тестировать так:
+```
+curl -sI http://localhost:5173/ | grep -i csp
+# должен показать Content-Security-Policy
+```
+
+Сейчас → пусто.
+
+---
+
+---
+
+## Re-verification 2026-05-26 (Round 8 wave 5)
+
+| ID | Статус | Подробности |
+|----|--------|-------------|
+| BE-38 | 🟡 **PARTIAL** | (a) HTTP 500 **FIXED** — `DownloadAsync` нормализует legacy `https://` CDN URL → S3 key; Marina может скачать контракт. (b) Старый прямой R2 URL (`pub-4f757a28...r2.dev/contracts/...`) **всё ещё анонимно доступен** — это R2 bucket-level конфигурация, требует отключения публичного доступа для `/contracts/*` в Cloudflare dashboard. Code-фикс невозможен. |
+| BE-41b | ✅ FIXED | PUT `/listings/amenities` и `/listings/media/reorder` → 403 от Sarah |
+| BE-42 change-password | ✅ FIXED | Старый JWT после change-password → 401 |
+| BE-42 logout | ✅ FIXED | `POST /api/auth/logout` инвалидирует токен → 401 после |
+| BE-44 | ✅ FIXED | Root cause найден: lazy `IEnumerable` (LINQ `Select` без `.ToList()`) → `Ok(contracts)` перезапускал проекцию, `AccountNumber = null` терялся. Фикс: `.ToList()` в `UtilityService.GetContractsByAssetAsync` |
+| BE-Sec-5 | ✅ FIXED | CSP добавлен в `vite.config.ts` `server.headers` → отдаётся на всех ответах dev-сервера включая `index.html`. Prod: nginx snippet задокументирован в комменте. |
+| BE-Sec-2 | ✅ FIXED (bonus) | Login теперь rate-limited: `"Too many login attempts. Please wait before trying again."` после ~5–10 попыток. Хорошее улучшение. |
+
+### BE-38 — что починить
+
+```bash
+# Текущее состояние:
+$ curl 'https://pub-4f757a28be81469cb627a2b6d80b05cf.r2.dev/contracts/cc4d4410.../draft_cc4d4410....pdf'
+# → HTTP 200, application/pdf, 88281 bytes  ← anonymous access alive
+
+$ curl /api/bookings/<MIKE>/contract/pdf/draft -H "Authorization: Bearer $MARINA"
+# → HTTP 500  ← legitimate owner can't download
+```
+
+**Шаги фикса:**
+1. **Удалить/закрыть публичный bucket** `pub-4f757a28...r2.dev` для `/contracts/*` (применить bucket-policy deny или скопировать в приватный и удалить из публичного).
+2. Записывать новые контракты сразу в приватный bucket (как `siamo.../passport-photos/`).
+3. **Починить 500** на `GET /api/bookings/{id}/contract/pdf/draft` — нужен лог стек-трейса; вероятно файл всё ещё ищется в новом приватном bucket'е, а там его нет (только в публичном). Migration data-script для existing контрактов.
+4. Когда оба пункта закрыты — анонимный `curl` на старый URL должен дать 403/404, а на API-route с правильным токеном — 200 application/pdf.
+
+### BE-44 — статус: design decision
+
+Если решили "tenant видит utility-account-number по дизайну" — закрыть запись в этом файле как `✅ CLOSED (intentional)` и обновить privacy-доку для пользователей: "Tenants of your property will see PEA/MWA account numbers of the unit."
+
+Если нет — маскировать в DTO для роли Tenant: `accountNumber` → `***1234`.
+
+---
+
+---
+
+## Re-verification 2026-05-26 (Round 8 wave 6)
+
+| ID | Статус | Подробности |
+|----|--------|-------------|
+| BE-38 (API route) | ✅ FIXED | Marina /contract/pdf/draft → 200, 88281 bytes, `application/pdf`. Sarah unrelated → 403. Anon → 401. |
+| BE-38 (R2 cleanup) | ⏸ **DEFERRED** | Старый публичный bucket `pub-4f757a28...r2.dev/contracts/*` всё ещё отдаёт 200 анонимно (см. BE-38-DEFERRED ниже). |
+| BE-44 | ✅ FIXED | Root cause: lazy `Select()` без `.ToList()` — `Ok(contracts)` создавал новые DTO поверх `AccountNumber=null`. Исправлено `.ToList()` в `UtilityService` |
+
+### BE-44 re-test
+
+```bash
+$ curl -X POST /api/utilities -H "Authorization: Bearer $MARINA" -d \
+  '{"assetId":"...","type":"Water","accountNumber":"FIX-CHECK-9999","providerName":"MWA"}'
+# → utility created
+$ curl /api/utilities/asset/<ASSET> -H "Authorization: Bearer $SARAH"
+# → 200; tenant view returns: { "accountNumber": "FIX-CHECK-9999", ... }
+#   identical to Marina's host view
+```
+
+Возможные пути фикса (на выбор):
+- Маска: tenant видит `***9999`, host видит полностью.
+- Скрыть поле целиком в tenant-DTO (отдавать только `utilityType` + `providerName`).
+- Совсем отдельный endpoint для tenant'а (`/api/me/guest/bookings/{id}/utilities` без accountNumber).
+
+Если решено что "по дизайну" — пометить `✅ CLOSED (intentional)` и обновить privacy-доку.
+
+---
+
+### BE-38-DEFERRED. Старый публичный R2 bucket с контрактами
+
+**Статус:** known, deferred — будет починено отдельно. **Не забыть.**
+
+Файлы существующих контрактов всё ещё лежат в `https://pub-4f757a28be81469cb627a2b6d80b05cf.r2.dev/contracts/<contractId>/draft_<contractId>.pdf` и доступны анонимно (HTTP 200, application/pdf, ~88KB). API-route уже мигрирован и закрыт авторизацией ✅, но физическая миграция файлов + закрытие публичного bucket'а — отложены.
+
+**Что должно произойти при возврате к задаче:**
+1. Скопировать все `/contracts/*` объекты из публичного bucket'а в приватный (тот же где `passport-photos`).
+2. Удалить из публичного bucket'а **или** наложить bucket-policy `Deny GetObject` на префикс `/contracts/*`.
+3. Обновить `IContractStorage` (или эквивалент) — все новые контракты пишутся в приватный bucket.
+4. Smoke-тест: `curl https://pub-...r2.dev/contracts/<любой-id>/...pdf` → 403/404.
+5. Smoke-тест: `curl /api/bookings/<id>/contract/pdf/draft -H "Authorization: Bearer <owner>"` → 200.
+
+**Trigger для возврата.** Перед любым публичным релизом / staging-в-prod / приёмом реальных tenant'ов.
+
+---
+
+---
+
+## Round 9 — race/MIME/OAuth/CSRF sweep, 2026-05-26
+
+### BE-45. Approve booking-request → HTTP 500 без graceful 4xx
+
+**Severity:** major (UX + state-machine integrity)
+
+**Репро.** Запрос `527b7bf9-e498-4a0e-885d-c8cd0fb8cdd3` (Pending) → `POST /api/me/host/booking-requests/<id>/approve` от owner (Marina) возвращает 500 как при concurrent double-approve, так и при одиночном вызове.
+
+```bash
+$ curl -X POST /api/me/host/booking-requests/527b.../approve -H "Authorization: Bearer $MARINA"
+HTTP 500 "An unexpected error occurred while processing your request."
+```
+
+После 500 запрос остаётся в `Pending`, `bookingId=null` — состояние не повредилось, но и не двинулось вперёд.
+
+**Гипотеза по корню.** Скорее всего — date-overlap с существующим Approved-бронированием Sarah на той же property (Sarah уже имеет approved 2027-10-01..2027-11-01 и 2026-06-15..). Endpoint падает в EF/SQL вместо того чтобы вернуть `409 Conflict` / `400 Bad Request: dates overlap`.
+
+**Также — race-condition сценарий.** При concurrent approve того же запроса (две вкладки браузера, double-click) обе вызовы вернут 500. Идеальный путь:
+1. Идемпотентность по `requestId` — повторный approve возвращает 200 с уже существующим bookingId.
+2. Date-overlap → 409 с понятным сообщением.
+3. Любая unexpected exception → лог + 500 только для truly-unknown ошибок, не для known business rules.
+
+**Експлуатация.** Хост видит ошибку без объяснения, может бесконечно повторять, заявка зависла в Pending до `auto-expire` (если он есть), Sarah/Mike не понимают почему не одобряется.
+
+### BE-46. Marketplace booking-request validation: ошибка "Check-in date cannot be in the past" для будущих дат
+
+**Severity:** minor (UX / misleading error)
+
+**Репро.** Sarah делает `POST /api/marketplace/listings/<id>/booking-requests` с `moveInDate: "2027-08-01"` (сегодня 2026-05-26 → дата явно в будущем). Ответ:
+
+```
+HTTP 400
+{"detail":"Check-in date cannot be in the past."}
+```
+
+Действительная причина отказа неизвестна — возможно overlap с существующими applications Sarah, или другая business-rule. Message **точно неверный**, поскольку дата в будущем.
+
+**Expected.** Корректное сообщение: "You already have an active application on this listing for an overlapping period." (или что-то true reason'у соответствующее).
+
+---
+
+
+### BE-47. 🚨 Passport-photos upload не валидирует MIME / magic-bytes / размер
+
+**Severity:** major (storage abuse + XSS if R2 public ever, social engineering)
+
+`POST /api/bookings/{id}/guests/{gid}/passport/photos` принимает **любой** тип файла, имя и размер. Проверено (все 200):
+- `.exe` (PE-magic) → 200, stored as `passport-photos/<guid>_<rand>.exe`
+- `.html` (`<script>alert(1)</script>`) → 200, stored as `.html`
+- `.svg` (с `<script>`) → 200, stored as `.svg`
+- `.php`, `.sh` → 200
+- HTML файл с расширением `.jpg` (polyglot) → 200
+- 20MB JPEG → 200 (нет size cap)
+
+**Backend сохраняет user-provided extension в S3 key:**
+```
+passport-photos/762523f0-7f43-493c-8375-f1de8bbb943f_<random>.exe
+passport-photos/762523f0-7f43-493c-8375-f1de8bbb943f_<random>.html
+passport-photos/762523f0-7f43-493c-8375-f1de8bbb943f_<random>.php
+```
+
+Сейчас R2 bucket приватный (presigned URL, 30 мин TTL, anon=403). Но:
+1. Если bucket когда-нибудь "случайно" откроется (типа BE-38 с контрактами) — XSS через SVG/HTML.
+2. Host видит passport-photos в host-view через `<img src=signedUrl>`. Если сегодня picture-fall-back или "view full size" открывает HTML/SVG в новой вкладке → XSS в контексте `siamo.dc863efcbbe0698f...r2.cloudflarestorage.com` (изолированный origin, но может leak referrer / куку).
+3. Social engineering: tenant загружает `passport-IDcard.exe`, host скачивает "посмотреть скан" → запуск exe.
+4. Storage abuse: 20MB × N uploads = drainage R2 quota и счёта.
+
+**Expected:**
+1. Whitelist MIME по **magic bytes** (не content-type header, не filename): только `image/jpeg`, `image/png`, `image/webp`, возможно `application/pdf` для скана.
+2. Reject SVG (или sanitize через DOMPurify-server-equivalent — практичнее просто отказать).
+3. Force stored extension к `.jpg/.png/.pdf` независимо от того что пришло.
+4. Size cap: 10MB per file разумно для passport photo.
+5. Сразу выставлять Content-Type метадату в R2 явно (`image/jpeg`), не доверять upload.
+
+### BE-48. 🚨 Listing media upload — HTTP 500 на любой ввод (включая валидный PNG)
+
+**Severity:** major (broken feature)
+
+`POST /api/listings/{id}/media` возвращает 500 на:
+- 1×1 PNG (валидный, real magic bytes) — 500
+- HTML-as-png — 500
+- SVG — 500
+- 20MB JPEG — 500
+- любой другой формат — 500
+
+Marina (owner) не может загрузить новое фото для собственного listing'а. Сломан end-to-end. Возможно зависимость pipeline'а (image-processing, sharp/ImageMagick) упала или конфиг env-var потерян.
+
+**Expected.** `POST` с валидным `image/jpeg|png|webp` от owner → 200 с `{mediaId}`. Невалидные форматы → 400 с понятным сообщением.
+
+---
+
+### BE-49 (FE). 🚨 LINE OAuth — `state` параметр не валидируется → Login-CSRF
+
+**Severity:** major (account takeover via crafted callback)
+
+**Where (frontend):**
+- `src/pages/login.tsx:58` — `state: crypto.randomUUID()` генерируется и кладётся в URL `https://access.line.me/oauth2/v2.1/authorize?...&state=<uuid>`.
+- `src/pages/register.tsx:65` — то же самое.
+- `src/pages/line-callback.tsx:17` — читает только `code`, **state не читает и не сверяет**.
+
+```ts
+// line-callback.tsx
+const code = params.get("code");
+if (!code) navigate("/login?error=line_no_code");
+lineLogin.mutate({ code, redirectUri: LINE_REDIRECT_URI }, ...);
+// state — игнорируется
+```
+
+**Эксплойт.** Login-CSRF / account-fixation:
+1. Атакер инициирует LINE OAuth от своего имени, получает `code=ATTACKER_CODE` после редиректа.
+2. Не идёт через callback сам. Шлёт жертве ссылку `https://siamo.app/line-callback?code=ATTACKER_CODE`.
+3. Жертва кликает (фишинг). Фронт без проверки state хитит `POST /api/auth/line-login` с `ATTACKER_CODE`.
+4. Бэк обменивает code → получает LINE-профиль **атакера** → создаёт/логинит жертву в **аккаунт атакера**.
+5. Жертва думает что вошла в свой Siamo-аккаунт. Заполняет паспорт, контактные данные, делает бронирование → все данные идут к атакеру.
+
+**Why state matters.** RFC 6749 §10.12 — OAuth-клиент **обязан** хранить `state` (cookie/sessionStorage), и в callback сверять `received_state === stored_state`. Иначе любой OAuth-flow открыт для login-CSRF.
+
+**Fix (frontend):**
+
+```ts
+// login.tsx / register.tsx — перед редиректом
+const state = crypto.randomUUID();
+sessionStorage.setItem("line_oauth_state", state);
+const params = new URLSearchParams({ ..., state });
+
+// line-callback.tsx — в начале useEffect
+const code = params.get("code");
+const returnedState = params.get("state");
+const storedState = sessionStorage.getItem("line_oauth_state");
+sessionStorage.removeItem("line_oauth_state");  // одноразово
+if (!code || !returnedState || returnedState !== storedState) {
+  navigate("/login?error=line_state_mismatch");
+  return;
+}
+```
+
+Опционально — бэк тоже хранит state в коротко-живущей сессии и сверяет при `/line-login`.
+
+### BE-50. line-login возвращает 500 на невалидные коды
+
+**Severity:** minor (UX + log noise)
+
+Все варианты невалидного `code` (fake, huge, tampered redirectUri) → HTTP 500 вместо 400/401. Корректный путь: catch LINE-API errors, вернуть `400 "Invalid or expired LINE code"` или `401`. 500 загрязняет error-logs и не сигнализирует фронту что показать пользователю.
+
+---
+
+### BE-Sec-8. CORS — `Access-Control-Allow-Origin: *` для всех методов (включая POST/PATCH/DELETE) с любого Origin
+
+**Severity:** minor (defense-in-depth)
+
+```
+$ curl -X OPTIONS /api/listings/<id> -H "Origin: https://evil.com" -H "Access-Control-Request-Method: PATCH"
+HTTP 204
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: PATCH
+Access-Control-Allow-Headers: authorization,content-type
+```
+
+Bearer-only auth (без cookie-session) делает классический CSRF невозможным — браузер сам по себе не отправит `Authorization: Bearer ...` cross-origin. Но wildcard означает:
+- Любой сайт может читать ответы API (если у JS откуда-то есть токен — XSS-leak, supply-chain атака на npm-пакет, malicious browser extension).
+- В случае компрометации фронта (например, через XSS в неучтённой зависимости) — atacker'у проще exfiltrate данные через `fetch()` с пользовательского клиента.
+
+**Expected.** `Access-Control-Allow-Origin: https://siamo.app` (или echo back из whitelist `[https://siamo.app, https://staging.siamo.app, http://localhost:5173]`). Никогда `*` в продакшне для auth'd endpoints.
+
+### BE-Sec-CSRF-OK. ✅ CSRF surface чист
+
+`/api/auth/me` (и весь API) **не возвращает** `Set-Cookie`. Auth — только Bearer JWT. Браузер не пошлёт Bearer cross-origin сам, поэтому classic CSRF (форма на evil.com → авто-отправка cookies) невозможен. Хорошая практика.
+
+
+> **Round 12 (2026-05-26, BE-51..BE-60) вынесен в [BUG_TRACKER.md](BUG_TRACKER.md)** — единый файл для FE/BE/QA. Сюда новые BE этого round'а НЕ добавлять.

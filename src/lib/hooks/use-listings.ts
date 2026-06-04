@@ -15,6 +15,10 @@ export const useListingsByAsset = (assetId: string) =>
     queryKey: keys.byAsset(assetId),
     queryFn: () => listingsApi.getByAsset(assetId),
     staleTime: 30_000,
+    // BUG-330: in create mode the editor calls this with assetId="" — firing
+    // GET /api/listings/asset/ (trailing slash, no id) → 405 ×2 on every load.
+    // Gate the query so it only runs once we actually have an asset id.
+    enabled: !!assetId,
   });
 
 export const useCreateListing = () => {

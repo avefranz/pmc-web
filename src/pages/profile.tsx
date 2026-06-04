@@ -1,28 +1,35 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { openAuthPdf } from "@/lib/utils/open-auth-pdf";
 import {
-  ArrowRight, Bell, Check, CreditCard, FileText, Lock, LogOut, Mail,
-  Phone, ShieldCheck, User, X,
+  ArrowRight, Bell, Check, CreditCard, Eye, EyeOff, FileText, KeyRound,
+  Lock, LogOut, Mail, Phone, ShieldCheck, User, X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { useMe } from "@/lib/hooks/use-auth";
+import { useMe, useChangePassword } from "@/lib/hooks/use-auth";
 import { useMyProfile, useMyTm30 } from "@/lib/hooks/use-profile";
 import { useMyBookings } from "@/lib/hooks/use-bookings";
 import { useQueryClient } from "@tanstack/react-query";
 import { initials } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { PassportOnboardingStep } from "@/features/me/onboarding/passport-step";
+import { LandlordIdentityForm, LandlordIdentitySummary } from "@/components/shared/landlord-identity-form";
 import { PaymentSettingsPage } from "@/features/me/host/settings/payment-settings-page";
 import { ContactSettingsPage } from "@/features/me/host/settings/contact-settings-page";
 
 type SectionId =
-  | "overview" | "personal" | "payment" | "contact"
+  | "overview" | "personal" | "identity" | "payment" | "contact"
   | "documents" | "notifications" | "security";
 
 const NAV: { id: SectionId; label: string; icon: React.ElementType }[] = [
   { id: "overview",       label: "Profile overview",    icon: User },
   { id: "personal",       label: "Personal & passport", icon: FileText },
+  // BUG-267: host-only landlord identity printed on rental contracts.
+  { id: "identity",       label: "Landlord identity",   icon: ShieldCheck },
   { id: "payment",        label: "Payment methods",     icon: CreditCard },
   { id: "contact",        label: "Contact & messaging", icon: Phone },
   { id: "documents",      label: "Documents",           icon: ShieldCheck },
@@ -296,14 +303,13 @@ function SectionDocuments() {
                   Signed · {new Date(b.checkInDate).toLocaleDateString()} – {new Date(b.checkOutDate).toLocaleDateString()}
                 </div>
               </div>
-              <a
-                href={b.contractUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openAuthPdf(b.contractUrl!).catch(() => toast.error("Couldn't open PDF"))}
                 className="text-xs font-medium text-fg-muted hover:text-fg"
               >
                 View
-              </a>
+              </button>
             </div>
           ))}
           {(tm30 ?? []).map((t) => (
@@ -342,11 +348,161 @@ function SectionNotifications() {
   );
 }
 
+function PasswordRow({ isLineOnly }: { isLineOnly: boolean }) {
+  const changePassword = useChangePassword();
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    setCurrent(""); setNext(""); setConfirm("");
+    setShowCurrent(false); setShowNext(false);
+    setError(null); setOpen(false);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (next.length < 8) { setError("New password must be at least 8 characters."); return; }
+    if (next !== confirm) { setError("Passwords don't match."); return; }
+    try {
+      await changePassword.mutateAsync({ currentPassword: current, newPassword: next });
+      toast.success("Password updated");
+      reset();
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(detail ?? "Couldn't update password. Check your current password and try again.");
+    }
+  }
+
+  if (isLineOnly) {
+    return (
+      <div className="flex items-center justify-between gap-4 py-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="w-9 h-9 rounded-lg bg-bg-subtle flex items-center justify-center shrink-0">
+            <KeyRound size={14} className="text-fg-muted" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-fg">Password</div>
+            <div className="text-xs text-fg-muted">You signed in with LINE — no password set.</div>
+          </div>
+        </div>
+        <span className="text-xs text-fg-muted shrink-0">LINE account</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="w-9 h-9 rounded-lg bg-bg-subtle flex items-center justify-center shrink-0">
+            <KeyRound size={14} className="text-fg-muted" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-fg">Password</div>
+            <div className="text-xs text-fg-muted">••••••••</div>
+          </div>
+        </div>
+        {!open && (
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+            Change
+          </Button>
+        )}
+      </div>
+
+      {open && (
+        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3 max-w-sm">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pw-current" className="text-xs">Current password</Label>
+            <div className="relative">
+              <Input
+                id="pw-current"
+                type={showCurrent ? "text" : "password"}
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                placeholder="Current password"
+                autoComplete="current-password"
+                required
+                className="pr-9"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowCurrent((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg"
+              >
+                {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pw-new" className="text-xs">New password</Label>
+            <div className="relative">
+              <Input
+                id="pw-new"
+                type={showNext ? "text" : "password"}
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                required
+                className="pr-9"
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowNext((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg"
+              >
+                {showNext ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pw-confirm" className="text-xs">Confirm new password</Label>
+            <Input
+              id="pw-confirm"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder="Repeat new password"
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          {error && (
+            <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" size="sm" disabled={changePassword.isPending}>
+              {changePassword.isPending ? "Saving…" : "Save password"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={reset}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function SectionSecurity() {
   const navigate = useNavigate();
   const { clearAuth } = useAuthStore();
   const { data: me } = useMe();
   const qc = useQueryClient();
+
+  // LINE-only accounts have lineUserId but no email — they can't change a password
+  // they never set. Email users may also have lineUserId linked, so check email too.
+  const isLineOnly = !!me?.lineUserId && !me?.email;
 
   function handleSignOut() {
     clearAuth();
@@ -360,6 +516,7 @@ function SectionSecurity() {
       subtitle="Sign-in details and account actions."
     >
       <div className="flex flex-col gap-4">
+        {/* Email row */}
         <div className="flex items-center justify-between gap-4 py-2">
           <div className="flex items-center gap-3 min-w-0">
             <span className="w-9 h-9 rounded-lg bg-bg-subtle flex items-center justify-center shrink-0">
@@ -372,6 +529,13 @@ function SectionSecurity() {
           </div>
           <span className="text-xs text-fg-muted">Used to sign in</span>
         </div>
+
+        {/* Password row */}
+        <div className="border-t border-border pt-4">
+          <PasswordRow isLineOnly={isLineOnly} />
+        </div>
+
+        {/* Sign out */}
         <div className="border-t border-border pt-4 flex items-center justify-between gap-4">
           <div>
             <div className="text-sm font-medium text-fg">Sign out</div>
@@ -391,6 +555,34 @@ function SectionSecurity() {
   );
 }
 
+// BUG-267: host enters their legal identity once; it's snapshotted into every
+// rental contract and is required before they can sign.
+function SectionLandlordIdentity() {
+  const { data: profile } = useMyProfile();
+  const [editing, setEditing] = useState(false);
+  const identity = profile?.landlordIdentity ?? null;
+  const showForm = !identity || editing;
+
+  return (
+    <SectionShell
+      title="Landlord identity"
+      subtitle="Printed on the landlord section of every rental contract you sign. You only need to fill this in once."
+      status={{ ok: !!identity, label: identity ? "On file" : "Not set" }}
+    >
+      {showForm ? (
+        <LandlordIdentityForm existing={identity} onSaved={() => setEditing(false)} />
+      ) : (
+        <div className="space-y-3">
+          <LandlordIdentitySummary identity={identity!} />
+          <Button variant="outline" onClick={() => setEditing(true)} className="rounded-xl">
+            Edit identity
+          </Button>
+        </div>
+      )}
+    </SectionShell>
+  );
+}
+
 export default function ProfilePage() {
   const [sp, setSp] = useSearchParams();
   const active = (sp.get("s") as SectionId) || "overview";
@@ -400,7 +592,7 @@ export default function ProfilePage() {
   // BUG-152 / BUG-153: payment and contact sections are host-only (they contain
   // payout details and host-to-tenant messaging setup). Tenants never need them.
   const isHost = me?.roles?.some((r) => r === "Landlord" || r === "Admin");
-  const HOST_ONLY: SectionId[] = ["payment", "contact"];
+  const HOST_ONLY: SectionId[] = ["identity", "payment", "contact"];
   const navItems = isHost ? NAV : NAV.filter((n) => !HOST_ONLY.includes(n.id));
 
   // Guard: if a non-host navigated here via URL param, fall through to overview.
@@ -421,6 +613,7 @@ export default function ProfilePage() {
   const content = useMemo(() => {
     switch (effectiveSection) {
       case "personal":      return <PassportOnboardingStep embedded />;
+      case "identity":      return <SectionLandlordIdentity />;
       case "payment":       return <PaymentSettingsPage embedded />;
       case "contact":       return <ContactSettingsPage embedded />;
       case "documents":     return <SectionDocuments />;

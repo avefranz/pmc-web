@@ -158,7 +158,7 @@ export function FinancePage() {
                   <LabelList
                     dataKey="value"
                     position="top"
-                    formatter={(v: number) => `฿${(v / 1000).toFixed(0)}k`}
+                    formatter={(v) => `฿${(Number(v) / 1000).toFixed(0)}k`}
                     style={{ fontSize: 10, fill: "#717171", fontWeight: 600 }}
                   />
                 </Bar>

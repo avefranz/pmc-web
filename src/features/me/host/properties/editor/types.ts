@@ -7,6 +7,11 @@ import type { BuildingType, CheckInMethod, ContactChannel, FurnishedType } from 
 export interface PropertyDraft {
   // ── Specs (asset)
   assetTypeId: number | null;
+  // UX-253: property category (Apartment / House / Villa / Townhouse /
+  // Cottage / …). Drives floor-vs-storeys field choice in the specs section
+  // and the propertyCategoryId on POST /api/listings. Null until the host
+  // picks one — required before save.
+  propertyCategoryId: number | null;
   bedrooms: number | null;
   bathrooms: number;
   beds: number;
@@ -29,6 +34,16 @@ export interface PropertyDraft {
   latitude: number | null;
   longitude: number | null;
   legalAddress: string;
+  // UX-254: structured Thai address. Reverse-geocode fills these in; Legal
+  // address autogenerates from them but the host can override.
+  street: string;
+  soi: string;
+  subdistrict: string;
+  district: string;
+  province: string;
+  // Set to true once the host has manually edited the Legal address — stops
+  // the autogenerator from clobbering their wording on subsequent pin moves.
+  legalAddressTouched: boolean;
   googleMapsUrl: string;
 
   // ── Listing — title & description
@@ -91,6 +106,7 @@ export interface PropertyDraft {
 
 export const EMPTY_DRAFT: PropertyDraft = {
   assetTypeId: null,
+  propertyCategoryId: null,
   bedrooms: null,
   bathrooms: 1,
   beds: 1,
@@ -112,6 +128,12 @@ export const EMPTY_DRAFT: PropertyDraft = {
   latitude: null,
   longitude: null,
   legalAddress: "",
+  street: "",
+  soi: "",
+  subdistrict: "",
+  district: "",
+  province: "",
+  legalAddressTouched: false,
   googleMapsUrl: "",
 
   title: "",
@@ -156,6 +178,16 @@ export const EMPTY_DRAFT: PropertyDraft = {
 
 export type DraftPatch = Partial<PropertyDraft>;
 
+// BUG-331: a photo that finished staging to R2 (POST /media/staging). Unlike
+// the raw File buffer (which can't survive a tab reload), the staged id + url
+// are plain strings — so we persist these in the localStorage draft and
+// rehydrate previews + completion after a reload.
+export interface StagedPhoto {
+  stagedMediaId: string;
+  url: string;
+  name: string;
+}
+
 // What every section form receives. The form is mode-agnostic — it only
 // mutates the draft via `patch`. The container (sections-list) handles the
 // actual API commit when the user hits the section's "Continue" button.
@@ -174,6 +206,11 @@ export interface SectionFormProps {
   addPendingPhotos?: (files: File[]) => void;
   removePendingPhotoAt?: (index: number) => void;
   movePendingPhotoToCover?: (index: number) => void;
+  // BUG-331: photos staged in a previous session, restored from localStorage.
+  // Preview-only (no File object) — shown alongside freshly-picked pending
+  // photos so a tab reload doesn't appear to drop the host's uploads.
+  stagedPhotos?: StagedPhoto[];
+  removeStagedPhotoAt?: (index: number) => void;
 }
 
 /** @deprecated kept as alias for older section files — use SectionFormProps */
@@ -213,6 +250,11 @@ export interface SectionDef {
   Form: React.ComponentType<SectionFormProps>;
   // Skip in create mode (photos, amenities need a listingId to commit).
   editOnly?: boolean;
+  // UX-333: optional override for the disabled Continue button's label when
+  // the section is required-but-incomplete. Lets a section name its real
+  // missing condition (e.g. "Drop the pin on the map") instead of the generic
+  // "Fill required fields (marked *)". Return null to keep the default.
+  blockedReason?: (draft: PropertyDraft) => string | null;
 }
 
 // Derive the list of unfilled required-section labels from a section list.

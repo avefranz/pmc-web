@@ -79,6 +79,18 @@ export const listingsApi = {
       .then((r) => r.data);
   },
 
+  // UX-312: stage a photo to R2 before the listing exists (create flow). The
+  // returned stagedMediaId is passed in CreateListingRequest.stagedMediaIds on
+  // save; BE links it as ListingMedia and consumes the staged row. `url` is a
+  // real R2 URL usable as an immediate preview.
+  stageMedia: (file: File): Promise<{ stagedMediaId: string; url: string }> => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiClient
+      .post<{ data: { stagedMediaId: string; url: string } }>("/api/listings/media/staging", form)
+      .then((r) => r.data.data);
+  },
+
   deleteMedia: (listingId: string, mediaId: string) =>
     apiClient.delete(`/api/listings/${listingId}/media/${mediaId}`),
 

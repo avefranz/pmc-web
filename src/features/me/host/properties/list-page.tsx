@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, DoorOpen, Phone, CreditCard } from "lucide-react";
+import { Plus, Building2, ShieldCheck, Wallet, Users, AlertTriangle, UserCheck, DoorOpen, Phone, CreditCard, Clock } from "lucide-react";
+import { differenceInDays, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
@@ -22,7 +23,24 @@ function statusConfig(asset: AssetDto): {
   const name = asset.currentTenantName;
 
   switch (asset.occupancyStatus) {
-    case AssetOccupancyStatus.Occupied:
+    case AssetOccupancyStatus.Occupied: {
+      // UX-157: distinguish "Confirmed (pre-checkin)" from "Active (living now)"
+      const isConfirmedPreCheckin =
+        asset.currentBookingStatus === "Confirmed" &&
+        asset.currentTenantCheckInDate &&
+        parseISO(asset.currentTenantCheckInDate) > new Date();
+
+      if (isConfirmedPreCheckin && asset.currentTenantCheckInDate) {
+        const daysUntil = differenceInDays(parseISO(asset.currentTenantCheckInDate), new Date());
+        return {
+          dot:     "bg-violet-500",
+          label:   name ?? "Confirmed",
+          sub:     daysUntil === 0 ? "Move-in today" : `Move-in in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`,
+          border:  "border-l-violet-400",
+          Icon:    Clock,
+          iconCls: "text-violet-500",
+        };
+      }
       return {
         dot:     "bg-blue-500",
         label:   name ?? "Occupied",
@@ -31,6 +49,7 @@ function statusConfig(asset: AssetDto): {
         Icon:    UserCheck,
         iconCls: "text-blue-500",
       };
+    }
     case AssetOccupancyStatus.ActionRequired:
       return {
         dot:     "bg-warning",

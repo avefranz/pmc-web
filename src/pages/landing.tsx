@@ -486,9 +486,24 @@ export default function LandingPage() {
             Premium · Verified · Thailand
           </div>
 
-          <h1 className="font-display text-4xl md:text-6xl tracking-tight leading-[1.05] mb-10">
+          <h1 className="font-display text-4xl md:text-6xl tracking-tight leading-[1.05] mb-6">
             Rent <em className="italic font-normal">extraordinary</em> assets across Thailand.
           </h1>
+
+          {/* UX-284: explicit landlord on-ramp in the hero — the tenant
+              search bar dominates the fold and a cold-visiting host could
+              easily miss that Siamo also works for hosting. Anchors down
+              to the existing Host CTA section so the value-prop is one
+              click away. */}
+          <p className="text-sm text-muted-foreground mb-8">
+            Listing your place instead?{" "}
+            <a
+              href="#host"
+              className="font-semibold text-accent hover:underline underline-offset-2"
+            >
+              See how hosting works →
+            </a>
+          </p>
 
           <div className="bg-card rounded-full p-2 ring-1 ring-black/5 shadow-xl shadow-black/[0.04] flex items-center">
             <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">

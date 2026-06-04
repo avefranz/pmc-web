@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAsset, useDeleteAsset } from "@/lib/hooks/use-assets";
+import { useCapabilities } from "@/lib/hooks/use-capabilities";
+import { useMe } from "@/lib/hooks/use-auth";
 import { useEditorState } from "./use-editor";
 import { EditorSidebar } from "./editor-sidebar";
 import { SectionsList } from "./sections-list";
@@ -37,9 +40,27 @@ function PropertyEditor({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const editor = useEditorState({ assetId: id });
   const { data: asset } = useAsset(id ?? "");
+  const { data: me } = useMe();
+  const { data: caps } = useCapabilities();
   const deleteAsset = useDeleteAsset();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // UX-312: show the chosen cover photo in the Live preview during create —
+  // before it's uploaded — by rendering an object URL of the first pending
+  // file. Revoked on change/unmount to avoid leaking blob URLs.
+  const coverFile = editor.pendingPhotos[0];
+  const [coverObjectUrl, setCoverObjectUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!coverFile) { setCoverObjectUrl(undefined); return; }
+    const url = URL.createObjectURL(coverFile);
+    setCoverObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [coverFile]);
+  // BUG-331: when a draft is restored, the cover is the first restored staged
+  // photo (no live File / object URL) — surface it so the live preview keeps
+  // showing the photo after a reload.
+  const previewImageUrl = asset?.primaryImageUrl ?? editor.stagedPhotos[0]?.url ?? coverObjectUrl;
 
   // Warn before navigating away with unsaved changes (create mode only —
   // edit mode auto-saves per section).
@@ -70,6 +91,12 @@ function PropertyEditor({ id }: { id: string | undefined }) {
     );
   }
 
+  // BE-40/41 frontend mitigation: block non-owners from editing someone else's
+  // property. Managers can edit any managed asset; admins bypass the check.
+  if (id && asset && me && asset.ownerId && asset.ownerId !== me.id && !caps?.isManager && !caps?.isAdmin) {
+    return <Navigate to="/me/host/properties" replace />;
+  }
+
   async function handleDelete() {
     if (!id) return;
     setDeleteError(null);
@@ -88,13 +115,21 @@ function PropertyEditor({ id }: { id: string | undefined }) {
   return (
     <div className="bg-bg min-h-screen">
       <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6">
+        {/* UX-343: shared back-link above both columns so the Live-preview card
+            and the header banner align at the same top edge. */}
+        <Link
+          to="/me/host/properties"
+          className="inline-flex items-center gap-1.5 text-sm text-fg-muted hover:text-fg mb-4"
+        >
+          <ArrowLeft size={14} /> Properties
+        </Link>
         <div className="flex flex-col lg:flex-row gap-6">
           <EditorSidebar
             draft={editor.draft}
             groups={SECTION_GROUPS}
             visibleGroupIds={visibleGroupIds(editor)}
             mode={editor.mode}
-            primaryImageUrl={asset?.primaryImageUrl}
+            primaryImageUrl={previewImageUrl}
             occupancyStatus={asset?.occupancyStatus}
             onGroupClick={(groupId) => {
               const el = document.querySelector<HTMLElement>(`[data-group="${groupId}"]`);

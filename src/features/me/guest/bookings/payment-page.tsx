@@ -16,6 +16,7 @@ import type { PaymentRecordDto } from "@/lib/types";
 
 function paymentLabel(p: PaymentRecordDto): string {
   if (p.type === "Deposit") return "Security deposit";
+  if (p.type === "PetDeposit") return "Pet deposit"; // BUG-274
   if (p.type === "EarlyExitPenalty") return "Early exit penalty";
   if (p.type === "MonthlyRent") return p.monthIndex === 1 ? "First month's rent" : `Month ${p.monthIndex} rent`;
   return "Payment";
@@ -286,9 +287,13 @@ export function GuestPaymentPage() {
     );
   }
 
-  // Show only initial payment items (Deposit + MonthlyRent[1] + EarlyExitPenalty)
+  // Show only initial payment items (Deposit + PetDeposit + MonthlyRent[1] + EarlyExitPenalty).
+  // BUG-274: pet deposit must surface alongside security deposit on the initial-payment screen.
   const allPayments = (payment.payments ?? []).filter(
-    (p) => p.type === "Deposit" || p.type === "EarlyExitPenalty" || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
+    (p) => p.type === "Deposit"
+      || p.type === "PetDeposit"
+      || p.type === "EarlyExitPenalty"
+      || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
   );
   const pendingPayments = allPayments.filter((p) => p.status === "Pending");
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);

@@ -25,7 +25,18 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <ThemeProvider>
           <App />
-          <Toaster richColors position="top-right" />
+          {/* UX-355: toasts sat in the top-right corner directly over the
+              account menu + notification bell, blocking clicks, and could
+              linger. Push the stack below the 80px topbar so the header
+              controls stay clickable, auto-dismiss after 4s, and add a manual
+              close button. */}
+          <Toaster
+            richColors
+            position="top-right"
+            offset={88}
+            duration={4000}
+            closeButton
+          />
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>

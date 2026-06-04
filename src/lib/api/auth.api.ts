@@ -22,4 +22,9 @@ export const authApi = {
     apiClient
       .get<{ data: UserDto }>("/api/auth/me")
       .then((r) => r.data.data),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiClient
+      .post("/api/auth/change-password", { currentPassword, newPassword })
+      .then((r) => r.data),
 };

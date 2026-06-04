@@ -52,6 +52,8 @@ function PhotosDialog({
   addPendingPhotos,
   removePendingPhotoAt,
   movePendingPhotoToCover,
+  stagedPhotos = [],
+  removeStagedPhotoAt,
 }: SectionFormProps) {
   const { data: listing } = useListing(listingId);
   const { data: refs } = useReferences();
@@ -75,12 +77,15 @@ function PhotosDialog({
     return () => { localPreviews.forEach((p) => URL.revokeObjectURL(p.url)); };
   }, [localPreviews]);
 
-  const totalCount = isCreate ? pendingPhotos.length : media.length;
+  // BUG-331: restored staged photos (from a prior session) count toward the
+  // create-mode total and render before freshly-picked pending files.
+  const totalCount = isCreate ? stagedPhotos.length + pendingPhotos.length : media.length;
+  const hasRestored = isCreate && stagedPhotos.length > 0;
 
   // ── CREATE-MODE handlers ──────────────────────────────────────────────────
   function handleCreateModeUpload(files: FileList | null) {
     if (!files || !addPendingPhotos) return;
-    const slots = MAX_PHOTOS - pendingPhotos.length;
+    const slots = MAX_PHOTOS - (stagedPhotos.length + pendingPhotos.length);
     const { accepted, rejected, slotWarning } = validateFiles(Array.from(files).slice(0, slots), slots, files.length);
     if (slotWarning) toast.warning(slotWarning);
     if (rejected.length > 0) {
@@ -208,14 +213,38 @@ function PhotosDialog({
           </div>
         ))}
 
+        {/* Create-mode: restored staged photos (prior session). Preview-only —
+            BUG-331: these survive a reload so the host's uploads aren't lost. */}
+        {isCreate && stagedPhotos.map((s, i) => (
+          <div key={s.stagedMediaId} className="relative aspect-square rounded-xl overflow-hidden border border-border bg-bg-subtle group">
+            <img src={s.url} alt="" className="w-full h-full object-cover" />
+            {i === 0 && (
+              <span className="absolute left-1.5 bottom-1.5 bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider">★ Cover</span>
+            )}
+            <button
+              type="button"
+              onClick={() => removeStagedPhotoAt?.(i)}
+              className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+              title="Remove photo"
+            >
+              <X size={12} />
+            </button>
+            <span className="absolute top-1.5 left-1.5 bg-emerald-600/80 text-white text-[10px] px-1.5 py-0.5 rounded-md">
+              Saved
+            </span>
+          </div>
+        ))}
+
         {/* Create-mode: local previews */}
         {isCreate && localPreviews.map((p, i) => (
           <div key={p.url} className="relative aspect-square rounded-xl overflow-hidden border border-border bg-bg-subtle group">
             <img src={p.url} alt="" className="w-full h-full object-cover" />
-            {i === 0 && (
+            {i === 0 && !hasRestored && (
               <span className="absolute left-1.5 bottom-1.5 bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider">★ Cover</span>
             )}
-            {i > 0 && (
+            {/* Cover lives among the restored photos when any exist, so the
+                pending set-cover control only makes sense with no restored. */}
+            {!hasRestored && i > 0 && (
               <button
                 type="button"
                 onClick={() => moveLocalToCover(i)}

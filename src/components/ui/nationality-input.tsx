@@ -53,6 +53,55 @@ async function fetchNationalities(): Promise<[string, string][]> {
 // Prevents MP (Mariana Islands, demonym "American") from appearing before US (UX-106)
 const PRIORITY_CODES = new Set(["US","GB","TH","AU","CA","DE","FR","JP","CN","IN","KR","SG","MY","ID","PH","VN"]);
 
+// ── BUG-361: country-name search ─────────────────────────────────────────
+// The list stores demonyms ("American", "British"), but most people type
+// their *country* ("United States", "United Kingdom", "Germany"). Resolve the
+// English country name for each alpha-2 code via Intl.DisplayNames so the
+// query matches the country name too. Cached — Intl lookups aren't free per
+// keystroke. Falls back to "" when the runtime lacks DisplayNames.
+const regionNames = (() => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" });
+  } catch {
+    return null;
+  }
+})();
+const countryNameCache = new Map<string, string>();
+function countryName(code: string): string {
+  const hit = countryNameCache.get(code);
+  if (hit !== undefined) return hit;
+  let name = "";
+  try {
+    name = (regionNames?.of(code) ?? "").toLowerCase();
+    if (name === code.toLowerCase()) name = ""; // DisplayNames echoes unknown codes
+  } catch {
+    name = "";
+  }
+  countryNameCache.set(code, name);
+  return name;
+}
+
+// Common abbreviations / informal names that aren't substrings of the country
+// name or demonym, so they need an explicit alias to match.
+const SYNONYMS: Record<string, string[]> = {
+  US: ["usa", "us", "united states of america", "states"],
+  GB: ["uk", "britain", "great britain", "england", "scotland", "wales"],
+  AE: ["uae"],
+  KR: ["south korea", "rok"],
+  NL: ["holland"],
+  CZ: ["czechia"],
+  RU: ["russian federation"],
+};
+function matchesQuery(code: string, dem: string, q: string): { starts: boolean; has: boolean } {
+  const d = dem.toLowerCase();
+  const c = code.toLowerCase();
+  const name = countryName(code);
+  const syn = (SYNONYMS[code] ?? []).join(" ");
+  const starts = d.startsWith(q) || c.startsWith(q) || name.startsWith(q);
+  const has = starts || d.includes(q) || c.includes(q) || name.includes(q) || syn.includes(q);
+  return { starts, has };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 interface NationalityInputProps {
   /** ISO 3166-1 alpha-2 code, e.g. "RU", "TH" */
@@ -93,14 +142,12 @@ export function NationalityInput({
   const filtered = (() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    // match demonym OR code
-    const starts = options.filter(([code, dem]) =>
-      dem.toLowerCase().startsWith(q) || code.toLowerCase().startsWith(q)
-    );
-    const contains = options.filter(([code, dem]) =>
-      !dem.toLowerCase().startsWith(q) && !code.toLowerCase().startsWith(q) &&
-      (dem.toLowerCase().includes(q) || code.toLowerCase().includes(q))
-    );
+    // BUG-361: match demonym, code, OR country name (+ synonyms like "uk"/"usa")
+    const starts = options.filter(([code, dem]) => matchesQuery(code, dem, q).starts);
+    const contains = options.filter(([code, dem]) => {
+      const m = matchesQuery(code, dem, q);
+      return !m.starts && m.has;
+    });
     // UX-106: within starts-group, sort by (1) exact demonym match, (2) priority codes, (3) original order
     // This prevents MP ("American") from appearing before US ("American") in search results
     const sortedStarts = [...starts].sort((a, b) => {

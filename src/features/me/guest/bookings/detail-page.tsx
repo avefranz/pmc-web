@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Wifi, Eye, EyeOff, Copy, Check, MessageCircle, CreditCard, DoorOpen,
   CalendarDays, Key, Lock, ConciergeBell, MapPin, Bus, Building2, FileText,
-  CheckCircle2, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone,
+  CheckCircle2, AlertCircle, Shield, Users, Plus, Trash2, ExternalLink, Camera, Phone, X,
   Home, ListChecks, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,15 +15,42 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
-import { DateInput } from "@/components/ui/date-input";
+import { DatePicker } from "@/components/ui/date-picker";
+
+// UX-322: DOB / entry / expiry pickers — a real calendar instead of the
+// free-form dd/mm/yyyy text field, with sane bounds (no future birthdays etc.).
+const NOT_IN_FUTURE = (d: Date) => d > new Date();
+const NOT_IN_PAST = (d: Date) => {
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return d < t;
+};
+// BUG-359: parse the picker's "yyyy-MM-dd" so we can flag a future DOB / an
+// already-expired passport inline. A passport whose expiry is today or earlier
+// is treated as expired (matches the backend's `landlord_identity`/TM-30 check).
+const parseLooseDate = (s?: string): Date | null => {
+  if (!s?.trim()) return null;
+  const d = new Date(s.length === 10 ? s + "T00:00:00" : s);
+  return isNaN(d.getTime()) ? null : d;
+};
+const PASSPORT_EXPIRED = (s?: string): boolean => {
+  const d = parseLooseDate(s);
+  if (!d) return false;
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return d <= t;
+};
+// UX-342: open DOB year-grid on plausible birth years (1990s), not this decade.
+const DOB_ANCHOR = new Date(1995, 0, 1);
 import { NationalityInput } from "@/components/ui/nationality-input";
 import {
   useBooking, useBookingInvoices, useBookingCancellation, useRequestCancellation,
   useWithdrawCancellation, useBookingPayment, useBookingContract, useBookingGuests,
-  useAddGuest, useRemoveGuest, useBookingTm30,
-  useMarkBookingSeen, useRenewBooking,
+  useAddGuest, useRemoveGuest, useUpdatePassport, useBookingTm30, useBookingTm30Many,
+  useMarkBookingSeen, useRenewBooking, useCheckIn,
 } from "@/lib/hooks/use-bookings";
 import { useMyTm30 } from "@/lib/hooks/use-profile";
+import { useMe } from "@/lib/hooks/use-auth";
 import { CountdownPill, cancellationDeadline } from "@/components/shared/countdown-pill";
 import { TenantPaymentBanner, computePaymentHealth } from "@/components/shared/payment-status-banner";
 import { DepositSettlementCard } from "@/components/shared/deposit-settlement-card";
@@ -32,9 +59,10 @@ import { bookingsApi } from "@/lib/api/bookings.api";
 import { useListing } from "@/lib/hooks/use-listings";
 import { useAsset } from "@/lib/hooks/use-assets";
 import { GatewayOverlay } from "./gateway-overlay";
+import { NeighborhoodCard } from "./neighborhood-card";
 import { formatDate, formatThb } from "@/lib/utils/format";
 import { BookingStatus, VisaType } from "@/lib/types/enums";
-import type { CheckInMethod, UpsertPassportRequest, LandlordContact, ContactChannel } from "@/lib/types";
+import type { CheckInMethod, UpsertPassportRequest, BookingGuestDto, LandlordContact, ContactChannel } from "@/lib/types";
 import { contractSigningDeadline } from "@/lib/types";
 import { cn } from "@/lib/utils/cn";
 
@@ -148,7 +176,7 @@ function getContactLink(channel: ContactChannel, contact: LandlordContact): stri
   }
 }
 
-function LandlordContactCard({ contact }: { contact: LandlordContact }) {
+function LandlordContactCard({ contact, headline }: { contact: LandlordContact; headline?: string }) {
   const hasChannels = contact.contactChannels.length > 0;
   const hasPhone = !!contact.phone;
   const phoneDisplay = `${contact.phoneCountryCode} ${contact.phone}`;
@@ -157,7 +185,7 @@ function LandlordContactCard({ contact }: { contact: LandlordContact }) {
     <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
       <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
         <Phone size={15} className="text-fg-muted" />
-        <h3 className="text-sm font-semibold text-fg">Contact your host</h3>
+        <h3 className="text-sm font-semibold text-fg">{headline ?? "Contact your host"}</h3>
       </div>
       <div className="px-5 py-4 space-y-3">
         {hasPhone && (
@@ -246,8 +274,8 @@ function TabsNav({
     { id: "residents", label: "Co-residents", icon: <Users size={13} />,      count: counts.residents },
   ];
   return (
-    <div className="border-b border-border overflow-x-auto">
-      <div role="tablist" className="flex gap-1 min-w-max">
+    <div className="border-b border-border overflow-x-auto sm:overflow-visible [touch-action:pan-y]">
+      <div role="tablist" className="flex gap-1 min-w-max sm:min-w-0 sm:flex-wrap">
         {tabs.map((t) => {
           const on = active === t.id;
           return (
@@ -296,6 +324,7 @@ function GlanceCell({ label, value, sub }: { label: string; value: React.ReactNo
 
 export function GuestBookingDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const { data: booking, isLoading } = useBooking(id!);
   const { data: invoices } = useBookingInvoices(id!);
@@ -312,22 +341,97 @@ export function GuestBookingDetailPage() {
   const { data: myTm30 } = useMyTm30();
   const addGuest = useAddGuest(id!);
   const removeGuest = useRemoveGuest(id!);
+  const updatePassport = useUpdatePassport(id!);
+  const { data: me } = useMe();
+
+  // BE-36/BE-37 frontend mitigation: only allow payment/signing actions when
+  // the booking actually belongs to the current user. tenantId may be absent on
+  // older records — treat absence as "ok" so we don't break existing flows.
+  const isMyBooking = !booking?.tenantId || !me?.id || booking.tenantId === me.id;
 
 
-  // Initial payment = Deposit + MonthlyRent[1]. All other months are separate transactions.
+  // Initial payment = Deposit + PetDeposit + MonthlyRent[1]. All other months are separate transactions.
+  // BUG-274: pet deposit billed with security deposit at move-in.
   const initialPayments = (payment?.payments ?? []).filter(
-    (p) => p.type === "Deposit" || p.type === "EarlyExitPenalty" || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
+    (p) => p.type === "Deposit"
+      || p.type === "PetDeposit"
+      || p.type === "EarlyExitPenalty"
+      || (p.type === "MonthlyRent" && (p.monthIndex === 1 || p.monthIndex == null)),
   );
-  const pendingPayments = initialPayments.filter((p) => p.status === "Pending");
+  // BUG-263/274 (Round 13): the BE currently emits PetDeposit as a separate
+  // Invoice (visible under "Other invoices") rather than as a PaymentRecord,
+  // so the filter above misses it and the host-facing "Initial payment"
+  // figure ends up understated by the pet deposit. Fold any pending pet
+  // deposit invoices into the initial-payment total so the tenant doesn't
+  // see ฿77k in the hero strip and then get blindsided by an extra ฿10k
+  // invoice that wasn't included.
+  // Pet deposit total across both PaymentRecord and Invoice sources — used
+  // by the booking sidebar so the tenant sees ฿10k pet deposit alongside
+  // ฿50k security deposit and isn't surprised when they hit "Pay".
+  const petDepositInvoiceTotal = (invoices ?? [])
+    .filter((inv) => inv.type === "PetDeposit")
+    .reduce((sum, inv) => sum + (inv.amount ?? 0), 0);
+  // BUG-274 (Round 14): the BE now emits a real PaymentRecord(PetDeposit) in
+  // payment.payments (folded into `initialPayments` above), so the common case
+  // needs NO synthesis. The synthetic fallback below runs ONLY for legacy
+  // bookings where the BE produced a PetDeposit *Invoice* but no PaymentRecord.
+  // Dedup is by TYPE, not id: an Invoice id never equals a PaymentRecord id, so
+  // the old `!petDepositPaymentIds.has(inv.id)` guard was always true and added
+  // a synthetic row on top of the real payment → pet deposit billed ×2 (฿99k vs
+  // ฿87k). Guarding on "is there already a PetDeposit PaymentRecord?" fixes that.
+  const hasPetDepositPayment = initialPayments.some((p) => p.type === "PetDeposit");
+  const syntheticPetDepositRows: typeof initialPayments = hasPetDepositPayment
+    ? []
+    : (invoices ?? [])
+        .filter((inv) => inv.type === "PetDeposit" && inv.status === "Pending")
+        .map((inv) => ({
+          id: `pet-invoice-${inv.id}`,
+          type: "PetDeposit",
+          monthIndex: null,
+          amount: inv.amount ?? 0,
+          status: "Pending",
+          dueDate: inv.dueDate ?? null,
+          paidAt: null,
+        }));
+  const displayInitialPayments = [...initialPayments, ...syntheticPetDepositRows];
+  const pendingPayments = displayInitialPayments.filter((p) => p.status === "Pending");
   const totalPending = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
 
+  // ── Co-resident gate (for contract signing) ──────────────────────────────
+  const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
+  // BUG-358: cap the number of co-residents at the listing's max occupancy
+  // (the host set it). The primary tenant counts as 1, so the roster is full
+  // once (tenant + co-residents) reaches maxOccupancy. UX-351 fixed only the
+  // marketplace request modal; the booking-detail "Add resident" path had no
+  // cap. Editing an existing guest's passport is never blocked — only adding.
+  const maxOccupancy = asset?.maxOccupancy;
+  const atOccupancyCap =
+    typeof maxOccupancy === "number" && coResidents.length + 1 >= maxOccupancy;
+  const [soloAnswer, setSoloAnswer] = useState<"alone" | "withOthers" | null>(null);
+  // UX-334: the occupancy question was already answered in the booking
+  // request — don't make the tenant re-answer it at the signing gate. Once
+  // the guest list has loaded, pre-fill the gate from the booking's actual
+  // residents: any co-residents → "Me + others", otherwise "Just me" (which
+  // matches the "Just you" shown in the header). Still editable below, just
+  // no longer a disabled-until-you-click blocker. Only seeds while the answer
+  // is untouched (null), so a manual change is never overridden.
+  useEffect(() => {
+    if (soloAnswer !== null) return;
+    if (guests === undefined) return; // wait for the guest list to load
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSoloAnswer(coResidents.length > 0 ? "withOthers" : "alone");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guests]);
+  const gateCleared = soloAnswer === "alone" || (soloAnswer === "withOthers" && coResidents.length > 0);
+
   const [tab, setTab] = useState<TabId>("stay");
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const [gatewayOpen, setGatewayOpen] = useState(false);
   const [gatewayAmount, setGatewayAmount] = useState(0);
   const [gatewayPaymentId, setGatewayPaymentId] = useState<string | null>(null);
   function openGateway(amount: number, paymentId?: string) {
+    // BE-36/BE-37 frontend guard: block payment if this booking doesn't belong to us
+    if (!isMyBooking) return;
     setGatewayAmount(amount);
     setGatewayPaymentId(paymentId ?? null);
     setGatewayOpen(true);
@@ -337,39 +441,123 @@ export function GuestBookingDetailPage() {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [exitNote, setExitNote] = useState("");
   const [addGuestOpen, setAddGuestOpen] = useState(false);
+  // BUG-352: co-residents materialised from the booking request arrive with only
+  // name + DOB (no passport). `editingGuestId` switches the dialog from "add a new
+  // resident" (POST) to "fill in passport for this existing resident" (PUT) so the
+  // tenant completes the materialised guest instead of creating a duplicate.
+  const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [newResident, setNewResident] = useState<UpsertPassportRequest>({});
   const [residentPhotos, setResidentPhotos] = useState<File[]>([]);
   const [residentTried, setResidentTried] = useState(false);
+  function openAddResident() {
+    // BUG-358: never open the add-resident form past the occupancy cap.
+    if (atOccupancyCap) {
+      toast.error(`This listing fits ${maxOccupancy} ${maxOccupancy === 1 ? "person" : "people"} — maximum reached.`);
+      return;
+    }
+    setEditingGuestId(null);
+    setNewResident({});
+    setResidentPhotos([]);
+    setResidentTried(false);
+    setTouched({});
+    setAddGuestOpen(true);
+  }
+  function openEditPassport(g: BookingGuestDto) {
+    setEditingGuestId(g.id);
+    setNewResident({
+      firstName: g.firstName,
+      lastName: g.lastName,
+      gender: g.gender,
+      dateOfBirth: g.dateOfBirth,
+      nationality: g.nationality,
+      passportNumber: g.passportNumber,
+      passportExpiry: g.passportExpiry,
+      visaType: g.visaType,
+    });
+    setResidentPhotos([]);
+    setResidentTried(false);
+    setTouched({});
+    setAddGuestOpen(true);
+  }
+  // UX-271: keep the Add button disabled for the WHOLE submit (mutation +
+  // photo upload + close), not just while addGuest.isPending — otherwise the
+  // button flickered back to active between the two awaits, inviting a double
+  // submit / duplicate resident.
+  const [residentSubmitting, setResidentSubmitting] = useState(false);
+  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; name: string } | null>(null);
 
   const isThai = newResident.nationality === "TH";
-  const residentErrors = {
-    firstName:      !newResident.firstName?.trim(),
-    lastName:       !newResident.lastName?.trim(),
-    nationality:    !newResident.nationality?.trim(),
-    dateOfBirth:    !newResident.dateOfBirth?.trim(),
-    passportNumber: !isThai && !newResident.passportNumber?.trim(),
-    passportExpiry: !isThai && !newResident.passportExpiry?.trim(),
-    visaType:       !isThai && !newResident.visaType?.trim(),
-    entryDate:      !isThai && !newResident.entryDate?.trim(),
-    entryPort:      !isThai && !newResident.entryPort?.trim(),
-    photos:         residentPhotos.length === 0,
+  const dobFuture = !!newResident.dateOfBirth && NOT_IN_FUTURE(parseLooseDate(newResident.dateOfBirth)!);
+  const expiryExpired = !isThai && PASSPORT_EXPIRED(newResident.passportExpiry);
+  // BUG-359: error values are messages (string) or false, so semantic problems
+  // — a future date of birth, an already-expired passport — surface inline the
+  // instant the field changes, not only as an opaque 400 after Save.
+  const residentErrors: Record<string, string | false> = {
+    firstName:      !newResident.firstName?.trim() ? "Required" : false,
+    lastName:       !newResident.lastName?.trim() ? "Required" : false,
+    nationality:    !newResident.nationality?.trim() ? "Required" : false,
+    dateOfBirth:    !newResident.dateOfBirth?.trim()
+                      ? "Required"
+                      : dobFuture ? "Date of birth can't be in the future" : false,
+    passportNumber: !isThai && !newResident.passportNumber?.trim() ? "Required for non-Thai nationals" : false,
+    passportExpiry: !isThai
+                      ? (!newResident.passportExpiry?.trim()
+                          ? "Required for non-Thai nationals"
+                          : expiryExpired ? "Passport has already expired" : false)
+                      : false,
+    visaType:       !isThai && !newResident.visaType?.trim() ? "Required for non-Thai nationals" : false,
+    // BE-ENTRY: entry date / port removed from the form.
+    // BUG-269: foreign co-residents must upload BOTH passport page AND visa stamp
+    // — at least 2 photos. Thai citizens don't need TM-30, so photos optional for them.
+    photos:         !isThai && residentPhotos.length < 2 ? "Upload the passport page + visa stamp (min 2 photos)" : false,
   };
   const residentValid = !Object.values(residentErrors).some(Boolean);
+  // BUG-359: track which fields the user has touched so inline errors appear as
+  // they go (on change / blur) rather than only after pressing Save. Save still
+  // forces every error visible via `residentTried`.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const markTouched = (f: string) => setTouched((t) => (t[f] ? t : { ...t, [f]: true }));
+  const showErr = (f: string): string | false =>
+    (residentTried || touched[f]) ? residentErrors[f] : false;
 
-  // ?addResident=1 — deep-link from contract page: switch to residents tab + open dialog
-  useEffect(() => {
-    if (searchParams.get("addResident") !== "1") return;
-    setTab("residents");
-    setAddGuestOpen(true);
-    const next = new URLSearchParams(searchParams);
-    next.delete("addResident");
-    setSearchParams(next, { replace: true });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [renewOpen, setRenewOpen] = useState(false);
+  // BUG-357: object-URL previews for each selected passport/visa photo so the
+  // user can actually see what they picked, remove a wrong one, and add more —
+  // instead of an opaque "3 photos selected" filename list. Revoked on change.
+  const MAX_RESIDENT_PHOTOS = 3;
+  const residentPhotoUrls = useMemo(
+    () => residentPhotos.map((f) => URL.createObjectURL(f)),
+    [residentPhotos],
+  );
+  useEffect(
+    () => () => residentPhotoUrls.forEach((u) => URL.revokeObjectURL(u)),
+    [residentPhotoUrls],
+  );
+  function addResidentPhotos(files: FileList | null) {
+    if (!files) return;
+    setResidentPhotos((prev) => {
+      const next = [...prev];
+      for (const f of Array.from(files)) {
+        if (next.length >= MAX_RESIDENT_PHOTOS) break;
+        // skip exact duplicates (same picker can re-add the same file)
+        if (!next.some((e) => e.name === f.name && e.size === f.size)) next.push(f);
+      }
+      return next;
+    });
+    markTouched("photos");
+  }
+  function removeResidentPhoto(idx: number) {
+    setResidentPhotos((prev) => prev.filter((_, i) => i !== idx));
+    markTouched("photos");
+  }
+
+const [renewOpen, setRenewOpen] = useState(false);
   const [renewMonths, setRenewMonths] = useState(1);
   const renewIdempotencyKey = useState(() => crypto.randomUUID())[0];
   const renewBooking = useRenewBooking(id!);
+
+  // UX-278: tenant self-check-in. Becomes available once `today >= checkInDate`.
+  const checkInMut = useCheckIn(id!);
+  const [showMoveInCelebration, setShowMoveInCelebration] = useState(false);
 
   // Listing-change detection — backend exposes `listingChangesAfter` (short keys
   // for the fields edited since the tenant's lastSeenListingAt). Dismissing calls
@@ -423,15 +611,24 @@ export function GuestBookingDetailPage() {
   const isCancelled = booking.status === BookingStatus.Cancelled;
   const isUpcoming = !isCompleted && !isCancelled;
   void isUpcoming;
-  const coResidents = (guests ?? []).filter((g) => !g.isMainTenant);
-  void coResidents;
   const presentAmenities = listing?.amenities?.filter((a) => a.isPresent) ?? [];
 
-  // Lease duration & monthly rate
+  // BUG-343: payment must never run ahead of the signature. The initial-payment
+  // CTA already blocks while the tenant hasn't signed, but the Monthly-schedule
+  // "Pay" buttons did not — a tenant could pay a month's rent (and flip the
+  // booking to Active) with the contract still unsigned. Gate every payment
+  // action on the contract being fully signed. Only blocks when a contract
+  // record exists and isn't FullySigned, so loading/legacy bookings (no
+  // contract object) keep their prior behaviour.
+  const paymentBlockedByContract = !!contract && contract.status !== "FullySigned";
+
+  // Lease duration & monthly rate — BUG-276: prefer privacy-safe BE fields if present.
   const checkIn = new Date(booking.checkInDate);
   const checkOut = new Date(booking.checkOutDate);
-  const durationMonths = (checkOut.getFullYear() - checkIn.getFullYear()) * 12 + (checkOut.getMonth() - checkIn.getMonth());
-  const monthlyRate = durationMonths > 0 ? Math.round(booking.rentAmount / durationMonths) : booking.rentAmount;
+  const computedDuration = (checkOut.getFullYear() - checkIn.getFullYear()) * 12 + (checkOut.getMonth() - checkIn.getMonth());
+  const durationMonths = booking.durationMonths ?? computedDuration;
+  const monthlyRate = booking.monthlyRent
+    ?? (durationMonths > 0 ? Math.round(booking.rentAmount / durationMonths) : booking.rentAmount);
 
   // Days-to-checkin label
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -451,7 +648,7 @@ export function GuestBookingDetailPage() {
   const paidRentCount = rentPayments.filter((p) => p.status === "Paid").length;
   const nextRent = rentPayments.find((p) => p.status === "Pending") ?? null;
   const paidSoFar = rentPayments.filter((p) => p.status === "Paid").reduce((s, p) => s + p.amount, 0);
-  const totalRent = rentPayments.reduce((s, p) => s + p.amount, 0);
+  // BUG-276 (privacy): total-rent-over-stay intentionally NOT computed/shown to tenant.
 
   // Foreign-guest TM-30 summary
   const foreignGuests = (guests ?? []).filter((g) => !!g.passportNumber);
@@ -485,7 +682,12 @@ export function GuestBookingDetailPage() {
           }
           sub={
             isPendingPayment && totalPending > 0
-              ? "Before signing deadline"
+              // UX-340: once the contract is fully signed, "Before signing
+              // deadline" is stale — the signature is already done and only
+              // payment remains. Switch to a payment-focused prompt.
+              ? contract?.status === "FullySigned"
+                ? "Pay to activate your booking"
+                : "Before signing deadline"
               : nextRent?.dueDate
                 ? `Due ${formatDate(nextRent.dueDate)}`
                 : isCompleted
@@ -566,27 +768,116 @@ export function GuestBookingDetailPage() {
           ? "bg-warning/15 border-warning/30"
           : "bg-warning/10 border-warning/20";
       const accent = isUrgent ? "text-danger" : "text-warning";
+      const innerBorder = isUrgent ? "border-danger/20" : "border-warning/20";
+      const btnActive = isUrgent
+        ? "bg-danger hover:bg-danger/90 text-white"
+        : "bg-warning hover:bg-warning/90 text-white";
       return (
-        <div className={cn("rounded-2xl border p-4 flex items-start gap-3", palette)}>
-          <FileText size={18} className={cn("shrink-0 mt-0.5", accent)} />
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className={cn("text-sm font-semibold", accent)}>
-                {isUrgent ? "Sign now — booking expires soon" : "Sign your rental agreement"}
+        <div className={cn("rounded-2xl border overflow-hidden", palette)}>
+          {/* Header */}
+          <div className="p-4 flex items-start gap-3">
+            <FileText size={18} className={cn("shrink-0 mt-0.5", accent)} />
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className={cn("text-sm font-semibold", accent)}>
+                  {isUrgent ? "Sign now — booking expires soon" : "Sign your rental agreement"}
+                </p>
+                <CountdownPill deadline={alert.deadline} prefix="Expires in" expiredLabel="Expired — booking cancelled" />
+              </div>
+              <p className="text-xs text-fg-muted mt-1 leading-relaxed">
+                Both signatures are required before your booking is confirmed.
+                If unsigned by the deadline, this booking will be automatically cancelled.
               </p>
-              <CountdownPill deadline={alert.deadline} prefix="Expires in" expiredLabel="Expired — booking cancelled" />
             </div>
-            <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-              Both signatures are required before your booking is confirmed.
-              If unsigned by the deadline, this booking will be automatically cancelled and any payments refunded.
-            </p>
           </div>
-          <Button asChild className={cn(
-            "shrink-0 rounded-xl h-9 text-sm font-semibold",
-            isUrgent ? "bg-danger hover:bg-danger/90 text-white" : "bg-warning hover:bg-warning/90 text-white",
-          )}>
-            <Link to={`/me/guest/bookings/${id}/contract`}>Sign now →</Link>
-          </Button>
+
+          {/* Gate */}
+          <div className={cn("border-t px-4 pb-4 pt-3 space-y-3", innerBorder)}>
+            <p className="text-xs font-semibold text-fg">Who will be living in the unit?</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSoloAnswer("alone")}
+                className={cn(
+                  "rounded-xl border px-3 py-2.5 text-sm font-medium transition-all text-center",
+                  soloAnswer === "alone"
+                    ? "border-brand bg-brand/8 text-brand"
+                    : "border-border bg-bg-card text-fg-muted hover:border-fg-muted hover:text-fg",
+                )}
+              >
+                Just me
+              </button>
+              <button
+                type="button"
+                onClick={() => setSoloAnswer("withOthers")}
+                className={cn(
+                  "rounded-xl border px-3 py-2.5 text-sm font-medium transition-all text-center",
+                  soloAnswer === "withOthers"
+                    ? "border-brand bg-brand/8 text-brand"
+                    : "border-border bg-bg-card text-fg-muted hover:border-fg-muted hover:text-fg",
+                )}
+              >
+                Me + others
+              </button>
+            </div>
+
+            {soloAnswer === "withOthers" && coResidents.length === 0 && (
+              <div className="rounded-xl bg-bg-card border border-border p-3 flex items-start gap-2.5">
+                <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <p className="text-xs text-fg leading-relaxed">
+                    Add at least one co-resident before signing — all occupants must be registered.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openAddResident}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:underline"
+                  >
+                    <Plus size={13} />Add co-resident
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {soloAnswer === "withOthers" && coResidents.length > 0 && (
+              <div className="rounded-xl bg-success/8 border border-success/20 px-3 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-success shrink-0" />
+                  <p className="text-xs text-success font-medium">
+                    {coResidents.length} co-resident{coResidents.length > 1 ? "s" : ""} added
+                  </p>
+                </div>
+                {atOccupancyCap ? (
+                  <span className="text-xs text-fg-muted shrink-0" title={`This listing fits ${maxOccupancy} people`}>
+                    Maximum reached
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openAddResident}
+                    className="text-xs text-brand font-medium hover:underline shrink-0"
+                  >
+                    + Add another
+                  </button>
+                )}
+              </div>
+            )}
+
+            <Button
+              disabled={!gateCleared || !isMyBooking}
+              className={cn(
+                "w-full rounded-xl h-10 text-sm font-semibold transition-all",
+                gateCleared && isMyBooking ? btnActive : "opacity-50",
+              )}
+              onClick={() => isMyBooking && navigate(`/me/guest/bookings/${id}/contract`)}
+            >
+              {!soloAnswer
+                ? "Select an option above to continue"
+                : gateCleared
+                  ? "Sign agreement →"
+                  : "Add co-resident to continue"}
+            </Button>
+          </div>
         </div>
       );
     }
@@ -752,6 +1043,49 @@ export function GuestBookingDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* UX-278: I've moved in CTA — only when Confirmed and check-in date has arrived */}
+            {isConfirmed && daysToCheckIn <= 0 && contract?.status === "FullySigned" && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <button
+                  type="button"
+                  disabled={checkInMut.isPending}
+                  onClick={async () => {
+                    try {
+                      await checkInMut.mutateAsync();
+                      setShowMoveInCelebration(true);
+                      toast.success("🎉 Welcome home! Your host has been notified.");
+                      setTimeout(() => setShowMoveInCelebration(false), 2400);
+                    } catch {
+                      toast.error("Couldn't complete check-in. Try again or contact support.");
+                    }
+                  }}
+                  className="w-full h-12 rounded-xl font-extrabold text-white text-base transition-all active:scale-[.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{
+                    background: "linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)",
+                    boxShadow: "0 4px 14px rgba(16,185,129,.35)",
+                  }}
+                >
+                  {checkInMut.isPending ? "Checking in…" : "🎉 I've moved in!"}
+                </button>
+                <p className="text-[11px] text-fg-muted text-center mt-2">
+                  Marks your stay as active and notifies your host.
+                </p>
+              </div>
+            )}
+            {/* Disabled future-dated state — explain why */}
+            {isConfirmed && daysToCheckIn > 0 && contract?.status === "FullySigned" && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <button
+                  type="button"
+                  disabled
+                  title={`Available from ${formatDate(booking.checkInDate)}`}
+                  className="w-full h-12 rounded-xl font-bold text-fg-muted text-sm bg-bg-subtle border border-border cursor-not-allowed opacity-70"
+                >
+                  🔒 Move-in opens {formatDate(booking.checkInDate)}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -828,11 +1162,16 @@ export function GuestBookingDetailPage() {
           );
         })()}
 
-        {/* Landlord contact card */}
-        {(isActive || isConfirmed || isPendingPayment) && booking.landlordContact && (
+        {/* Landlord contact card — BUG-277: visible across all upcoming states
+            (Approved → Completed), with a stronger header once the contract is
+            fully signed because that's exactly when move-in coordination kicks in. */}
+        {isUpcoming && booking.landlordContact && (
           booking.landlordContact.contactChannels.length > 0 || booking.landlordContact.phone
         ) && (
-          <LandlordContactCard contact={booking.landlordContact} />
+          <LandlordContactCard
+            contact={booking.landlordContact}
+            headline={contract?.status === "FullySigned" ? "Coordinate move-in with your host" : undefined}
+          />
         )}
 
         {/* Getting there mini-block */}
@@ -955,10 +1294,27 @@ export function GuestBookingDetailPage() {
             {booking.depositAmount > 0 && (
               <div className="px-5 py-2.5 flex justify-between gap-3"><dt className="text-fg-muted">Deposit</dt><dd className="text-fg">{formatThb(booking.depositAmount)}</dd></div>
             )}
-            {totalRent > 0 && (
+            {/* BUG-263/274: surface pet deposit alongside the security deposit
+                so the tenant doesn't get blindsided when the initial-payment
+                figure includes a line they hadn't seen on the booking. */}
+            {petDepositInvoiceTotal > 0 && (
               <div className="px-5 py-2.5 flex justify-between gap-3">
-                <dt className="text-fg-muted">Rent paid</dt>
-                <dd className="text-fg">{formatThb(paidSoFar)} of {formatThb(totalRent)}</dd>
+                <dt className="text-fg-muted">Pet deposit</dt>
+                <dd className="text-fg" title="Refunded on check-out if no damage">{formatThb(petDepositInvoiceTotal)}</dd>
+              </div>
+            )}
+            {/* BUG-276 (privacy): не показываем `of {totalRent}` — это сумма за всю аренду,
+                раскрывает long-term commitment, которого тенант не подписывал в виде suma vorerst.
+                Показываем только сколько уплачено + сколько месяцев закрыто. */}
+            {paidSoFar > 0 && (
+              <div className="px-5 py-2.5 flex justify-between gap-3">
+                <dt className="text-fg-muted">Paid so far</dt>
+                <dd className="text-fg">
+                  {formatThb(paidSoFar)}
+                  {paidRentCount > 0 && (
+                    <span className="text-fg-muted"> · {paidRentCount} month{paidRentCount !== 1 ? "s" : ""}</span>
+                  )}
+                </dd>
               </div>
             )}
           </dl>
@@ -1074,7 +1430,7 @@ export function GuestBookingDetailPage() {
       )}
 
       {/* Initial payments — when booking is PendingPayment */}
-      {isPendingPayment && initialPayments.length > 0 && (
+      {isPendingPayment && displayInitialPayments.length > 0 && (
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
           {/* UX-63: proactive explanation when payment is blocked behind contract signature */}
           {contract?.status === "PendingTenantSignature" && (
@@ -1094,9 +1450,10 @@ export function GuestBookingDetailPage() {
             )}
           </div>
           <div className="divide-y divide-border">
-            {initialPayments.map((p) => {
+            {displayInitialPayments.map((p) => {
               const isPaid = p.status === "Paid";
               const label = p.type === "Deposit" ? "Security deposit"
+                : p.type === "PetDeposit" ? "Pet deposit"
                 : p.type === "MonthlyRent" ? "First month's rent"
                 : p.type === "EarlyExitPenalty" ? "Early exit penalty"
                 : "Payment";
@@ -1233,15 +1590,19 @@ export function GuestBookingDetailPage() {
         </div>
       )}
 
-      {/* Totals strip */}
+      {/* Totals strip — BUG-276: убрали `of {totalRent}` (полная сумма за stay = privacy leak) */}
       {rentPayments.length > 0 && (
         <div className="bg-bg-card rounded-2xl shadow-card p-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-fg-muted">Rent paid</p>
+              <p className="text-xs text-fg-muted">Paid so far</p>
               <p className="text-lg font-bold text-fg tabular-nums">
-                {formatThb(paidSoFar)}{" "}
-                <small className="text-sm font-medium text-fg-muted">of {formatThb(totalRent)}</small>
+                {formatThb(paidSoFar)}
+                {paidRentCount > 0 && (
+                  <small className="block text-xs font-medium text-fg-muted mt-0.5">
+                    {paidRentCount} month{paidRentCount !== 1 ? "s" : ""} closed
+                  </small>
+                )}
               </p>
             </div>
             <div className="border-l border-border pl-4">
@@ -1253,7 +1614,24 @@ export function GuestBookingDetailPage() {
       )}
 
       {/* Monthly schedule */}
-      {rentPayments.length > 0 && (
+      {rentPayments.length > 0 && (() => {
+        // BUG-280: BE открыл pay-window до 90 дней. На FE предлагаем prepay для следующих
+        // ≤ 3 неоплаченных upcoming-месяцев (по dueDate в окне now..+90 дней).
+        const prepayWindowMs = today.getTime() + 90 * 86_400_000;
+        const prepayableIds = new Set<string>();
+        let count = 0;
+        for (const p of rentPayments) {
+          if (count >= 3) break;
+          if (p.status === "Paid") continue;
+          if (!p.dueDate) continue;
+          const due = new Date(p.dueDate).getTime();
+          if (due > today.getTime() && due <= prepayWindowMs) {
+            prepayableIds.add(p.id);
+            count++;
+          }
+        }
+        const prepayCount = prepayableIds.size;
+        return (
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
             <h3 className="text-sm font-semibold text-fg">Monthly schedule</h3>
@@ -1261,6 +1639,11 @@ export function GuestBookingDetailPage() {
               {paidRentCount} / {rentPayments.length} months
             </span>
           </div>
+          {prepayCount > 0 && (
+            <div className="px-5 py-2.5 bg-brand/5 border-b border-brand/20 text-[11px] text-fg-muted leading-snug">
+              💡 You can pay <strong className="text-fg">up to {prepayCount} month{prepayCount > 1 ? "s" : ""} ahead</strong> — useful if you'll be travelling or want to lock things in.
+            </div>
+          )}
           <div className="divide-y divide-border">
             {rentPayments.map((p) => {
               const isPaid = p.status === "Paid";
@@ -1274,6 +1657,7 @@ export function GuestBookingDetailPage() {
               const isDueThisMonth = !isPaid && isCurrent;
               const isUpcoming = !isPaid && !isPast && !isCurrent;
               const isNext = !isPaid && nextRent?.id === p.id;
+              const isPrepayable = prepayableIds.has(p.id);
               const label = p.dueDate
                 ? new Date(p.dueDate).toLocaleString("en", { month: "long", year: "numeric" })
                 : `Month ${p.monthIndex}`;
@@ -1296,7 +1680,16 @@ export function GuestBookingDetailPage() {
                       </p>
                       {p.dueDate && (
                         <p className="text-[11px] text-fg-subtle">
-                          {isPaid ? "Paid" : isOverdue ? "Overdue" : isDueThisMonth ? "Due this month" : `Due ${formatDate(p.dueDate)}`}
+                          {/* UX-352: when a payable month is gated by an unsigned
+                              contract, say WHY it's locked instead of a bare "Due
+                              25 Jul · 🔒 Sign first" that reads as nonsense after
+                              the first month is already paid. Months still waiting
+                              their turn keep the plain "Due …"/"Upcoming". */}
+                          {isPaid ? "Paid"
+                            : isOverdue ? "Overdue"
+                            : paymentBlockedByContract && (isDueThisMonth || isNext || isPrepayable) ? "Locked until the rental agreement is signed"
+                            : isDueThisMonth ? "Due this month"
+                            : `Due ${formatDate(p.dueDate)}`}
                         </p>
                       )}
                     </div>
@@ -1309,6 +1702,20 @@ export function GuestBookingDetailPage() {
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-success/10 text-success">Paid</span>
                     ) : isOverdue ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-danger/10 text-danger">Overdue</span>
+                    ) : paymentBlockedByContract && (isDueThisMonth || isNext || isPrepayable) ? (
+                      // BUG-343 / UX-352: don't let a tenant pay rent before the
+                      // contract is fully signed — but make the lock actionable
+                      // (take them to sign) instead of a dead disabled button that
+                      // just reads "🔒 Sign first" with no way forward.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] rounded-lg px-2.5 border-brand/40 text-brand hover:bg-brand/5"
+                        onClick={() => isMyBooking && navigate(`/me/guest/bookings/${id}/contract`)}
+                        title="Sign the rental agreement to unlock this payment"
+                      >
+                        🔒 Sign to unlock
+                      </Button>
                     ) : isDueThisMonth || isNext ? (
                       <Button
                         size="sm"
@@ -1316,6 +1723,16 @@ export function GuestBookingDetailPage() {
                         onClick={() => openGateway(p.amount, p.id)}
                       >
                         Pay
+                      </Button>
+                    ) : isPrepayable ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] rounded-lg px-2.5"
+                        onClick={() => openGateway(p.amount, p.id)}
+                        title="Pay this month ahead of schedule"
+                      >
+                        Pay early
                       </Button>
                     ) : (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-subtle">Upcoming</span>
@@ -1326,7 +1743,8 @@ export function GuestBookingDetailPage() {
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Deposit row (always visible if there's a deposit) */}
       {booking.depositAmount > 0 && (
@@ -1340,6 +1758,26 @@ export function GuestBookingDetailPage() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-sm font-semibold text-fg tabular-nums">{formatThb(booking.depositAmount)}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-muted">Held</span>
+          </div>
+        </div>
+      )}
+
+      {/* BUG-263 (reopened): pet deposit is a deposit too — surface it in the
+          same "deposits held" section, not only in the payment breakdown. The
+          owner saw the Security-deposit card alone and concluded the pet deposit
+          had vanished. Mirrors the security-deposit card right below it. */}
+      {petDepositInvoiceTotal > 0 && (
+        <div className="bg-bg-card rounded-2xl shadow-card p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-bg-subtle flex items-center justify-center shrink-0">
+            <Shield size={16} className="text-fg-muted" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg">Pet deposit</p>
+            <p className="text-xs text-fg-muted">Held in escrow · refunded on check-out if no damage</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm font-semibold text-fg tabular-nums">{formatThb(petDepositInvoiceTotal)}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-bg-subtle text-fg-muted">Held</span>
           </div>
         </div>
@@ -1372,14 +1810,16 @@ export function GuestBookingDetailPage() {
         );
       })()}
 
-      {/* Other invoices */}
-      {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").length > 0 && (
+      {/* Other invoices — exclude PetDeposit too: BUG-263/274 surfaces it in
+          the Initial-payment block above so we don't show the same invoice
+          twice (and tip the host into "what's this extra ฿10k?" confusion). */}
+      {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit" && inv.type !== "PetDeposit").length > 0 && (
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-border">
             <h3 className="text-sm font-semibold text-fg">Other invoices</h3>
           </div>
           <div className="divide-y divide-border">
-            {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit").map((inv) => (
+            {(invoices ?? []).filter((inv) => inv.type !== "Rent" && inv.type !== "Deposit" && inv.type !== "PetDeposit").map((inv) => (
               <div key={inv.id} className="px-5 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-fg">{inv.description || INVOICE_TYPE_LABELS[inv.type] || inv.type}</p>
@@ -1408,6 +1848,8 @@ export function GuestBookingDetailPage() {
   );
 
   // ─── PROPERTY PANE ───────────────────────────────────────────────────────────
+  const assetLat = asset?.exactLatitude ?? asset?.fuzzyLatitude ?? null;
+  const assetLng = asset?.exactLongitude ?? asset?.fuzzyLongitude ?? null;
   const propertyPane = (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
@@ -1586,22 +2028,6 @@ export function GuestBookingDetailPage() {
   const residentsPane = (
     <div className="space-y-5">
 
-      {/* "Return to sign" banner — shown when contract awaits signature (deep-linked from contract page) */}
-      {contract?.status === "PendingTenantSignature" && (
-        <div className="rounded-2xl bg-brand/8 border border-brand/20 px-5 py-4 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-fg">Add your co-residents below, then sign the contract</p>
-            <p className="text-xs text-fg-muted mt-0.5">Once added, go back to finish signing.</p>
-          </div>
-          <Link
-            to={`/me/guest/bookings/${id}/contract`}
-            className="shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold bg-brand text-white px-4 py-2 rounded-xl hover:bg-[rgb(var(--color-primary-hover))] transition-colors whitespace-nowrap"
-          >
-            Sign contract →
-          </Link>
-        </div>
-      )}
-
       {/* TM-30 summary banner */}
       {foreignGuests.length > 0 ? (
         <TmSummaryBanner bookingId={id!} guests={foreignGuests} />
@@ -1682,14 +2108,20 @@ export function GuestBookingDetailPage() {
         <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
           <h3 className="text-sm font-semibold text-fg">Residents</h3>
           {(isPendingPayment || isActive || isConfirmed) && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-lg h-8 text-xs"
-              onClick={() => { setNewResident({}); setResidentPhotos([]); setAddGuestOpen(true); }}
-            >
-              <Plus size={12} className="mr-1" />Add resident
-            </Button>
+            atOccupancyCap ? (
+              <span className="text-xs text-fg-muted" title={`This listing fits ${maxOccupancy} people`}>
+                Maximum reached
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-lg h-8 text-xs"
+                onClick={openAddResident}
+              >
+                <Plus size={12} className="mr-1" />Add resident
+              </Button>
+            )
           )}
         </div>
         {!guests?.length ? (
@@ -1704,11 +2136,23 @@ export function GuestBookingDetailPage() {
               const name = [g.firstName, g.lastName].filter(Boolean).join(" ") || "Guest";
               const initials = `${g.firstName?.[0] ?? ""}${g.lastName?.[0] ?? ""}`.toUpperCase() || "?";
               const hasPassport = !!(g.passportNumber || g.nationality || g.visaType);
+              // BUG-269: foreign guest without passport photos can't have TM-30 filed.
+              // Show a red dot + warning text so tenant/host see it before TM-30 deadline.
+              const isForeign = !!g.passportNumber && g.nationality !== "TH";
+              const missingPassportPhotos = isForeign && (g.passportPhotoUrls?.length ?? 0) === 0;
               return (
                 <div key={g.id} className="bg-bg rounded-xl border border-border p-4 space-y-3">
                   <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-bg-subtle flex items-center justify-center text-xs font-semibold text-fg shrink-0">
-                      {initials}
+                    <div className="relative shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-bg-subtle flex items-center justify-center text-xs font-semibold text-fg">
+                        {initials}
+                      </div>
+                      {missingPassportPhotos && (
+                        <span
+                          title="Passport photo missing — TM-30 cannot be filed without it"
+                          className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-danger ring-2 ring-bg-card"
+                        />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-fg">
@@ -1724,13 +2168,31 @@ export function GuestBookingDetailPage() {
                       {!hasPassport && (
                         <p className="text-[11px] text-fg-subtle mt-1 italic">Passport not submitted</p>
                       )}
+                      {/* BUG-352: co-resident materialised from the request (name+DOB only)
+                          → let the tenant attach this guest's passport in-place rather
+                          than via "Add resident" (which would create a duplicate). */}
+                      {!g.isMainTenant && !hasPassport && (isPendingPayment || isActive || isConfirmed) && (
+                        <button
+                          type="button"
+                          onClick={() => openEditPassport(g)}
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
+                        >
+                          <Plus size={12} />Add passport
+                        </button>
+                      )}
+                      {missingPassportPhotos && (
+                        <p className="mt-1.5 text-[11px] font-semibold text-danger flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+                          Passport photo missing — TM-30 blocked
+                        </p>
+                      )}
                     </div>
                     {!g.isMainTenant && (
                       <button
-                        onClick={async () => {
-                          try { await removeGuest.mutateAsync(g.id); toast.success("Removed"); }
-                          catch { toast.error("Failed to remove"); }
-                        }}
+                        onClick={() => setRemoveConfirm({
+                          id: g.id,
+                          name: [g.firstName, g.lastName].filter(Boolean).join(" ") || "this resident",
+                        })}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-muted hover:text-danger hover:bg-danger/5 transition-colors"
                         title="Remove resident"
                       >
@@ -1775,6 +2237,35 @@ export function GuestBookingDetailPage() {
   return (
     <div className="space-y-5">
 
+      {/* UX-278: move-in celebration overlay — fires when tenant taps "I've moved in!" */}
+      {showMoveInCelebration && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center text-center px-8 pointer-events-none"
+          style={{ background: "linear-gradient(160deg, rgba(16,185,129,.95) 0%, rgba(5,150,105,.95) 60%, rgba(4,120,87,.95) 100%)" }}
+        >
+          <style>{`
+            @keyframes mvi-confetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(520px) rotate(720deg); opacity: 0; } }
+            @keyframes mvi-burst { 0% { transform: scale(.4); opacity: 0; } 40% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+          `}</style>
+          {Array.from({ length: 36 }).map((_, i) => {
+            const colors = ["#fef3c7","#fed7aa","#fca5a5","#a5f3fc","#ddd6fe","#fbcfe8","#fde68a","#bbf7d0"];
+            const c = colors[i % colors.length];
+            const left = (i * 11.3) % 100;
+            const delay = (i % 8) * 0.07;
+            const dur = 1.6 + ((i * 0.19) % 0.8);
+            return (
+              <span key={i}
+                style={{ position: "absolute", top: -10, left: `${left}%`, width: 8, height: 12, background: c, borderRadius: 2, animation: `mvi-confetti ${dur}s linear ${delay}s forwards` }}
+              />
+            );
+          })}
+          <div style={{ fontSize: 84, animation: "mvi-burst .6s cubic-bezier(.34,1.56,.64,1) both" }}>🏡</div>
+          <p className="mt-3 text-white font-extrabold text-2xl">Welcome home!</p>
+          <p className="mt-1 text-base" style={{ color: "rgba(255,255,255,.85)" }}>
+            {booking.landlordName ? `${booking.landlordName} has been notified.` : "Your host has been notified."}
+          </p>
+        </div>
+      )}
+
       {/* Breadcrumb */}
       <Link
         to="/me/guest/bookings"
@@ -1807,6 +2298,15 @@ export function GuestBookingDetailPage() {
       {/* Single most-urgent alert */}
       {alertBanner}
 
+      {/* Local guide — full-width, sits between the glance strip and the tabs */}
+      {asset?.id && (assetLat != null && assetLng != null) && (
+        <NeighborhoodCard
+          assetId={asset.id}
+          latitude={assetLat}
+          longitude={assetLng}
+        />
+      )}
+
       {/* Tabs */}
       <TabsNav active={tab} onChange={setTab} counts={counts} />
 
@@ -1820,12 +2320,14 @@ export function GuestBookingDetailPage() {
       {/* ─── Dialogs ─── */}
 
       {/* Add co-resident dialog — full passport form */}
-      <Dialog open={addGuestOpen} onOpenChange={(v) => { setAddGuestOpen(v); if (!v) { setNewResident({}); setResidentPhotos([]); setResidentTried(false); } }}>
+      <Dialog open={addGuestOpen} onOpenChange={(v) => { setAddGuestOpen(v); if (!v) { setEditingGuestId(null); setNewResident({}); setResidentPhotos([]); setResidentTried(false); setTouched({}); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-5 pt-5 pb-3 border-b border-border shrink-0">
-            <DialogTitle>Add co-resident</DialogTitle>
+            <DialogTitle>{editingGuestId ? "Add passport details" : "Add co-resident"}</DialogTitle>
             <p className="text-xs text-fg-muted mt-0.5">
-              All residents must be registered for Thai immigration (TM-30). Fill in as much as possible.
+              {editingGuestId
+                ? "Complete this resident's passport so your host can file their TM-30."
+                : "All residents must be registered for Thai immigration (TM-30). Fill in as much as possible."}
             </p>
           </DialogHeader>
 
@@ -1841,20 +2343,22 @@ export function GuestBookingDetailPage() {
                     autoFocus
                     value={newResident.firstName ?? ""}
                     onChange={(e) => setNewResident((p) => ({ ...p, firstName: e.target.value }))}
+                    onBlur={() => markTouched("firstName")}
                     placeholder="As on passport"
-                    className={cn(residentTried && residentErrors.firstName && "border-destructive")}
+                    className={cn(showErr("firstName") && "border-destructive")}
                   />
-                  {residentTried && residentErrors.firstName && <p className="text-xs text-danger">Required</p>}
+                  {showErr("firstName") && <p className="text-xs text-danger">{residentErrors.firstName}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-fg-muted">Last name <span className="text-danger">*</span></Label>
                   <Input
                     value={newResident.lastName ?? ""}
                     onChange={(e) => setNewResident((p) => ({ ...p, lastName: e.target.value }))}
+                    onBlur={() => markTouched("lastName")}
                     placeholder="As on passport"
-                    className={cn(residentTried && residentErrors.lastName && "border-destructive")}
+                    className={cn(showErr("lastName") && "border-destructive")}
                   />
-                  {residentTried && residentErrors.lastName && <p className="text-xs text-danger">Required</p>}
+                  {showErr("lastName") && <p className="text-xs text-danger">{residentErrors.lastName}</p>}
                 </div>
               </div>
             </div>
@@ -1890,20 +2394,24 @@ export function GuestBookingDetailPage() {
                     <Label className="text-xs text-fg-muted">Nationality <span className="text-danger">*</span></Label>
                     <NationalityInput
                       value={newResident.nationality ?? ""}
-                      onChange={(v) => setNewResident((p) => ({ ...p, nationality: v }))}
-                      className={cn(residentTried && residentErrors.nationality && "border-destructive")}
+                      onChange={(v) => { setNewResident((p) => ({ ...p, nationality: v })); markTouched("nationality"); }}
+                      className={cn(showErr("nationality") && "border-destructive")}
                     />
-                    {residentTried && residentErrors.nationality && <p className="text-xs text-danger">Required</p>}
+                    {showErr("nationality") && <p className="text-xs text-danger">{residentErrors.nationality}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-fg-muted">Date of birth <span className="text-danger">*</span></Label>
-                    <DateInput
+                    <DatePicker
                       value={newResident.dateOfBirth}
-                      onChange={(v) => setNewResident((p) => ({ ...p, dateOfBirth: v }))}
-                      maxYear={new Date().getFullYear()}
-                      className={cn(residentTried && residentErrors.dateOfBirth && "border-destructive")}
+                      onChange={(v) => { setNewResident((p) => ({ ...p, dateOfBirth: v })); markTouched("dateOfBirth"); }}
+                      placeholder="Select date of birth"
+                      isDisabled={NOT_IN_FUTURE}
+                      startView="year"
+                      yearAnchor={DOB_ANCHOR}
+                      contentClassName="z-[200]"
+                      className={cn(showErr("dateOfBirth") && "border-destructive")}
                     />
-                    {residentTried && residentErrors.dateOfBirth && <p className="text-xs text-danger">Required</p>}
+                    {showErr("dateOfBirth") && <p className="text-xs text-danger">{residentErrors.dateOfBirth}</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1912,25 +2420,28 @@ export function GuestBookingDetailPage() {
                       Passport number {!isThai && <span className="text-danger">*</span>}
                     </Label>
                     <Input
-                      className={cn("font-mono", residentTried && residentErrors.passportNumber && "border-destructive")}
+                      className={cn("font-mono", showErr("passportNumber") && "border-destructive")}
                       value={newResident.passportNumber ?? ""}
                       onChange={(e) => setNewResident((p) => ({ ...p, passportNumber: e.target.value }))}
+                      onBlur={() => markTouched("passportNumber")}
                       placeholder="e.g. 7123456789"
                     />
-                    {residentTried && residentErrors.passportNumber && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
+                    {showErr("passportNumber") && <p className="text-xs text-danger">{residentErrors.passportNumber}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-fg-muted">
                       Passport expiry {!isThai && <span className="text-danger">*</span>}
                     </Label>
-                    <DateInput
+                    <DatePicker
                       value={newResident.passportExpiry}
-                      onChange={(v) => setNewResident((p) => ({ ...p, passportExpiry: v }))}
-                      minYear={2000}
-                      maxYear={2060}
-                      className={cn(residentTried && residentErrors.passportExpiry && "border-destructive")}
+                      onChange={(v) => { setNewResident((p) => ({ ...p, passportExpiry: v })); markTouched("passportExpiry"); }}
+                      placeholder="Select expiry date"
+                      isDisabled={NOT_IN_PAST}
+                      startView="year"
+                      contentClassName="z-[200]"
+                      className={cn(showErr("passportExpiry") && "border-destructive")}
                     />
-                    {residentTried && residentErrors.passportExpiry && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
+                    {showErr("passportExpiry") && <p className="text-xs text-danger">{residentErrors.passportExpiry}</p>}
                   </div>
                 </div>
               </div>
@@ -1938,14 +2449,14 @@ export function GuestBookingDetailPage() {
 
             {/* VISA & ENTRY */}
             <div>
-              <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Visa & Entry into Thailand</p>
+              <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">Visa</p>
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-fg-muted">
                     Visa type {!isThai && <span className="text-danger">*</span>}
                   </Label>
-                  <Select value={newResident.visaType ?? ""} onValueChange={(v) => setNewResident((p) => ({ ...p, visaType: v as VisaType }))}>
-                    <SelectTrigger className={cn(residentTried && residentErrors.visaType && "border-destructive")}>
+                  <Select value={newResident.visaType ?? ""} onValueChange={(v) => { setNewResident((p) => ({ ...p, visaType: v as VisaType })); markTouched("visaType"); }}>
+                    <SelectTrigger className={cn(showErr("visaType") && "border-destructive")}>
                       <SelectValue placeholder="Select…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1959,107 +2470,135 @@ export function GuestBookingDetailPage() {
                       <SelectItem value={VisaType.Other}>Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  {residentTried && residentErrors.visaType && <p className="text-xs text-danger">Required for non-Thai nationals</p>}
+                  {showErr("visaType") && <p className="text-xs text-danger">{residentErrors.visaType}</p>}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">
-                      Entry date {!isThai && <span className="text-danger">*</span>}
-                    </Label>
-                    <DateInput
-                      value={newResident.entryDate}
-                      onChange={(v) => setNewResident((p) => ({ ...p, entryDate: v }))}
-                      minYear={2015}
-                      maxYear={new Date().getFullYear()}
-                      className={cn(residentTried && residentErrors.entryDate && "border-destructive")}
-                    />
-                    {residentTried && residentErrors.entryDate && <p className="text-xs text-danger">Required</p>}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-fg-muted">
-                      Entry port {!isThai && <span className="text-danger">*</span>}
-                    </Label>
-                    <Input
-                      value={newResident.entryPort ?? ""}
-                      onChange={(e) => setNewResident((p) => ({ ...p, entryPort: e.target.value }))}
-                      placeholder="e.g. Chiang Mai"
-                      className={cn(residentTried && residentErrors.entryPort && "border-destructive")}
-                    />
-                    {residentTried && residentErrors.entryPort && <p className="text-xs text-danger">Required</p>}
-                  </div>
-                </div>
-                <p className="text-[11px] text-fg-muted leading-relaxed">
-                  Entry date &amp; port come from the immigration stamp in your passport — the date and airport/border crossing of your most recent Thai entry.
-                </p>
+                {/* BE-ENTRY: "Entry date" / "Entry port" removed — unused
+                    downstream and not needed to register the co-resident. */}
               </div>
             </div>
 
             {/* PASSPORT PHOTOS */}
+            {!isThai && (
             <div>
               <p className="text-xs font-semibold text-fg-muted mb-2 uppercase tracking-wide">
-                Passport photos <span className="text-danger">*</span>
+                Passport &amp; visa photos <span className="text-danger">*</span>
+              </p>
+              <p className="text-[11px] text-fg-muted mb-2">
+                Upload <strong>both</strong> the passport main page <strong>and</strong> the current Thai visa stamp — your host needs both to file TM-30. Without them the resident can't be registered with immigration.
               </p>
               <PassportPageGuide />
-              <label className={cn(
-                "mt-3 flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-colors",
-                residentPhotos.length > 0
-                  ? "border-success bg-success/5"
-                  : residentTried && residentErrors.photos
+
+              {/* BUG-357: thumbnail previews with per-photo remove + an "add more"
+                  tile (up to 3). Adding appends instead of replacing the set. */}
+              {residentPhotos.length > 0 && (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {residentPhotos.map((f, i) => (
+                    <div key={i} className="relative group aspect-[3/4] rounded-lg overflow-hidden border border-border bg-bg-subtle">
+                      <img src={residentPhotoUrls[i]} alt={f.name} className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeResidentPhoto(i)}
+                        aria-label={`Remove ${f.name}`}
+                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+                      >
+                        <X size={13} />
+                      </button>
+                      <span className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] px-1 py-0.5 truncate">{f.name}</span>
+                    </div>
+                  ))}
+                  {residentPhotos.length < MAX_RESIDENT_PHOTOS && (
+                    <label className="aspect-[3/4] rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer text-fg-muted hover:border-brand hover:bg-brand/5 transition-colors">
+                      <Plus size={18} />
+                      <span className="text-[11px]">Add photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => { addResidentPhotos(e.target.files); e.currentTarget.value = ""; }}
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {residentPhotos.length === 0 && (
+                <label className={cn(
+                  "mt-3 flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-colors",
+                  showErr("photos")
                     ? "border-danger bg-danger/5"
                     : "border-border hover:border-brand hover:bg-brand/5"
-              )}>
-                <Camera size={16} className={residentPhotos.length > 0 ? "text-success" : residentTried && residentErrors.photos ? "text-danger" : "text-fg-muted"} />
-                <div className="flex-1 min-w-0">
-                  {residentPhotos.length > 0 ? (
-                    <p className="text-sm font-medium text-success">{residentPhotos.length} photo{residentPhotos.length > 1 ? "s" : ""} selected</p>
-                  ) : (
-                    <p className={cn("text-sm", residentTried && residentErrors.photos ? "text-danger font-medium" : "text-fg-muted")}>
-                      {residentTried && residentErrors.photos ? "At least 1 passport photo required" : "Upload passport pages (up to 3)"}
+                )}>
+                  <Camera size={16} className={showErr("photos") ? "text-danger" : "text-fg-muted"} />
+                  <div className="flex-1 min-w-0">
+                    <p className={cn("text-sm", showErr("photos") ? "text-danger font-medium" : "text-fg-muted")}>
+                      {showErr("photos") ? "Passport page + visa stamp required" : "Upload passport page + visa stamp"}
                     </p>
-                  )}
-                  <p className="text-xs text-fg-muted mt-0.5">Select multiple files at once</p>
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => setResidentPhotos(Array.from(e.target.files ?? []))}
-                />
-              </label>
+                    <p className="text-xs text-fg-muted mt-0.5">Select multiple files at once (up to 3)</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => { addResidentPhotos(e.target.files); e.currentTarget.value = ""; }}
+                  />
+                </label>
+              )}
+
+              {/* status line once at least one photo is in */}
               {residentPhotos.length > 0 && (
-                <ul className="mt-2 space-y-0.5">
-                  {residentPhotos.map((f, i) => (
-                    <li key={i} className="text-xs text-fg-muted truncate">· {f.name}</li>
-                  ))}
-                </ul>
+                <p className={cn(
+                  "text-xs mt-2",
+                  residentPhotos.length >= 2 ? "text-success" : showErr("photos") ? "text-danger font-medium" : "text-fg-muted",
+                )}>
+                  {residentPhotos.length >= 2
+                    ? `${residentPhotos.length} photo${residentPhotos.length > 1 ? "s" : ""} ready`
+                    : "Add at least 2 — the passport page and the visa stamp."}
+                </p>
               )}
             </div>
+            )}
 
           </div>
 
           <DialogFooter className="px-5 py-4 border-t border-border shrink-0">
             <Button variant="outline" onClick={() => setAddGuestOpen(false)}>Cancel</Button>
             <Button
-              disabled={addGuest.isPending}
+              disabled={residentSubmitting || addGuest.isPending || updatePassport.isPending || (residentTried && !residentValid)}
               className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               onClick={async () => {
                 setResidentTried(true);
-                if (!residentValid) return;
+                if (!residentValid || residentSubmitting) return;
+                // UX-271: hold the disabled state across BOTH awaits (add/update +
+                // photo upload) so the button never flickers back to active mid-submit.
+                setResidentSubmitting(true);
+                const name = [newResident.firstName, newResident.lastName].filter(Boolean).join(" ") || "Co-resident";
                 try {
-                  const added = await addGuest.mutateAsync(newResident);
-                  if (residentPhotos.length > 0 && added?.id) {
-                    await bookingsApi.uploadPassportPhotos(id!, added.id, residentPhotos);
+                  // BUG-352: editing an existing (materialised) co-resident → PUT
+                  // passport onto that guest; otherwise POST a brand-new resident.
+                  const guestId = editingGuestId
+                    ? (await updatePassport.mutateAsync({ guestId: editingGuestId, data: newResident }), editingGuestId)
+                    : (await addGuest.mutateAsync(newResident))?.id;
+                  if (residentPhotos.length > 0 && guestId) {
+                    await bookingsApi.uploadPassportPhotos(id!, guestId, residentPhotos);
                   }
-                  toast.success("Co-resident added");
+                  toast.success(editingGuestId ? `✓ ${name}'s passport saved` : `✓ ${name} added`);
                   setAddGuestOpen(false);
+                  setEditingGuestId(null);
                   setResidentTried(false);
                   setNewResident({});
                   setResidentPhotos([]);
-                } catch { toast.error("Failed to add co-resident"); }
+                } catch { toast.error(editingGuestId ? "Failed to save passport" : "Failed to add co-resident"); }
+                finally { setResidentSubmitting(false); }
               }}
             >
-              {addGuest.isPending ? "Adding…" : "Add co-resident"}
+              {(residentSubmitting || addGuest.isPending || updatePassport.isPending) ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded-full border-2 border-white/60 border-t-transparent animate-spin" />
+                  {editingGuestId ? "Saving…" : "Adding…"}
+                </span>
+              ) : editingGuestId ? "Save passport" : "Add co-resident"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2174,6 +2713,50 @@ export function GuestBookingDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Remove co-resident confirm */}
+      {removeConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-bg-card rounded-2xl shadow-pop w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Trash2 size={18} className="text-danger" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-fg">Remove {removeConfirm.name}?</h3>
+                <p className="text-sm text-fg-muted mt-1">
+                  They'll be removed from this booking and any pending TM-30 filings.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={removeGuest.isPending}
+                onClick={() => setRemoveConfirm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-danger hover:bg-danger/90 text-white"
+                disabled={removeGuest.isPending}
+                onClick={async () => {
+                  try {
+                    await removeGuest.mutateAsync(removeConfirm.id);
+                    toast.success("Removed");
+                    setRemoveConfirm(null);
+                  } catch {
+                    toast.error("Failed to remove");
+                  }
+                }}
+              >
+                {removeGuest.isPending ? "Removing…" : "Remove"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Payment gateway */}
       {gatewayOpen && (
         <GatewayOverlay
@@ -2210,17 +2793,46 @@ function TmSummaryBanner({
   bookingId: string;
   guests: { id: string; firstName?: string; lastName?: string; isMainTenant: boolean }[];
 }) {
-  // We need the filing status for each guest. Re-use the row hook in aggregate.
-  // For a banner we don't need detail — just count.
+  // UX-279: banner copy follows actual per-guest filing state. While queries load
+  // we render a neutral "in progress" message; once resolved we switch between
+  // "all filed", "partial" and "not yet filed".
+  const results = useBookingTm30Many(bookingId, guests.map((g) => g.id));
+  const loading = results.some((r) => r.isLoading);
+  const filedCount = results.filter((r) => r.data?.status === "Filed").length;
+  const total = guests.length;
+  const allFiled = !loading && total > 0 && filedCount === total;
+  const noneFiled = !loading && filedCount === 0;
+
+  const tone = allFiled
+    ? "bg-success/10 border-success/30"
+    : noneFiled
+      ? "bg-warning/8 border-warning/30"
+      : "bg-success/8 border-success/20";
+
+  const title = loading
+    ? "TM-30 registration"
+    : allFiled
+      ? `TM-30 filed for ${total === 1 ? "you" : `all ${total} guests`}`
+      : noneFiled
+        ? "TM-30 — not yet filed"
+        : `TM-30 — ${filedCount} of ${total} filed`;
+
+  const body = allFiled
+    ? "Your landlord has reported everyone to Thai immigration. Download each receipt below — keep the PDFs for visa extensions or border checks."
+    : noneFiled
+      ? "Your host has 24 hours from check-in to file each foreign guest with Thai immigration. If the deadline is approaching, nudge them."
+      : "Your host registers each guest with Thai immigration within 24h of check-in. Status per guest is shown below — keep your receipt PDF for visa extensions.";
+
   return (
-    <div className="bg-success/8 border border-success/20 rounded-2xl px-5 py-4 flex items-start gap-3">
-      <Shield size={18} className="text-success shrink-0 mt-0.5" />
+    <div className={cn("rounded-2xl border px-5 py-4 flex items-start gap-3", tone)}>
+      <Shield
+        size={18}
+        className={cn("shrink-0 mt-0.5", allFiled ? "text-success" : noneFiled ? "text-warning" : "text-success")}
+      />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-fg">TM-30 registration in progress</p>
-        <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-          Your host registers each guest with Thai immigration within 24h of check-in. Status per guest is shown below — keep your receipt PDF in case you need it for visa extension.
-        </p>
-        <p className="sr-only">Booking {bookingId} · {guests.length} foreign guests</p>
+        <p className="text-sm font-semibold text-fg">{title}</p>
+        <p className="text-xs text-fg-muted mt-1 leading-relaxed">{body}</p>
+        <p className="sr-only">Booking {bookingId} · {total} foreign guests</p>
       </div>
     </div>
   );

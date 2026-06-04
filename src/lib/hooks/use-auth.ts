@@ -40,6 +40,13 @@ export const useRegister = () => {
   });
 };
 
+export const useChangePassword = () => {
+  return useMutation({
+    mutationFn: ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) =>
+      authApi.changePassword(currentPassword, newPassword),
+  });
+};
+
 export const useLineLogin = () => {
   const setToken = useAuthStore((s) => s.setToken);
   const qc = useQueryClient();

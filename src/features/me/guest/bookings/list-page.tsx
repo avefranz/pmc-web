@@ -108,7 +108,19 @@ export function GuestBookingsPage() {
   const upcoming = (bookings ?? []).filter((b) => !PAST_STATUSES.includes(b.status as BookingStatus));
   const past     = (bookings ?? []).filter((b) =>  PAST_STATUSES.includes(b.status as BookingStatus));
 
-  const needsPassport = profile !== undefined && !profile.passportNumber && profile.nationality !== "TH";
+  // BUG-275: предпочитаем BE-флаг `passportRequired` (выставляется false, когда контракт
+  // FullySigned). Если BE его ещё не возвращает по какому-то бронированию — fallback на
+  // `hasContract`. Дополнительно не показываем баннер тайцам и тем, у кого паспорт уже в профиле.
+  const stillNeedsPassportForAnyBooking = (bookings ?? []).some((b) => {
+    if (b.passportRequired === false) return false;
+    if (b.passportRequired === true) return true;
+    return !b.hasContract;
+  });
+  const needsPassport =
+    profile !== undefined &&
+    !profile.passportNumber &&
+    profile.nationality !== "TH" &&
+    stillNeedsPassportForAnyBooking;
 
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
