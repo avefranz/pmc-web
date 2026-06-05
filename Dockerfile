@@ -7,9 +7,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install deps first (better layer caching — only re-runs when lockfile changes).
+# Install deps first (better layer caching — only re-runs when manifests change).
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Build-time public config. Vite inlines VITE_* into the bundle at build time,
 # so these MUST be provided as build args (Railway passes service variables to
