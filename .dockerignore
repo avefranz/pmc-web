@@ -1,0 +1,29 @@
+# Dependencies & build output (reinstalled/rebuilt inside the image)
+node_modules
+dist
+dist-ssr
+
+# VCS & tooling
+.git
+.gitignore
+.claude
+*.log
+
+# Local env files — provide config via Railway/Docker env vars instead.
+# (.env.example is documentation; safe to keep but not needed in the image.)
+.env
+.env.*
+!.env.example
+
+# Editor / OS cruft
+.vscode
+.idea
+.DS_Store
+
+# Docs & QA artefacts — not needed at build/runtime
+*.md
+test-assets
+
+# Docker artefacts themselves
+Dockerfile
+.dockerignore

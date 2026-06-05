@@ -1,0 +1,65 @@
+# Rendered to /etc/nginx/conf.d/default.conf at container start.
+# ${PORT} and ${BACKEND_URL} are substituted by deploy/docker-entrypoint.sh.
+
+server {
+    # Railway routes public traffic to the container on $PORT over IPv4
+    # (bind 0.0.0.0). nginx `listen <port>` binds 0.0.0.0:<port>.
+    listen       ${PORT};
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # gzip text assets (Vite already hashes filenames for cache-busting).
+    gzip              on;
+    gzip_vary         on;
+    gzip_comp_level   6;
+    gzip_min_length   1024;
+    gzip_proxied      any;
+    gzip_types        text/plain text/css application/javascript application/json
+                      image/svg+xml application/manifest+json font/ttf font/otf;
+
+    # ── Security headers (mirrors vite.config.ts dev headers) ──
+    add_header X-Frame-Options        "DENY"                                  always;
+    add_header X-Content-Type-Options "nosniff"                               always;
+    add_header Referrer-Policy        "strict-origin-when-cross-origin"       always;
+    add_header Permissions-Policy     "geolocation=(), camera=(), microphone=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' wss: https:; frame-ancestors 'none';" always;
+
+    # ── API reverse proxy ──
+    # The SPA calls relative /api/... paths; forward them to the backend so the
+    # browser stays same-origin (no CORS needed). BACKEND_URL must have NO
+    # trailing slash and NO path so the /api prefix is preserved upstream.
+    location /api/ {
+        proxy_pass                 ${BACKEND_URL};
+        proxy_http_version         1.1;
+        proxy_ssl_server_name      on;
+        proxy_set_header Host              $proxy_host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Authorization     $http_authorization;
+        proxy_read_timeout         120s;
+        proxy_send_timeout         120s;
+        # Don't let nginx swallow upstream CORS/auth error bodies.
+        proxy_intercept_errors     off;
+    }
+
+    # ── Static assets: long-lived cache (filenames are content-hashed) ──
+    # `expires` (not `add_header`) sets Cache-Control WITHOUT resetting the
+    # server-level security headers — nginx only drops inherited add_header
+    # directives when a nested block declares its own add_header.
+    location /assets/ {
+        expires   1y;
+        try_files $uri =404;
+    }
+
+    # ── SPA fallback: every other route serves index.html (React Router) ──
+    # `expires -1` => Cache-Control: no-cache, so clients always revalidate the
+    # app shell and never pin a stale bundle reference.
+    location / {
+        expires   -1;
+        try_files $uri $uri/ /index.html;
+    }
+}
