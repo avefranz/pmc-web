@@ -40,9 +40,10 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
         if (s.editOnly && editor.mode !== "edit") return false;
         if (s.id === "contact" && !editor.needsContactSection) return false;
         if (s.id === "payment" && !editor.needsPaymentSection) return false;
+        if (s.id === "identity" && !editor.needsIdentitySection) return false;
         return true;
       }),
-    [editor.needsContactSection, editor.needsPaymentSection, editor.mode],
+    [editor.needsContactSection, editor.needsPaymentSection, editor.needsIdentitySection, editor.mode],
   );
 
   const firstUndoneRequired = visibleSections.find((s) => s.required && !s.isComplete(editor.draft));
@@ -117,13 +118,26 @@ export function SectionsList({ editor, occupancyStatus, currentTenantName }: Pro
     const nowComplete = section.isComplete(editor.draft);
     setSavingId(section.id);
     let committed = false;
+    let attemptedCommit = false;
     try {
       const isProfile = section.id === "contact" || section.id === "payment";
       if (editor.mode === "edit" || isProfile) {
+        attemptedCommit = true;
         committed = await editor.commitSection(section.id, editor.draft);
       }
     } finally {
       setSavingId(null);
+    }
+    // If we actually tried to persist and the save failed, keep the section
+    // open so the error toast and the UI agree. Previously the flow advanced
+    // (and collapsed the section) regardless of the result, so the host saw
+    // "Couldn't save" yet the section closed and moved on — looking saved when
+    // it wasn't. commitSection already showed the error toast on failure.
+    // (In create mode, non-profile sections never commit here — they only
+    // mutate the local draft — so attemptedCommit stays false and they advance
+    // normally.)
+    if (attemptedCommit && !committed) {
+      return;
     }
     // BUG-261: surface a clear success toast in edit mode so the host knows
     // the change went through — the section collapses immediately otherwise

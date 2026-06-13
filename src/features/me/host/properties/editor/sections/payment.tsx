@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMe } from "@/lib/hooks/use-auth";
@@ -32,13 +34,16 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
   const { data: me } = useMe();
   const fullName = [me?.firstName, me?.lastName].filter(Boolean).join(" ").trim();
 
-  const accountNumError   = validateBankAccountNumber(draft.paymentBankAccountNumber);
-  const accountNameWarning =
-    draft.paymentBankAccountName.trim().length > 0 &&
-    fullName.length > 0 &&
-    draft.paymentBankAccountName.trim().toLowerCase() !== fullName.toLowerCase()
-      ? `Doesn't match your account name "${fullName}" — banks reject transfers when the name on the receiving account differs.`
-      : null;
+  // The account holder name must match the host's legal name, so it's not freely
+  // editable — it mirrors the profile name (First + Last). Keep the saved draft
+  // value in sync so the receiving-account name we send the tenant is correct.
+  useEffect(() => {
+    if (fullName && draft.paymentBankAccountName !== fullName) {
+      patch({ paymentBankAccountName: fullName });
+    }
+  }, [fullName, draft.paymentBankAccountName, patch]);
+
+  const accountNumError = validateBankAccountNumber(draft.paymentBankAccountNumber);
 
   const hasBank =
     draft.paymentBankName.trim().length > 0 &&
@@ -88,18 +93,21 @@ function PaymentDialog({ draft, patch }: SectionDialogProps) {
           label="Account name"
           required
           hint={
-            accountNameWarning
-              ? <span className="text-warning">{accountNameWarning}</span>
-              : fullName
-                ? `Should match your account name "${fullName}".`
-                : "Full name as it appears on the bank account."
+            <span>
+              From your profile name. If it's wrong,{" "}
+              <Link to="/me/profile" className="text-brand underline underline-offset-2 hover:opacity-80">
+                update it in your profile
+              </Link>{" "}
+              first.
+            </span>
           }
         >
           <Input
-            value={draft.paymentBankAccountName}
-            onChange={(e) => patch({ paymentBankAccountName: e.target.value })}
-            placeholder={fullName || "Full Name"}
-            className={accountNameWarning ? "border-warning" : ""}
+            value={fullName}
+            readOnly
+            tabIndex={-1}
+            placeholder="Set your name in your profile"
+            className="cursor-not-allowed bg-bg-subtle text-fg-muted"
           />
         </Field>
       </Row>

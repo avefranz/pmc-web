@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DateInput } from "@/components/ui/date-input";
 import { NationalityInput } from "@/components/ui/nationality-input";
 import { useMyProfile, useUpdateProfile } from "@/lib/hooks/use-profile";
+import { ProfileNameReadonly } from "@/components/shared/profile-name-readonly";
 import { VisaType } from "@/lib/types/enums";
 import { cn } from "@/lib/utils/cn";
 import { toast } from "sonner";
@@ -37,8 +38,9 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
   const { data: profile } = useMyProfile();
   const updateProfile = useUpdateProfile();
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  // Name is owned by the profile name editor (single source of truth), read-only here.
+  const nameFirst = profile?.firstName ?? "";
+  const nameLast = profile?.lastName ?? "";
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [nationality, setNationality] = useState("");
   const [passportNumber, setPassportNumber] = useState("");
@@ -49,8 +51,6 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
 
   useEffect(() => {
     if (!profile) return;
-    setFirstName(profile.firstName ?? "");
-    setLastName(profile.lastName ?? "");
     setDateOfBirth(profile.dateOfBirth ?? "");
     setNationality(profile.nationality ?? "");
     setPassportNumber(profile.passportNumber ?? "");
@@ -60,15 +60,14 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
     setLastEntryPort(profile.lastEntryPort ?? "");
   }, [profile]);
 
-  const required = [firstName, lastName, dateOfBirth, nationality, passportNumber, passportExpiry, visaType];
+  const required = [nameFirst, nameLast, dateOfBirth, nationality, passportNumber, passportExpiry, visaType];
   const isComplete = required.every((v) => !!v);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
       await updateProfile.mutateAsync({
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
+        // Name is managed by the profile name editor, not re-sent here.
         dateOfBirth: dateOfBirth || undefined,
         nationality: nationality || undefined,
         passportNumber: passportNumber || undefined,
@@ -119,17 +118,12 @@ export function PassportOnboardingStep({ embedded = false }: { embedded?: boolea
         </div>
 
         <div className="flex flex-col gap-4">
-          {/* Row: legal names */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <div className="space-y-1.5">
-              <FieldLabel>Legal first name</FieldLabel>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Nikita" />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel>Legal last name</FieldLabel>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Kuzin" />
-            </div>
-          </div>
+          {/* Legal name — read-only from the profile name editor. Hidden when
+              embedded in the profile page, where the editable name editor sits
+              right above this and showing a read-only copy would be redundant. */}
+          {!embedded && (
+            <ProfileNameReadonly firstName={nameFirst} lastName={nameLast} label="Legal name" />
+          )}
 
           {/* Row: nationality + DOB */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">

@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
-import { useUpdateLandlordIdentity } from "@/lib/hooks/use-profile";
+import { useUpdateLandlordIdentity, useMyProfile } from "@/lib/hooks/use-profile";
 import type { LandlordIdentityDto, LandlordIdType } from "@/lib/types";
+import { joinName } from "@/lib/utils/name";
+import { ProfileNameReadonly } from "@/components/shared/profile-name-readonly";
 
 const NOT_IN_PAST = (d: Date) => {
   const t = new Date();
@@ -37,14 +39,19 @@ export function LandlordIdentityForm({
   embedded?: boolean;
 }) {
   const save = useUpdateLandlordIdentity();
-  const [legalFullName, setLegalFullName] = useState(existing?.legalFullName ?? "");
+  // Name is owned by the profile (single source of truth) and shown read-only;
+  // it's joined into the BE's single legal-name string on save.
+  const { data: profile } = useMyProfile();
+  const profileFirst = profile?.firstName ?? "";
+  const profileLast = profile?.lastName ?? "";
   const [idType, setIdType] = useState<LandlordIdType>(existing?.idType ?? "passport");
   const [idNumber, setIdNumber] = useState(existing?.idNumber ?? "");
   const [idExpiry, setIdExpiry] = useState(existing?.idExpiryDate ?? "");
   const [residentialAddress, setResidentialAddress] = useState(existing?.residentialAddress ?? "");
 
   const valid =
-    legalFullName.trim().length > 0 &&
+    profileFirst.trim().length > 0 &&
+    profileLast.trim().length > 0 &&
     idNumber.trim().length > 0 &&
     residentialAddress.trim().length > 0;
 
@@ -53,7 +60,7 @@ export function LandlordIdentityForm({
     if (!valid || save.isPending) return;
     try {
       await save.mutateAsync({
-        legalFullName: legalFullName.trim(),
+        legalFullName: joinName(profileFirst, profileLast),
         idType,
         idNumber: idNumber.trim(),
         idExpiryDate: idExpiry || undefined,
@@ -80,16 +87,7 @@ export function LandlordIdentityForm({
 
   const fields = (
     <>
-      <div className="space-y-1.5">
-        <Label className="text-sm font-medium text-fg">
-          Legal full name <span className="text-danger">*</span>
-        </Label>
-        <Input
-          value={legalFullName}
-          onChange={(e) => setLegalFullName(e.target.value)}
-          placeholder="As shown on your ID"
-        />
-      </div>
+      <ProfileNameReadonly firstName={profileFirst} lastName={profileLast} label="Legal name" />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">

@@ -1,7 +1,8 @@
-import type { AssetDto, ListingDto, UpdateAssetRequest, UpdateLocationRequest, CreateAssetRequest, CreateListingRequest, UserProfileDto, UpdateProfileRequest } from "@/lib/types";
+import type { AssetDto, ListingDto, UpdateAssetRequest, UpdateLocationRequest, CreateAssetRequest, CreateListingRequest, UserProfileDto, UpdateProfileRequest, UpdateLandlordIdentityRequest } from "@/lib/types";
 import type { UpdateListingRequest } from "@/lib/api/listings.api";
 import type { PropertyDraft } from "./types";
 import { EMPTY_DRAFT } from "./types";
+import { splitFullName, joinName } from "@/lib/utils/name";
 
 // ── API → draft ────────────────────────────────────────────────────────────
 export function draftFromAsset(asset: AssetDto | undefined, listing: ListingDto | undefined): PropertyDraft {
@@ -174,6 +175,27 @@ export function applyProfileToDraft(draft: PropertyDraft, profile: UserProfileDt
     paymentBankName: profile.bankName ?? "",
     paymentBankAccountNumber: profile.bankAccountNumber ?? "",
     paymentBankAccountName: profile.bankAccountName ?? "",
+    // Name is owned by the profile (firstName/lastName), the single source of
+    // truth — the identity section shows it read-only. Fall back to splitting a
+    // legacy legalFullName only when the profile name is empty.
+    identityFirstName: profile.firstName ?? splitFullName(profile.landlordIdentity?.legalFullName).firstName,
+    identityLastName: profile.lastName ?? splitFullName(profile.landlordIdentity?.legalFullName).lastName,
+    identityIdType: profile.landlordIdentity?.idType ?? draft.identityIdType,
+    identityIdNumber: profile.landlordIdentity?.idNumber ?? "",
+    identityIdExpiry: profile.landlordIdentity?.idExpiryDate ?? "",
+    identityResidentialAddress: profile.landlordIdentity?.residentialAddress ?? "",
+  };
+}
+
+export function toIdentityProfileUpdate(d: PropertyDraft): UpdateLandlordIdentityRequest {
+  return {
+    // BE stores a single legal-name string — join the two name inputs.
+    legalFullName: joinName(d.identityFirstName, d.identityLastName),
+    idType: d.identityIdType,
+    idNumber: d.identityIdNumber.trim(),
+    // Expiry is optional (a Thai national ID has none); omit when blank.
+    idExpiryDate: d.identityIdExpiry.trim() || undefined,
+    residentialAddress: d.identityResidentialAddress.trim(),
   };
 }
 
@@ -205,6 +227,12 @@ export function isContactComplete(profile: UserProfileDto | undefined): boolean 
 export function isPaymentComplete(profile: UserProfileDto | undefined): boolean {
   if (!profile) return false;
   return !!profile.promptPayId || (!!profile.bankName && !!profile.bankAccountNumber && !!profile.bankAccountName);
+}
+
+export function isIdentityComplete(profile: UserProfileDto | undefined): boolean {
+  if (!profile) return false;
+  const id = profile.landlordIdentity;
+  return !!id && !!id.legalFullName && !!id.idNumber && !!id.residentialAddress;
 }
 
 export function toUpdateListingRequest(d: PropertyDraft): UpdateListingRequest {

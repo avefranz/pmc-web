@@ -31,6 +31,7 @@ function visibleGroupIds(editor: ReturnType<typeof useEditorState>): Set<string>
     if (s.editOnly && editor.mode !== "edit") return false;
     if (s.id === "contact" && !editor.needsContactSection) return false;
     if (s.id === "payment" && !editor.needsPaymentSection) return false;
+    if (s.id === "identity" && !editor.needsIdentitySection) return false;
     return true;
   });
   return new Set(visible.map((s) => s.group));

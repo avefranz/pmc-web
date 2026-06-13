@@ -19,7 +19,9 @@ import {
   draftFromAsset,
   isContactComplete,
   isPaymentComplete,
+  isIdentityComplete,
   toContactProfileUpdate,
+  toIdentityProfileUpdate,
   toCreateAssetRequest,
   toCreateListingRequest,
   toPaymentProfileUpdate,
@@ -160,6 +162,7 @@ export interface EditorApi {
   // Hidden once the host has the data on their global profile.
   needsContactSection: boolean;
   needsPaymentSection: boolean;
+  needsIdentitySection: boolean;
   // Section-level commit (edit mode only — pushes the relevant slice to API).
   // Takes the next draft directly so callers don't race the state batch.
   commitSection: (sectionId: string, next: PropertyDraft) => Promise<boolean>;
@@ -407,9 +410,10 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
     else setDraft(applyProfileToDraft(EMPTY_DRAFT, profile));
   }, [mode, asset, listing, profile]);
 
-  // Hide contact / payment sections once the global profile has them set.
+  // Hide contact / payment / identity sections once the global profile has them set.
   const needsContactSection = !isContactComplete(profile);
   const needsPaymentSection = !isPaymentComplete(profile);
+  const needsIdentitySection = !isIdentityComplete(profile);
 
   // Compute the missing-required list from the section registry. Sections
   // hidden in create mode (editOnly + contact/payment when profile-filled)
@@ -420,6 +424,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
       if (s.editOnly) return false;
       if (s.id === "contact" && !needsContactSection) return false;
       if (s.id === "payment" && !needsPaymentSection) return false;
+      if (s.id === "identity" && !needsIdentitySection) return false;
       return true;
     });
     return missingRequiredSections(draft, visible);
@@ -464,6 +469,13 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         }
         if (sectionId === "payment") {
           await profileApi.update(toPaymentProfileUpdate(next));
+          await qc.invalidateQueries({ queryKey: ["profile"] });
+          return true;
+        }
+        // Legal identity commits to the user profile too (separate endpoint),
+        // valid in both modes — printed on the contract, entered once.
+        if (sectionId === "identity") {
+          await profileApi.updateLandlordIdentity(toIdentityProfileUpdate(next));
           await qc.invalidateQueries({ queryKey: ["profile"] });
           return true;
         }
@@ -524,7 +536,17 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         ]);
         setLastSavedAt(Date.now());
         return true;
-      } catch {
+      } catch (err) {
+        // Surface the real failure in the console so a "Couldn't save" report
+        // is diagnosable — distinguishes a network-layer drop (no err.response,
+        // e.g. backend restarting / proxy timeout on the FIRST write of the
+        // create flow) from a backend rejection (err.response.status).
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        console.error(
+          `[editor] commit "${sectionId}" failed`,
+          status ? `(HTTP ${status})` : "(network/no response)",
+          err,
+        );
         toast.error("Couldn't save. Try again.");
         return false;
       } finally {
@@ -580,6 +602,17 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
         await profileApi.update(patch);
         mergeProfileCache(patch as unknown as Record<string, unknown>);
         stashProfileUpdate(patch as unknown as Record<string, unknown>);
+      }
+      const draftIdentityReady =
+        draft.identityFirstName.trim().length > 0 &&
+        draft.identityLastName.trim().length > 0 &&
+        draft.identityIdNumber.trim().length > 0 &&
+        draft.identityResidentialAddress.trim().length > 0;
+      if (needsIdentitySection && draftIdentityReady) {
+        await profileApi.updateLandlordIdentity(toIdentityProfileUpdate(draft));
+        // Merge into the ["profile"] cache so the signing page sees the identity
+        // immediately (mirrors the nested landlordIdentity shape GET returns).
+        mergeProfileCache({ landlordIdentity: toIdentityProfileUpdate(draft) });
       }
 
       // Phase 1: asset (basic shape — backend CreateAssetRequest only takes
@@ -748,7 +781,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
       setIsSaving(false);
       return null;
     }
-  }, [mode, draft, pendingPhotos, restoredStagedPhotos, missingForSave.length, missingForPartialSave.length, needsContactSection, needsPaymentSection, qc, refs, navigate]);
+  }, [mode, draft, pendingPhotos, restoredStagedPhotos, missingForSave.length, missingForPartialSave.length, needsContactSection, needsPaymentSection, needsIdentitySection, qc, refs, navigate]);
 
   const publishListing = useCallback(async (startDate?: string, endDate?: string) => {
     if (!listingId) return;
@@ -777,6 +810,7 @@ export function useEditorState({ assetId }: UseEditorArgs): EditorApi {
     listingId,
     needsContactSection,
     needsPaymentSection,
+    needsIdentitySection,
     commitSection,
     commitFirstSave,
     missingForSave,

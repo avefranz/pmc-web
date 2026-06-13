@@ -49,6 +49,8 @@ import type { BookingGuestDto } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
 import { openAuthPdf } from "@/lib/utils/open-auth-pdf";
+import { joinName } from "@/lib/utils/name";
+import { ProfileNameReadonly } from "@/components/shared/profile-name-readonly";
 
 // ─── Guest card ───────────────────────────────────────────────────────────────
 
@@ -290,8 +292,11 @@ export function BookingDetailPage() {
   const updateBookingStatus = useUpdateBookingStatus(id!);
   const [closeLeaseError, setCloseLeaseError] = useState<string | null>(null);
 
-  // Landlord signing form state
-  const [landlordTypedName, setLandlordTypedName] = useState("");
+  // Landlord signing form state. The signing name comes from the profile
+  // (single source of truth), read-only — joined into the typedName the
+  // landlord-sign endpoint expects.
+  const landlordNameFirst = profile?.firstName ?? "";
+  const landlordNameLast = profile?.lastName ?? "";
   const [landlordSigningCapacity, setLandlordSigningCapacity] = useState("Owner");
   const [landlordCompanyName, setLandlordCompanyName] = useState("");
   const [landlordSignatureFile, setLandlordSignatureFile] = useState<File | null>(null);
@@ -346,7 +351,7 @@ export function BookingDetailPage() {
     setLandlordSignError(null);
     try {
       await landlordSignContract.mutateAsync({
-        typedName: landlordTypedName.trim(),
+        typedName: joinName(landlordNameFirst, landlordNameLast),
         signingCapacity: landlordSigningCapacity,
         companyName: landlordSigningCapacity === "Authorised Representative" && landlordCompanyName.trim()
           ? landlordCompanyName.trim()
@@ -1600,10 +1605,7 @@ export function BookingDetailPage() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-fg">Full name</label>
-              <Input placeholder="Your full legal name" value={landlordTypedName} onChange={(e) => setLandlordTypedName(e.target.value)} required />
-            </div>
+            <ProfileNameReadonly firstName={landlordNameFirst} lastName={landlordNameLast} label="Full name" />
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-fg">Signing as</label>
               <Select value={landlordSigningCapacity} onValueChange={setLandlordSigningCapacity}>
@@ -1668,7 +1670,8 @@ export function BookingDetailPage() {
               type="submit"
               disabled={
                 !profile?.landlordIdentity ||
-                !landlordTypedName.trim() ||
+                !landlordNameFirst.trim() ||
+                !landlordNameLast.trim() ||
                 !landlordAgreedTerms ||
                 !landlordAgreedEta ||
                 (landlordSigningCapacity === "Authorised Representative" && !landlordAgreedAuth) ||

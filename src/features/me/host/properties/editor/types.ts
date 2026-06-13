@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { BuildingType, CheckInMethod, ContactChannel, FurnishedType } from "@/lib/types";
+import type { BuildingType, CheckInMethod, ContactChannel, FurnishedType, LandlordIdType } from "@/lib/types";
 
 // Single source of truth for the property editor state.
 // Both create-mode (no IDs yet) and edit-mode (existing asset + listing)
@@ -102,6 +102,18 @@ export interface PropertyDraft {
   paymentBankName: string;
   paymentBankAccountNumber: string;
   paymentBankAccountName: string;
+
+  // ── Host legal identity (lives on the user profile as `landlordIdentity`,
+  // NOT per-property). Collected once during the first property so that contract
+  // signing later needs only a signature — the legal name / ID / address printed
+  // on the rental agreement are already on file. Hydrated from
+  // `useMyProfile().landlordIdentity`.
+  identityFirstName: string;
+  identityLastName: string;
+  identityIdType: LandlordIdType;
+  identityIdNumber: string;
+  identityIdExpiry: string;
+  identityResidentialAddress: string;
 }
 
 export const EMPTY_DRAFT: PropertyDraft = {
@@ -174,6 +186,13 @@ export const EMPTY_DRAFT: PropertyDraft = {
   paymentBankName: "",
   paymentBankAccountNumber: "",
   paymentBankAccountName: "",
+
+  identityFirstName: "",
+  identityLastName: "",
+  identityIdType: "passport",
+  identityIdNumber: "",
+  identityIdExpiry: "",
+  identityResidentialAddress: "",
 };
 
 export type DraftPatch = Partial<PropertyDraft>;

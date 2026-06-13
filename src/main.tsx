@@ -9,6 +9,11 @@ import "./index.css";
 import "./lib/i18n/index";
 import App from "./App.tsx";
 import { ThemeProvider } from "./components/layout/theme-provider";
+import { installLatinOnlyInputGuard } from "./lib/utils/latin-only-input";
+
+// Block non-Latin input (Cyrillic, CJK, Thai, emoji, …) across every text field.
+// Per-field opt-out: add data-allow-intl="true" to the input or an ancestor.
+installLatinOnlyInputGuard();
 
 const queryClient = new QueryClient({
   defaultOptions: {

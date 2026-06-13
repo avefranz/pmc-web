@@ -1703,19 +1703,15 @@ const [renewOpen, setRenewOpen] = useState(false);
                     ) : isOverdue ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-danger/10 text-danger">Overdue</span>
                     ) : paymentBlockedByContract && (isDueThisMonth || isNext || isPrepayable) ? (
-                      // BUG-343 / UX-352: don't let a tenant pay rent before the
-                      // contract is fully signed — but make the lock actionable
-                      // (take them to sign) instead of a dead disabled button that
-                      // just reads "🔒 Sign first" with no way forward.
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px] rounded-lg px-2.5 border-brand/40 text-brand hover:bg-brand/5"
-                        onClick={() => isMyBooking && navigate(`/me/guest/bookings/${id}/contract`)}
-                        title="Sign the rental agreement to unlock this payment"
-                      >
-                        🔒 Sign to unlock
-                      </Button>
+                      // BUG-343: a payment gated by an unsigned contract must NOT
+                      // show a Pay button. Per product, also don't show a
+                      // "Sign to unlock" CTA here — it read as a stray, half-active
+                      // button on every locked row. We keep this guard branch (so
+                      // the chain can't fall through to "Pay") but render nothing;
+                      // the "Locked until the rental agreement is signed" line under
+                      // the month already explains the state, and the dedicated
+                      // sign banner/flow is where the tenant actually signs.
+                      null
                     ) : isDueThisMonth || isNext ? (
                       <Button
                         size="sm"

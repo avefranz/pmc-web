@@ -13,6 +13,9 @@ import { VisaType } from "@/lib/types/enums";
 import { VISA_LABELS } from "@/lib/utils/visa-labels";
 import { SignatureCanvas } from "@/components/shared/signature-canvas";
 import { PassportPageGuide } from "@/components/shared/passport-page-guide";
+import { CoResidentsCard } from "@/components/shared/co-residents-card";
+import { ProfileNameReadonly } from "@/components/shared/profile-name-readonly";
+import { joinName } from "@/lib/utils/name";
 import { DatePicker } from "@/components/ui/date-picker";
 
 // UX-321: real calendar pickers (not free-form dd/mm/yyyy) with sane bounds.
@@ -34,7 +37,7 @@ const EXPIRY_NOT_PAST = (d: Date) => {
   return d < t;
 };
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport } from "@/lib/hooks/use-bookings";
+import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport, useBookingInvoices } from "@/lib/hooks/use-bookings";
 import { useMyProfile } from "@/lib/hooks/use-profile";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { contractSigningDeadline } from "@/lib/types";
@@ -51,10 +54,25 @@ export function GuestContractSignPage() {
   const { data: guests } = useBookingGuests(id!);
   const updatePassport = useUpdatePassport(id!);
   const { data: profile } = useMyProfile();
+  // The ContractDto only carries the security deposit, but the tenant is also
+  // charged a pet deposit when they booked "with pets". It lives as a
+  // PetDeposit invoice (same source the booking detail sidebar uses), so pull
+  // it in and show it in the summary — otherwise the deposit they sign for here
+  // looks smaller than what they'll actually pay.
+  const { data: invoices } = useBookingInvoices(id!);
+  const petDepositTotal = (invoices ?? [])
+    .filter((inv) => inv.type === "PetDeposit")
+    .reduce((sum, inv) => sum + (inv.amount ?? 0), 0);
+  // Co-residents (everyone on the booking except the main tenant). When the
+  // tenant booked "with others" these are materialised as guests, so this is a
+  // reliable signal to surface the co-residents roster on the signing page.
+  const hasCoResidents = (guests ?? []).some((g) => !g.isMainTenant);
 
-  // Passport data
-  const [passportFirstName, setPassportFirstName] = useState("");
-  const [passportLastName, setPassportLastName] = useState("");
+  // Name comes from the profile (single source of truth), read-only here.
+  const nameFirst = profile?.firstName ?? "";
+  const nameLast = profile?.lastName ?? "";
+
+  // Passport data (name excluded — it's the profile name above)
   const [passportNumber, setPassportNumber] = useState("");
   const [passportNationality, setPassportNationality] = useState("");
   const [passportDob, setPassportDob] = useState("");
@@ -84,8 +102,6 @@ export function GuestContractSignPage() {
     );
     /* eslint-disable react-hooks/set-state-in-effect */
     setPrefilledFromProfile(anyPrefilled);
-    setPassportFirstName(profile.firstName ?? "");
-    setPassportLastName(profile.lastName ?? "");
     setPassportNationality(profile.nationality ?? "");
     setPassportDob(profile.dateOfBirth ?? "");
     setPassportNumber(profile.passportNumber ?? "");
@@ -116,8 +132,6 @@ export function GuestContractSignPage() {
     if (!main) return;
     guestApplied.current = true;
     /* eslint-disable react-hooks/set-state-in-effect */
-    setPassportFirstName((v) => v || (main.firstName ?? ""));
-    setPassportLastName((v) => v || (main.lastName ?? ""));
     setPassportNationality((v) => v || (main.nationality ?? ""));
     setPassportDob((v) => v || (main.dateOfBirth ?? ""));
     setPassportNumber((v) => v || (main.passportNumber ?? ""));
@@ -137,7 +151,6 @@ export function GuestContractSignPage() {
   const [agreedEta, setAgreedEta] = useState(false);
   const [agreedPdpa, setAgreedPdpa] = useState(false);
   const [agreedPenalty, setAgreedPenalty] = useState(false);
-  const [typedName, setTypedName] = useState("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -146,8 +159,8 @@ export function GuestContractSignPage() {
   // exclude them from the contract completeness check. They're collected
   // separately during TM-30 filing (and remain on the user profile for reuse).
   const passportComplete =
-    passportFirstName.trim().length > 0 &&
-    passportLastName.trim().length > 0 &&
+    nameFirst.trim().length > 0 &&
+    nameLast.trim().length > 0 &&
     passportNumber.trim().length > 0 &&
     passportNationality.trim().length > 0 &&
     passportDob.trim().length > 0 &&
@@ -157,7 +170,6 @@ export function GuestContractSignPage() {
     passportComplete &&
     passportPhotos.length > 0 &&
     agreedTerms && agreedEta && agreedPdpa && agreedPenalty &&
-    typedName.trim().length > 0 &&
     !isSubmitting;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -173,8 +185,8 @@ export function GuestContractSignPage() {
         await updatePassport.mutateAsync({
           guestId: mainGuest.id,
           data: {
-            firstName: passportFirstName.trim(),
-            lastName: passportLastName.trim(),
+            firstName: nameFirst.trim(),
+            lastName: nameLast.trim(),
             passportNumber: passportNumber.trim(),
             nationality: passportNationality.trim(),
             dateOfBirth: passportDob,
@@ -190,7 +202,7 @@ export function GuestContractSignPage() {
 
       // 2. Sign the contract
       await signContract.mutateAsync({
-        typedName: typedName.trim(),
+        typedName: joinName(nameFirst, nameLast),
         signatureImage: signatureFile ?? undefined,
       });
       toast.success("Agreement signed!");
@@ -384,6 +396,12 @@ export function GuestContractSignPage() {
             <span className="text-fg-muted">Security deposit</span>
             <span className="font-medium text-fg">{formatThb(contract.depositAmount)}</span>
           </div>
+          {petDepositTotal > 0 && (
+            <div className="flex justify-between px-5 py-3 text-sm">
+              <span className="text-fg-muted">Pet deposit</span>
+              <span className="font-medium text-fg">{formatThb(petDepositTotal)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -403,7 +421,7 @@ export function GuestContractSignPage() {
               <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
               <p className="text-xs text-fg leading-relaxed">
                 Some basics aren't in your profile yet. Fill them in once and we'll pre-fill them on every contract.{" "}
-                <Link to="/profile" className="text-brand font-medium underline underline-offset-2 hover:opacity-80">
+                <Link to="/me/profile" className="text-brand font-medium underline underline-offset-2 hover:opacity-80">
                   Open profile
                 </Link>
               </p>
@@ -421,18 +439,7 @@ export function GuestContractSignPage() {
                 <p>Pre-filled from your profile — edit if anything's changed.</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">First name <span className="text-danger">*</span></Label>
-                <Input value={passportFirstName} onChange={(e) => setPassportFirstName(e.target.value)} placeholder="As on passport" />
-                {fieldErrors.firstName && <p className="text-xs text-danger">{fieldErrors.firstName}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-fg-muted">Last name <span className="text-danger">*</span></Label>
-                <Input value={passportLastName} onChange={(e) => setPassportLastName(e.target.value)} placeholder="As on passport" />
-                {fieldErrors.lastName && <p className="text-xs text-danger">{fieldErrors.lastName}</p>}
-              </div>
-            </div>
+            <ProfileNameReadonly firstName={nameFirst} lastName={nameLast} label="Name" />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-fg-muted">Nationality <span className="text-danger">*</span></Label>
@@ -500,6 +507,14 @@ export function GuestContractSignPage() {
             </div>
           </div>
         </div>
+
+        {/* Co-residents — surfaced here so the tenant can add/complete every
+            occupant's details (required for the contract + TM-30) without
+            leaving the signing page. Only shown when the booking actually has
+            co-residents. */}
+        {hasCoResidents && (
+          <CoResidentsCard bookingId={id!} guests={guests} />
+        )}
 
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">
           <div className="px-5 pt-4 pb-3 border-b border-border flex items-center gap-2">
@@ -581,19 +596,8 @@ export function GuestContractSignPage() {
 
             </div>
 
-            {/* Typed name */}
-            <div className="space-y-1.5">
-              <Label htmlFor="typedName" className="text-sm font-medium text-fg">
-                Full name <span className="text-fg-muted font-normal">(as electronic signature)</span>
-              </Label>
-              <Input
-                id="typedName"
-                placeholder="Your full legal name"
-                value={typedName}
-                onChange={(e) => setTypedName(e.target.value)}
-                autoComplete="name"
-              />
-            </div>
+            {/* Typed name — electronic signature, taken from the profile name */}
+            <ProfileNameReadonly firstName={nameFirst} lastName={nameLast} label="Full name (as electronic signature)" />
 
             {/* Signature canvas */}
             <div className="space-y-1.5">

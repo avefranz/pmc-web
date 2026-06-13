@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Home, ChevronRight, MapPin, FileText } from "lucide-react";
+import { Home, ChevronRight, MapPin } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { useMyBookings } from "@/lib/hooks/use-bookings";
-import { useMyProfile } from "@/lib/hooks/use-profile";
 import { formatDate } from "@/lib/utils/format";
 import { BookingStatus } from "@/lib/types/enums";
 import { cn } from "@/lib/utils/cn";
@@ -103,24 +102,9 @@ function EmptyTab({ title, desc }: { title: string; desc: string }) {
 
 export function GuestBookingsPage() {
   const { data: bookings, isLoading } = useMyBookings();
-  const { data: profile } = useMyProfile();
 
   const upcoming = (bookings ?? []).filter((b) => !PAST_STATUSES.includes(b.status as BookingStatus));
   const past     = (bookings ?? []).filter((b) =>  PAST_STATUSES.includes(b.status as BookingStatus));
-
-  // BUG-275: предпочитаем BE-флаг `passportRequired` (выставляется false, когда контракт
-  // FullySigned). Если BE его ещё не возвращает по какому-то бронированию — fallback на
-  // `hasContract`. Дополнительно не показываем баннер тайцам и тем, у кого паспорт уже в профиле.
-  const stillNeedsPassportForAnyBooking = (bookings ?? []).some((b) => {
-    if (b.passportRequired === false) return false;
-    if (b.passportRequired === true) return true;
-    return !b.hasContract;
-  });
-  const needsPassport =
-    profile !== undefined &&
-    !profile.passportNumber &&
-    profile.nationality !== "TH" &&
-    stillNeedsPassportForAnyBooking;
 
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
@@ -161,23 +145,9 @@ export function GuestBookingsPage() {
     <div>
       <h1 className="text-2xl font-bold text-fg mb-6">My stays</h1>
 
-      {needsPassport && upcoming.length > 0 && (
-        <Link
-          to="/me/onboarding/passport"
-          className="block rounded-2xl border border-brand/30 bg-brand/5 p-4 mb-6 hover:brightness-95 transition"
-        >
-          <div className="flex items-start gap-3">
-            <FileText size={18} className="text-brand shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-fg">Add your passport details</p>
-              <p className="text-xs text-fg-muted mt-1 leading-relaxed">
-                Your landlord needs your passport and visa information to generate the rental contract and file the TM30 immigration report.
-              </p>
-            </div>
-            <span className="text-xs font-semibold text-brand shrink-0 self-center">Add →</span>
-          </div>
-        </Link>
-      )}
+      {/* Passport-details prompt removed: a tenant's passport/visa is collected
+          during the booking flow (and at contract signing for co-residents),
+          so surfacing it here on the stays list only confused users. */}
 
       <div className="flex gap-1 mb-6 bg-bg-subtle rounded-xl p-1 w-fit">
         {(["upcoming", "past"] as const).map((t) => {

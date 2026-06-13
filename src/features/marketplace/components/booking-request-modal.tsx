@@ -1048,7 +1048,10 @@ export function BookingRequestModal({
                       pets={pets}
                       photos={petPhotos}
                       onChange={setPetPhotos}
-                      showErrors={triedSubmit}
+                      // Surface the per-type "Add at least 1 photo" hint as soon
+                      // as counts are set (not only after a Continue click), so
+                      // the now-disabled Continue button has a visible reason.
+                      showErrors={triedSubmit || (petCountFilled && !petPhotosReady)}
                     />
                   </>
                 )}
@@ -1061,11 +1064,19 @@ export function BookingRequestModal({
                   incomplete — clicking runs handleFormSubmit, which sets
                   triedSubmit and renders the inline errors above (so the user
                   sees WHAT is blocking them instead of a dead button at the
-                  bottom of a long modal). Only disabled while sending. */}
+                  bottom of a long modal). Only disabled while sending.
+
+                  Exception: pet photos are a HARD upload requirement. Once the
+                  user has entered pet counts the photo card is already visible
+                  right above the footer with its "Pet photos *" label, so a
+                  disabled Continue here is self-explanatory (not a dead button)
+                  — and it must be impossible to submit a "with pets" request
+                  with no photos. We only block once counts are filled so the
+                  count-missing case still gets the inline error via a click. */}
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={submit.isPending}
+                disabled={submit.isPending || (hasPets && petCountFilled && !petPhotosReady)}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>

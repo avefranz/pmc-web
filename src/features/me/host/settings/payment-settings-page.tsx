@@ -17,12 +17,16 @@ export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean }
   const [bankAccountNumber, setBankAccountNumber] = useState("");
   const [bankAccountName, setBankAccountName] = useState("");
 
+  // The account holder name must match the host's legal name, so it's driven by
+  // the profile name (First + Last), not freely editable.
+  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim();
+
   useEffect(() => {
     if (profile) {
       setPromptPayId(profile.promptPayId ?? "");
       setBankName(profile.bankName ?? "");
       setBankAccountNumber(profile.bankAccountNumber ?? "");
-      setBankAccountName(profile.bankAccountName ?? "");
+      setBankAccountName([profile.firstName, profile.lastName].filter(Boolean).join(" ").trim());
     }
   }, [profile]);
 
@@ -119,10 +123,19 @@ export function PaymentSettingsPage({ embedded = false }: { embedded?: boolean }
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-fg">Account name</Label>
               <Input
-                value={bankAccountName}
-                onChange={(e) => setBankAccountName(e.target.value)}
-                placeholder="John Smith"
+                value={fullName}
+                readOnly
+                tabIndex={-1}
+                placeholder="Set your name in your profile"
+                className="cursor-not-allowed bg-bg-subtle text-fg-muted"
               />
+              <p className="text-xs text-fg-muted">
+                From your profile name. If it's wrong,{" "}
+                <Link to="/me/profile" className="text-brand underline underline-offset-2 hover:opacity-80">
+                  update it in your profile
+                </Link>{" "}
+                first.
+              </p>
             </div>
           </div>
         </div>

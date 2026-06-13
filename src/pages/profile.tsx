@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { openAuthPdf } from "@/lib/utils/open-auth-pdf";
 import {
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { useMe, useChangePassword } from "@/lib/hooks/use-auth";
-import { useMyProfile, useMyTm30 } from "@/lib/hooks/use-profile";
+import { useMyProfile, useMyTm30, useUpdateProfile } from "@/lib/hooks/use-profile";
 import { useMyBookings } from "@/lib/hooks/use-bookings";
 import { useQueryClient } from "@tanstack/react-query";
 import { initials } from "@/lib/utils/format";
@@ -555,6 +555,71 @@ function SectionSecurity() {
   );
 }
 
+// Single source of truth for the user's name. Set at registration, edited only
+// here — every other form (landlord identity, contract signing, e-signature,
+// bank account name) shows it read-only and links back to this section.
+function ProfileNameEditor() {
+  const { data: profile } = useMyProfile();
+  const update = useUpdateProfile();
+  const qc = useQueryClient();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    if (profile && !seeded) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setFirstName(profile.firstName ?? "");
+      setLastName(profile.lastName ?? "");
+      setSeeded(true);
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
+  }, [profile, seeded]);
+
+  const valid = firstName.trim().length > 0 && lastName.trim().length > 0;
+  const dirty =
+    !!profile &&
+    (firstName.trim() !== (profile.firstName ?? "") || lastName.trim() !== (profile.lastName ?? ""));
+
+  async function save() {
+    if (!valid || !dirty || update.isPending) return;
+    try {
+      await update.mutateAsync({ firstName: firstName.trim(), lastName: lastName.trim() });
+      // useUpdateProfile only invalidates ["profile"]; the name is also read from
+      // ["me"] (auth/me) across the app, so refresh that too.
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      toast.success("Name updated");
+    } catch {
+      toast.error("Couldn't update your name. Try again.");
+    }
+  }
+
+  return (
+    <SectionShell
+      title="Your name"
+      subtitle="Used on your rental contracts and shown everywhere your name is needed. This is the only place to change it."
+    >
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium text-fg">First name <span className="text-danger">*</span></Label>
+          <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="As on your ID" autoComplete="given-name" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium text-fg">Last name <span className="text-danger">*</span></Label>
+          <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="As on your ID" autoComplete="family-name" />
+        </div>
+      </div>
+      <Button
+        onClick={save}
+        disabled={!valid || !dirty || update.isPending}
+        className="mt-4 bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white rounded-xl h-10 text-sm font-semibold disabled:opacity-50"
+      >
+        {update.isPending ? "Saving…" : "Save name"}
+      </Button>
+    </SectionShell>
+  );
+}
+
 // BUG-267: host enters their legal identity once; it's snapshotted into every
 // rental contract and is required before they can sign.
 function SectionLandlordIdentity() {
@@ -612,7 +677,12 @@ export default function ProfilePage() {
 
   const content = useMemo(() => {
     switch (effectiveSection) {
-      case "personal":      return <PassportOnboardingStep embedded />;
+      case "personal":      return (
+        <div className="space-y-5">
+          <ProfileNameEditor />
+          <PassportOnboardingStep embedded />
+        </div>
+      );
       case "identity":      return <SectionLandlordIdentity />;
       case "payment":       return <PaymentSettingsPage embedded />;
       case "contact":       return <ContactSettingsPage embedded />;
