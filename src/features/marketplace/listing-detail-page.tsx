@@ -7,7 +7,7 @@ import {
   Trophy, Zap, Leaf, ShieldCheck, CalendarCheck,
   FileText, RotateCcw, ClipboardList, Tag,
   Ruler, Car, PawPrint, Train, MapPin as MapPinIcon,
-  Key, KeySquare, Building2,
+  Key, KeySquare, Building2, Sparkles,
   ChevronDown, ChevronUp, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { amenityIcon } from "@/lib/utils/amenity-icons";
@@ -168,7 +168,7 @@ function generateHighlights(listing: {
   if (has("balcony") || has("terrace") || has("garden"))
     hits.push({ icon: <Leaf size={20} strokeWidth={1.5} />, title: "Indoor-outdoor living", body: "Private outdoor space to unwind — rare in this price range." });
   if (hits.length < 2)
-    hits.push({ icon: <ShieldCheck size={20} strokeWidth={1.5} />, title: "Verified property", body: "Reviewed and published by the Siamo team — every ad meets our quality standard." });
+    hits.push({ icon: <Sparkles size={20} strokeWidth={1.5} />, title: "Listed on Siamo", body: "Published on Siamo — Thailand's platform for fully managed long-stay rentals." });
 
   return hits.slice(0, 3);
 }
@@ -497,15 +497,18 @@ export function ListingDetailPage() {
       <div className="mb-6">
         <h1 className="text-2xl md:text-[28px] font-bold text-fg leading-snug mb-2">
           {listing.title}
-          {/* UX-53: always-visible "Verified by Siamo" pill — was hover-only (invisible on mobile) */}
+          {/* Brand pill. Deliberately NOT a "Verified" claim — we don't vet
+              properties yet, so the badge only states the listing is on Siamo
+              (sparkle, not a check, to avoid implying inspection). A real
+              "Verified" badge comes later when we actually review listings. */}
           <span className={cn(
             "inline-flex align-middle items-center gap-[5px] ml-3",
             "rounded-full cursor-default select-none bg-brand",
             "shadow-[0_2px_8px_-1px_rgba(0,0,0,0.20)]",
             "h-[22px] pl-[6px] pr-[9px]",
           )}>
-            <Check size={11} strokeWidth={2.8} className="shrink-0 text-white" />
-            <span className="whitespace-nowrap text-[10px] font-medium text-white/75 leading-none">Verified by</span>
+            <Sparkles size={11} strokeWidth={2.5} className="shrink-0 text-white" />
+            <span className="whitespace-nowrap text-[10px] font-medium text-white/75 leading-none">Listed on</span>
             <span className="whitespace-nowrap text-[11px] font-black text-white leading-none tracking-[0.04em]">Siamo</span>
           </span>
         </h1>

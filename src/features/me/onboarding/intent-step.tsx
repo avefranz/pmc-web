@@ -40,7 +40,7 @@ export function IntentOnboardingStep() {
             </div>
             <h2 className="text-base font-semibold text-fg mb-1.5">List my property</h2>
             <p className="text-sm text-fg-muted leading-relaxed mb-5">
-              Publish your apartment or villa and start getting requests from verified tenants.
+              Publish your apartment or villa and start getting requests from prospective tenants.
             </p>
             <p className="text-sm font-semibold text-fg group-hover:underline underline-offset-2">
               Get started →

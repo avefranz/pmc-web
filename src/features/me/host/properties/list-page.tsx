@@ -227,7 +227,7 @@ export function PropertiesListPage() {
           List your first property
         </h1>
         <p className="text-fg-muted text-base max-w-md mb-10">
-          Publish your apartment or villa on Siamo and start receiving booking requests from vetted tenants.
+          Publish your apartment or villa on Siamo and start receiving booking requests from prospective tenants.
         </p>
 
         {/* CTA */}
@@ -240,8 +240,8 @@ export function PropertiesListPage() {
           {[
             {
               icon: Users,
-              title: "Verified tenants",
-              desc: "Every applicant goes through identity verification before moving in.",
+              title: "Tenant identity on file",
+              desc: "Every applicant provides their passport and identity details before moving in.",
             },
             {
               icon: Wallet,

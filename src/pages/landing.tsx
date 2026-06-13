@@ -300,7 +300,7 @@ function StaticAssetCard({ asset, index }: { asset: StaticAsset; index: number }
               ? "bg-accent/90 text-accent-foreground"
               : "bg-white/90 text-foreground",
           )}>
-            {asset.badge === "new" ? "New listing" : "Verified host"}
+            {asset.badge === "new" ? "New listing" : "Featured"}
           </span>
         )}
       </div>
@@ -351,7 +351,7 @@ function ServiceDialog({ service, open, onClose }: { service: Service | null; op
               </div>
               <div className="flex items-center gap-2 text-sm font-mono bg-secondary px-3 py-1.5 rounded-lg">
                 <ShieldCheck className="size-4 text-accent" />
-                Insured &amp; verified
+                Fully insured
               </div>
             </div>
           </DialogHeader>
@@ -483,7 +483,7 @@ export default function LandingPage() {
           {/* Eyebrow badge — creates anticipation (per UX philosophy) */}
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary border border-border text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-6">
             <span className="size-1.5 rounded-full bg-accent animate-pulse" />
-            Premium · Verified · Thailand
+            Premium · Long-stay · Thailand
           </div>
 
           <h1 className="font-display text-4xl md:text-6xl tracking-tight leading-[1.05] mb-6">
@@ -646,7 +646,7 @@ export default function LandingPage() {
         <div className="relative h-[400px] rounded-3xl overflow-hidden">
           <img
             src={mapImg}
-            alt="Map preview of verified Siamo listings across Bangkok"
+            alt="Map preview of Siamo listings across Bangkok"
             loading="lazy"
             className="w-full h-full object-cover"
           />
@@ -654,7 +654,7 @@ export default function LandingPage() {
             <div className="bg-card rounded-2xl p-6 max-w-sm shadow-2xl">
               <h2 className="font-display text-xl mb-2 italic">Explore Siamo visually</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Discover verified assets nearby with our interactive map.
+                Discover listings nearby with our interactive map.
               </p>
               <Link
                 to="/listings"
@@ -675,7 +675,7 @@ export default function LandingPage() {
               On-demand services
             </span>
             <h2 className="font-display text-4xl md:text-5xl tracking-tight leading-tight italic">
-              Book a vetted technician for any maintenance need.
+              Book a technician for any maintenance need.
             </h2>
             <p className="text-muted-foreground mt-4">
               From a leaking pipe to a full villa tune-up — Siamo dispatches insured
@@ -751,7 +751,7 @@ export default function LandingPage() {
               className="aspect-[3/4] w-full object-cover rounded-3xl opacity-80"
             />
             <div className="absolute -bottom-8 -left-2 md:-left-8 bg-[#F0A455] text-[#1A1A1A] p-6 md:p-8 rounded-2xl shadow-xl max-w-[300px]">
-              <p className="text-xs uppercase tracking-widest mb-2 opacity-70">Verified host</p>
+              <p className="text-xs uppercase tracking-widest mb-2 opacity-70">Host story</p>
               <p className="text-lg md:text-xl font-display italic leading-snug">
                 &ldquo;Siamo handles the trust, I just provide the key.&rdquo;
               </p>
