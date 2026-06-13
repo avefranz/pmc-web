@@ -37,7 +37,8 @@ const EXPIRY_NOT_PAST = (d: Date) => {
   return d < t;
 };
 import { NationalityInput } from "@/components/ui/nationality-input";
-import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport, useBookingInvoices } from "@/lib/hooks/use-bookings";
+import { useBookingContract, useTenantSignContract, useBookingGuests, useUpdatePassport, useBookingInvoices, useBooking } from "@/lib/hooks/use-bookings";
+import { useAsset } from "@/lib/hooks/use-assets";
 import { useMyProfile } from "@/lib/hooks/use-profile";
 import { bookingsApi } from "@/lib/api/bookings.api";
 import { contractSigningDeadline } from "@/lib/types";
@@ -67,6 +68,12 @@ export function GuestContractSignPage() {
   // tenant booked "with others" these are materialised as guests, so this is a
   // reliable signal to surface the co-residents roster on the signing page.
   const hasCoResidents = (guests ?? []).some((g) => !g.isMainTenant);
+  // Occupancy cap for the co-residents roster — the host's max guests, read off
+  // the asset (booking -> asset). Lets the card hide "Add co-resident" once the
+  // unit is full (tenant + co-residents reach maxOccupancy).
+  const { data: booking } = useBooking(id!);
+  const { data: asset } = useAsset(booking?.assetId ?? "");
+  const maxOccupancy = asset?.maxOccupancy;
 
   // Name comes from the profile (single source of truth), read-only here.
   const nameFirst = profile?.firstName ?? "";
@@ -140,11 +147,6 @@ export function GuestContractSignPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [guests, profile]);
 
-  // BUG-272: surface a clear hint when profile is missing fields so users
-  // know to fix it once (instead of re-typing on every contract).
-  const profileIncomplete =
-    !!profile &&
-    (!profile.firstName || !profile.lastName || !profile.dateOfBirth || !profile.nationality);
   const [passportPhotos, setPassportPhotos] = useState<File[]>([]);
 
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -416,17 +418,10 @@ export function GuestContractSignPage() {
             <h2 className="text-sm font-semibold text-fg">Your identity details</h2>
             <span className="ml-auto text-xs text-danger font-medium">Required to sign</span>
           </div>
-          {profileIncomplete && (
-            <div className="px-5 py-3 bg-warning/10 border-b border-warning/20 flex items-start gap-2.5">
-              <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
-              <p className="text-xs text-fg leading-relaxed">
-                Some basics aren't in your profile yet. Fill them in once and we'll pre-fill them on every contract.{" "}
-                <Link to="/me/profile" className="text-brand font-medium underline underline-offset-2 hover:opacity-80">
-                  Open profile
-                </Link>
-              </p>
-            </div>
-          )}
+          {/* The name is read-only (from the profile) with its own
+              "update your profile" note; the passport fields below are
+              editable inline and pre-filled from the profile — so no separate
+              "your profile is incomplete" banner is needed here. */}
           <div className="p-5 space-y-4">
             <p className="text-xs text-fg-muted leading-relaxed">
               Required for TM-30 immigration reporting. Stored encrypted and shared only with your landlord.
@@ -513,7 +508,7 @@ export function GuestContractSignPage() {
             leaving the signing page. Only shown when the booking actually has
             co-residents. */}
         {hasCoResidents && (
-          <CoResidentsCard bookingId={id!} guests={guests} />
+          <CoResidentsCard bookingId={id!} guests={guests} maxOccupancy={maxOccupancy} />
         )}
 
         <div className="bg-bg-card rounded-2xl shadow-card overflow-hidden">

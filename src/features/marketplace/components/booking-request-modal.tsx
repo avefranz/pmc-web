@@ -1066,17 +1066,16 @@ export function BookingRequestModal({
                   sees WHAT is blocking them instead of a dead button at the
                   bottom of a long modal). Only disabled while sending.
 
-                  Exception: pet photos are a HARD upload requirement. Once the
-                  user has entered pet counts the photo card is already visible
-                  right above the footer with its "Pet photos *" label, so a
-                  disabled Continue here is self-explanatory (not a dead button)
-                  — and it must be impossible to submit a "with pets" request
-                  with no photos. We only block once counts are filled so the
-                  count-missing case still gets the inline error via a click. */}
+                  Exception: the pet sub-form is a HARD requirement. If the user
+                  picked "I have pets" they must (a) say how many and (b) attach
+                  a photo per type before they can continue — the pets card with
+                  its counters and "Pet photos *" label is right above the
+                  footer, so a disabled Continue is self-explanatory, not a dead
+                  button. */}
               <Button
                 type="submit"
                 className="w-full bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white h-12 text-base font-semibold rounded-xl"
-                disabled={submit.isPending || (hasPets && petCountFilled && !petPhotosReady)}
+                disabled={submit.isPending || (hasPets && (!petCountFilled || !petPhotosReady))}
               >
                 {submit.isPending ? "Sending…" : "Continue"}
               </Button>

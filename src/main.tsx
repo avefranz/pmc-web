@@ -9,6 +9,7 @@ import "./index.css";
 import "./lib/i18n/index";
 import App from "./App.tsx";
 import { ThemeProvider } from "./components/layout/theme-provider";
+import { ErrorBoundary } from "./components/error-boundary";
 import { installLatinOnlyInputGuard } from "./lib/utils/latin-only-input";
 
 // Block non-Latin input (Cyrillic, CJK, Thai, emoji, …) across every text field.
@@ -29,7 +30,9 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeProvider>
-          <App />
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
           {/* UX-355: toasts sat in the top-right corner directly over the
               account menu + notification bell, blocking clicks, and could
               linger. Push the stack below the 80px topbar so the header

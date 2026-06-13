@@ -13,6 +13,7 @@ import { VisaType } from "@/lib/types/enums";
 import type { BookingGuestDto, UpsertPassportRequest } from "@/lib/types";
 import { useAddGuest, useUpdatePassport, useRemoveGuest } from "@/lib/hooks/use-bookings";
 import { bookingsApi } from "@/lib/api/bookings.api";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils/cn";
 
 // Date bounds for the pickers (mirrors the booking-detail add-resident dialog).
@@ -76,6 +77,7 @@ export function CoResidentsCard({
   const addGuest = useAddGuest(bookingId);
   const updatePassport = useUpdatePassport(bookingId);
   const removeGuest = useRemoveGuest(bookingId);
+  const qc = useQueryClient();
 
   const [open, setOpen] = useState(false);
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
@@ -179,6 +181,11 @@ export function CoResidentsCard({
         : (await addGuest.mutateAsync(form))?.id;
       if (photos.length > 0 && guestId) {
         await bookingsApi.uploadPassportPhotos(bookingId, guestId, photos);
+        // The add/update mutation already refetched the guest list, but that
+        // happened BEFORE the photos uploaded — so passportPhotoUrls was still
+        // empty and the resident kept showing "Details required". Refetch again
+        // now that the photos are attached so completeness updates immediately.
+        await qc.invalidateQueries({ queryKey: ["bookings", bookingId, "guests"] });
       }
       toast.success(editingGuestId ? `✓ ${name}'s details saved` : `✓ ${name} added`);
       setOpen(false);
@@ -517,7 +524,7 @@ export function CoResidentsCard({
           <DialogFooter className="px-5 py-4 border-t border-border shrink-0">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button
-              disabled={submitting || (tried && !valid)}
+              disabled={submitting || !valid}
               className="bg-brand hover:bg-[rgb(var(--color-primary-hover))] text-white"
               onClick={submit}
             >
