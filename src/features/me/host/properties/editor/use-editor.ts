@@ -102,7 +102,11 @@ function readStoredDraft(): StoredDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredDraft;
     if (!parsed || typeof parsed !== "object" || !parsed.draft) return null;
-    return parsed;
+    // Merge over EMPTY_DRAFT so a draft persisted before a field existed still
+    // carries every key. Without this, an older localStorage draft is missing
+    // newly-added fields (e.g. identityFirstName) and section isComplete/summary
+    // crash on `undefined.trim()`.
+    return { ...parsed, draft: { ...EMPTY_DRAFT, ...parsed.draft } };
   } catch {
     return null;
   }
