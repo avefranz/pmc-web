@@ -15,6 +15,11 @@ export function ProfileNameReadonly({
   lastName: string;
   label?: string;
 }) {
+  // When the profile has no name yet, the read-only fields are blank and any
+  // section that requires the name (e.g. landlord identity) can't be completed.
+  // Make that obvious with a warning + link instead of the neutral footnote, so
+  // the user isn't left staring at an empty block wondering what's wrong.
+  const isEmpty = !firstName.trim() && !lastName.trim();
   return (
     <div className="space-y-1.5">
       <Label className="text-sm font-medium text-fg">{label}</Label>
@@ -34,13 +39,23 @@ export function ProfileNameReadonly({
           className="cursor-not-allowed bg-bg-subtle text-fg-muted"
         />
       </div>
-      <p className="text-xs text-fg-muted">
-        From your profile. To change it,{" "}
-        <Link to="/me/profile" className="text-brand underline underline-offset-2 hover:opacity-80">
-          update your profile
-        </Link>
-        .
-      </p>
+      {isEmpty ? (
+        <p className="text-xs text-warning">
+          Your name isn't set yet —{" "}
+          <Link to="/me/profile" className="font-medium underline underline-offset-2 hover:opacity-80">
+            add it in your profile
+          </Link>{" "}
+          first.
+        </p>
+      ) : (
+        <p className="text-xs text-fg-muted">
+          From your profile. To change it,{" "}
+          <Link to="/me/profile" className="text-brand underline underline-offset-2 hover:opacity-80">
+            update your profile
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }

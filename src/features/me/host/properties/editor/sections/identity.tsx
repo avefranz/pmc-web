@@ -25,11 +25,15 @@ function IdentityDialog({ draft, patch }: SectionDialogProps) {
 
   // Name is owned by the profile (edited there only). Keep the draft in sync so
   // the legal name we join for the contract always matches the profile.
+  // Guard on `profile` being loaded: while the profile query is still resolving
+  // `profileFirst`/`profileLast` are "" and we'd otherwise wipe the name the
+  // editor already hydrated from the profile, leaving the section stuck empty.
   useEffect(() => {
+    if (!profile) return;
     if (draft.identityFirstName !== profileFirst || draft.identityLastName !== profileLast) {
       patch({ identityFirstName: profileFirst, identityLastName: profileLast });
     }
-  }, [profileFirst, profileLast, draft.identityFirstName, draft.identityLastName, patch]);
+  }, [profile, profileFirst, profileLast, draft.identityFirstName, draft.identityLastName, patch]);
 
   return (
     <div>
