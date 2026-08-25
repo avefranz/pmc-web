@@ -259,6 +259,141 @@ export const MOCK_LISTINGS: MarketplaceListingPreviewDto[] = [
   },
 ];
 
+// ─── Random listing generator ─────────────────────────────────────────────────
+// Fills the marketplace with varied, plausible cards when the backend is
+// unreachable or unseeded. The pool is built ONCE at module load with a fixed
+// seed, so pagination stays consistent and images do not reshuffle on re-render.
+
+// Known-good Unsplash photos reused from the curated listings above.
+const IMAGE_POOL = [
+  "1522708323590-d24dbb6b0267",
+  "1600596542815-ffad4c1539a9",
+  "1558618666-fcd25c85cd64",
+  "1600585154340-be6161a56a0c",
+  "1493809842364-78817add7ffb",
+  "1502672260266-1c1ef2d93688",
+  "1505691938895-1758d7feb511",
+  "1564013799919-ab600027ffc6",
+  "1571896349842-33c89424de2d",
+  "1512917774080-9991f1c4c750",
+  "1560448204-e02f11c3d0e2",
+  "1540541338287-41700207dee6",
+].map((id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=800&h=600&q=80`);
+
+// Neighbourhoods per cityId (keys match MOCK_CITIES ids).
+const AREA_NAMES: Record<number, string[]> = {
+  1: ["Sukhumvit", "Sathorn", "Silom", "Asoke", "Thonglor", "Ekkamai", "Ari", "On Nut", "Phrom Phong"],
+  2: ["Nimman", "Old City", "Santitham", "Hang Dong", "Chang Klan", "Mae Rim"],
+  3: ["Patong", "Kata", "Karon", "Rawai", "Kamala", "Bang Tao", "Chalong"],
+  4: ["Pratumnak", "Jomtien", "Central Pattaya", "Naklua", "Wongamat"],
+  5: ["Bo Phut", "Chaweng", "Lamai", "Maenam", "Bang Rak"],
+  6: ["Hua Hin Center", "Khao Takiab", "Cha-am", "Black Mountain"],
+};
+
+// Property types: label + category id (matches propertyCategoryId used above).
+const PROPERTY_TYPES = [
+  { label: "Condo", categoryId: 6 },
+  { label: "Apartment", categoryId: 1 },
+  { label: "House", categoryId: 2 },
+  { label: "Villa", categoryId: 3 },
+  { label: "Townhouse", categoryId: 4 },
+];
+
+// Base monthly rate (THB) per cityId — multiplied by a bedroom factor below.
+const CITY_BASE_RATE: Record<number, number> = {
+  1: 22000, 2: 9000, 3: 30000, 4: 12000, 5: 25000, 6: 15000,
+};
+
+const AMENITY_POOL = [23, 30, 26, 3, 18, 11, 24, 5, 25, 31];
+
+// mulberry32: tiny deterministic PRNG. Fixed seed keeps the pool reproducible.
+function makeRng(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function generateRandomListings(count: number): MarketplaceListingPreviewDto[] {
+  const rng = makeRng(20260801);
+  const pick = <T,>(arr: T[]) => arr[Math.floor(rng() * arr.length)];
+  const cities = MOCK_CITIES;
+  const bedroomFactor = [0.7, 1.0, 1.6, 2.6, 3.6]; // index = bedrooms (0..4)
+  const today = Date.now();
+
+  return Array.from({ length: count }, (_, i) => {
+    const city = pick(cities);
+    const area = pick(AREA_NAMES[city.id] ?? ["Downtown"]);
+    const bedrooms = Math.floor(rng() * 5); // 0..4
+    // Studios lean condo/apartment; larger units can be any type.
+    const type = bedrooms === 0 ? pick(PROPERTY_TYPES.slice(0, 2)) : pick(PROPERTY_TYPES);
+    const bathrooms = Math.max(1, Math.min(bedrooms, 3));
+
+    const rate = Math.round(
+      ((CITY_BASE_RATE[city.id] ?? 15000) * bedroomFactor[bedrooms] * (0.85 + rng() * 0.4)) / 500,
+    ) * 500;
+
+    const title =
+      bedrooms === 0
+        ? `Studio ${type.label} — ${area}`
+        : `${bedrooms}BR ${type.label} — ${area}`;
+
+    // Amenities: always Wi-Fi/AC/Kitchen, plus a random subset of the pool.
+    const extras = AMENITY_POOL.filter(() => rng() < 0.45);
+    const amenityIds = [2, 9, 4, ...extras];
+
+    // Optional discount tiers for longer stays.
+    const discountTiers =
+      rng() < 0.6
+        ? [
+            { minMonths: 3, discountPercent: 5 + Math.floor(rng() * 5) },
+            { minMonths: 6, discountPercent: 10 + Math.floor(rng() * 8) },
+          ]
+        : [];
+
+    const publishedDaysAgo = Math.floor(rng() * 60);
+    const published = new Date(today - publishedDaysAgo * 86400000);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+    return {
+      id: `gen-${String(i + 1).padStart(2, "0")}-${slugify(`${city.code}-${area}`)}`,
+      title,
+      slug: slugify(title),
+      monthlyRate: rate,
+      discountTiers,
+      bedrooms,
+      bathrooms,
+      beds: Math.max(1, bedrooms),
+      maxOccupancy: Math.max(2, bedrooms * 2),
+      propertyCategoryId: type.categoryId,
+      cityId: city.id,
+      cityName: city.name.en,
+      fuzzyLatitude: city.latitude + (rng() - 0.5) * 0.06,
+      fuzzyLongitude: city.longitude + (rng() - 0.5) * 0.06,
+      locationAccuracy: "Neighborhood",
+      startDate: iso(published),
+      endDate: null,
+      coverImageUrl: IMAGE_POOL[(i * 5 + city.id) % IMAGE_POOL.length],
+      amenityIds,
+      publishedAt: published.toISOString(),
+    } satisfies MarketplaceListingPreviewDto;
+  });
+}
+
+// Curated listings first (they have rich detail pages), then generated fillers.
+const GENERATED_LISTINGS = generateRandomListings(20);
+export const LISTING_POOL: MarketplaceListingPreviewDto[] = [...MOCK_LISTINGS, ...GENERATED_LISTINGS];
+
 // ─── Full listing details ─────────────────────────────────────────────────────
 
 const ALL_AMENITIES_TEMPLATE = [
@@ -344,6 +479,40 @@ export const MOCK_LISTING_DETAILS: Record<string, MarketplaceListingDto> = {
   },
 };
 
+// Returns a full detail DTO for any listing id: the curated one when it exists,
+// otherwise a detail synthesized from the generated preview in the pool.
+export function getMockListingDetail(id: string): MarketplaceListingDto | null {
+  if (MOCK_LISTING_DETAILS[id]) return MOCK_LISTING_DETAILS[id];
+
+  const preview = LISTING_POOL.find((l) => l.id === id);
+  if (!preview) return null;
+
+  const gallery = [preview.coverImageUrl, ...MOCK_LISTINGS.slice(0, 4).map((l) => l.coverImageUrl)]
+    .filter((u): u is string => !!u)
+    .map((url, i) => ({
+      id: `m${i + 1}`,
+      url: url.replace("w=800&h=600", "w=1200&h=800"),
+      sortOrder: i + 1,
+      caption: null,
+    }));
+
+  const bedroomLabel = preview.bedrooms === 0 ? "studio" : `${preview.bedrooms}-bedroom`;
+
+  return {
+    ...preview,
+    assetId: `asset-${preview.id}`,
+    description:
+      `A comfortable, fully furnished ${bedroomLabel} rental in ${preview.cityName}. ` +
+      `Bright, move-in ready, and well connected to the neighbourhood's cafes, transport and daily essentials.\n\n` +
+      `Ideal for long-stay guests, remote workers and expats looking for a quality base in ${preview.cityName}.`,
+    houseRules:
+      "No smoking inside the unit.\nQuiet hours after 22:00.\nCoordinate key handover with Siamo at least 24 hours before move-in.",
+    publishedAt: preview.publishedAt ?? preview.startDate,
+    media: gallery,
+    amenities: amenities(preview.amenityIds),
+  };
+}
+
 // ─── Availability ─────────────────────────────────────────────────────────────
 
 export function getMockAvailability(id: string): ListingAvailabilityDto {
@@ -377,7 +546,7 @@ export function getMockAvailability(id: string): ListingAvailabilityDto {
 // ─── Paginated listings helper ────────────────────────────────────────────────
 
 export function getMockListings(params: MarketplaceListingsQuery): PagedResult<MarketplaceListingPreviewDto> {
-  let items = [...MOCK_LISTINGS];
+  let items = [...LISTING_POOL];
 
   // Filter by cityId
   if (params.cityId !== undefined) {
@@ -393,6 +562,19 @@ export function getMockListings(params: MarketplaceListingsQuery): PagedResult<M
     }
   }
 
+  // Filter by property category
+  if (params.propertyCategoryId !== undefined) {
+    items = items.filter((l) => l.propertyCategoryId === params.propertyCategoryId);
+  }
+
+  // Filter by price range
+  if (params.priceMin !== undefined) {
+    items = items.filter((l) => l.monthlyRate >= params.priceMin!);
+  }
+  if (params.priceMax !== undefined) {
+    items = items.filter((l) => l.monthlyRate <= params.priceMax!);
+  }
+
   // Filter by amenityIds (must have all)
   if (params.amenityIds?.length) {
     items = items.filter((l) =>
@@ -405,6 +587,11 @@ export function getMockListings(params: MarketplaceListingsQuery): PagedResult<M
     items.sort((a, b) => a.monthlyRate - b.monthlyRate);
   } else if (params.sort === "PriceDesc") {
     items.sort((a, b) => b.monthlyRate - a.monthlyRate);
+  } else if (params.sort === "Newest") {
+    // Newest first by publish/start date (generated listings carry publishedAt).
+    const when = (l: MarketplaceListingPreviewDto) =>
+      new Date(l.publishedAt ?? l.startDate ?? 0).getTime();
+    items.sort((a, b) => when(b) - when(a));
   }
 
   // Paginate

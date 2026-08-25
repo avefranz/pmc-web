@@ -10,6 +10,11 @@ import type {
   BookingRequestData,
   BookingRequestResult,
 } from "../types/marketplace";
+import {
+  getMockListings,
+  getMockListingDetail,
+  getMockAvailability,
+} from "../mock-data/marketplace";
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -29,17 +34,42 @@ export const marketplaceApi = {
       }
     });
     const qs = sp.toString();
+    // Fallback: when the backend is unreachable or returns an empty page, serve
+    // generated demo listings so the marketplace never renders blank. The same
+    // query params are applied to the mock so filters still behave sensibly.
     return apiClient
       .get<ApiEnvelope<PagedResult<MarketplaceListingPreviewDto>>>(
         `/api/marketplace/listings${qs ? `?${qs}` : ""}`
       )
-      .then((r) => r.data.data);
+      .then((r) => {
+        const page = r.data.data;
+        if (import.meta.env.DEV && (!page || page.items.length === 0)) {
+          return getMockListings(params);
+        }
+        return page;
+      })
+      .catch((err) => {
+        if (import.meta.env.DEV) return getMockListings(params);
+        throw err;
+      });
   },
 
-  getListing: (id: string) =>
+  getListing: (id: string): Promise<MarketplaceListingDto> =>
     apiClient
       .get<ApiEnvelope<MarketplaceListingDto>>(`/api/marketplace/listings/${id}`)
-      .then((r) => r.data.data),
+      .then((r) => {
+        const dto = r.data.data ?? (import.meta.env.DEV ? getMockListingDetail(id) : null);
+        if (!dto) throw new Error(`Listing ${id} not found`);
+        return dto;
+      })
+      .catch((err) => {
+        // Dev-only: fall back to a curated or generated detail page.
+        if (import.meta.env.DEV) {
+          const mock = getMockListingDetail(id);
+          if (mock) return mock;
+        }
+        throw err;
+      }),
 
   // New medium-term availability format
   getAvailability: (id: string) =>
@@ -47,7 +77,14 @@ export const marketplaceApi = {
       .get<ApiEnvelope<ListingAvailabilityDto>>(
         `/api/marketplace/listings/${id}/availability`
       )
-      .then((r) => r.data.data),
+      .then((r) => {
+        if (!r.data.data && import.meta.env.DEV) return getMockAvailability(id);
+        return r.data.data;
+      })
+      .catch((err) => {
+        if (import.meta.env.DEV) return getMockAvailability(id);
+        throw err;
+      }),
 
   // Legacy day-by-day (kept for manager calendar only)
   getAvailabilityRange: (id: string, from: string, to: string) =>

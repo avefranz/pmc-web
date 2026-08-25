@@ -44,9 +44,9 @@ RUN chmod +x /docker-entrypoint.d/99-render-config.sh
 # Railway injects PORT at runtime; default for local `docker run`.
 ENV PORT=8080
 # Backend origin the SPA's /api calls are proxied to (no trailing slash, no path).
-# Baked default = the Azure App Service backend; a Railway service variable named
-# BACKEND_URL overrides this at runtime without a rebuild.
-ENV BACKEND_URL="https://siamo-bed5bgebauc9g4gj.southeastasia-01.azurewebsites.net"
+# Baked default = the Railway BFF; a Railway service variable named BACKEND_URL
+# overrides this at runtime without a rebuild.
+ENV BACKEND_URL="https://pmc-bff-production.up.railway.app"
 
 EXPOSE 8080
 
